@@ -3,7 +3,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { FullPageSpinner } from '@/components/ui/Spinner';
 
 export function RootRedirect() {
-  const { session, isLoading } = useAuth();
+  const { session, isLoading, isAdmin } = useAuth();
   if (isLoading) return <FullPageSpinner />;
-  return <Navigate to={session ? '/dashboard' : '/login'} replace />;
+  if (!session)  return <Navigate to="/login" replace />;
+  // Admins atterrissent sur /admin. Ils peuvent basculer sur l'espace étudiant
+  // via le lien "Espace étudiant" dans le header admin.
+  return <Navigate to={isAdmin ? '/admin' : '/dashboard'} replace />;
 }

@@ -24,13 +24,29 @@ export function LoginPage() {
     const parse = schema.safeParse(values);
     if (!parse.success) return;
     setSubmitting(true);
-    const { error } = await supabase.auth.signInWithPassword(parse.data);
-    setSubmitting(false);
+    const { data: signInData, error } = await supabase.auth.signInWithPassword(parse.data);
     if (error) {
+      setSubmitting(false);
       toast.error('Email ou mot de passe incorrect.', 'Connexion impossible');
       return;
     }
-    const dest = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/dashboard';
+
+    // Vérifie si l'user est admin pour rediriger correctement
+    let isAdmin = false;
+    if (signInData?.user) {
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', signInData.user.id)
+        .maybeSingle();
+      isAdmin = !!prof?.is_admin;
+    }
+
+    setSubmitting(false);
+
+    // Priorité au "from" si l'user a tenté d'accéder à une page protégée avant login
+    const fromPath = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+    const dest = fromPath || (isAdmin ? '/admin' : '/dashboard');
     navigate(dest, { replace: true });
   }
 
