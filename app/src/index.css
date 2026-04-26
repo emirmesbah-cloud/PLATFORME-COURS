@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; }
+  body { font-family: 'Calibri', 'Inter', system-ui, sans-serif; }
+  .font-serif-italic { font-family: Georgia, serif; font-style: italic; }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurel-orange focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn bg-aurel-orange text-white hover:bg-aurel-orange-dark shadow-sm;
+  }
+  .btn-secondary {
+    @apply btn bg-aurel-teal text-white hover:bg-aurel-teal-dark;
+  }
+  .btn-outline {
+    @apply btn border border-slate-300 bg-white text-aurel-ink hover:bg-slate-50;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-aurel-ink hover:bg-slate-100;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700;
+  }
+  .btn-lg { @apply px-6 py-3 text-base; }
+  .btn-block { @apply flex w-full; }
+
+  .input {
+    @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-aurel-ink placeholder-slate-400 shadow-sm focus:border-aurel-orange focus:outline-none focus:ring-2 focus:ring-aurel-orange/20 disabled:bg-slate-50 disabled:opacity-60;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-slate-700;
+  }
+  .field-error {
+    @apply mt-1 text-sm text-red-600;
+  }
+
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+  }
+  .card-padded { @apply card p-6; }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .badge-orange  { @apply badge bg-aurel-orange-soft text-aurel-orange-dark; }
+  .badge-teal    { @apply badge bg-teal-50 text-aurel-teal; }
+  .badge-green   { @apply badge bg-green-50 text-green-700; }
+  .badge-slate   { @apply badge bg-slate-100 text-slate-700; }
+  .badge-red     { @apply badge bg-red-50 text-red-700; }
+}

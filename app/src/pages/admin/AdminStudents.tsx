@@ -1,0 +1,106 @@
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Search, Users } from 'lucide-react';
+import { fetchAllStudents, queryKeys } from '@/lib/queries';
+import { Spinner } from '@/components/ui/Spinner';
+import { tierLabel, formatDate, formatDateTime, initials, cn } from '@/lib/utils';
+
+export function AdminStudents() {
+  const [search, setSearch] = useState('');
+  const [tierFilter, setTierFilter] = useState<'all' | 'autonome' | 'accompagne'>('all');
+
+  const { data: students, isLoading } = useQuery({
+    queryKey: queryKeys.adminStudents,
+    queryFn: fetchAllStudents,
+  });
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (students ?? []).filter((s) => {
+      if (tierFilter !== 'all' && s.tier !== tierFilter) return false;
+      if (!q) return true;
+      return (
+        s.first_name.toLowerCase().includes(q) ||
+        s.last_name.toLowerCase().includes(q) ||
+        s.email.toLowerCase().includes(q) ||
+        (s.whatsapp || '').includes(q)
+      );
+    });
+  }, [students, search, tierFilter]);
+
+  return (
+    <div className="space-y-6">
+      <header>
+        <h1 className="text-3xl font-bold text-aurel-ink">Étudiants</h1>
+        <p className="mt-1 text-slate-600">Tous tes étudiants inscrits.</p>
+      </header>
+
+      <div className="card">
+        <div className="flex flex-col gap-3 border-b border-slate-200 p-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2 text-aurel-ink">
+            <Users className="h-5 w-5 text-aurel-teal" />
+            <span className="font-semibold">{filtered.length} étudiant{filtered.length > 1 ? 's' : ''}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input className="input w-60 pl-9" placeholder="Rechercher nom, email, WhatsApp" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value as 'all' | 'autonome' | 'accompagne')} className="input w-40">
+              <option value="all">Tous tiers</option>
+              <option value="autonome">Autonome</option>
+              <option value="accompagne">Accompagné</option>
+            </select>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <Spinner label="Chargement..." />
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center text-slate-400">Aucun étudiant.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Étudiant</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">WhatsApp</th>
+                  <th className="px-4 py-3">Formule</th>
+                  <th className="px-4 py-3">Inscrit</th>
+                  <th className="px-4 py-3">Dernière connexion</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((s) => (
+                  <tr key={s.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-aurel-teal text-xs font-bold text-white">
+                          {initials(s.first_name, s.last_name)}
+                        </div>
+                        <div>
+                          <div className="font-semibold text-aurel-ink">{s.first_name} {s.last_name}</div>
+                          {s.diplome_algerien && <div className="text-xs text-slate-500">{s.diplome_algerien}</div>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{s.email}</td>
+                    <td className="px-4 py-3 text-slate-600">{s.whatsapp}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn('badge', s.tier === 'accompagne' ? 'badge-teal' : 'badge-orange')}>
+                        {tierLabel(s.tier)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-500">{formatDate(s.activated_at)}</td>
+                    <td className="px-4 py-3 text-slate-500">{formatDateTime(s.last_login_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
