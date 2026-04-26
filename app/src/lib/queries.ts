@@ -3,6 +3,8 @@ import { supabase } from './supabase';
 import type {
   Lesson, LessonProgress, BonusResource, ActivationCode,
   Profile, ProgressSummary, AdminStats,
+  LessonNote, Certificate, CertificateResult, Feedback, EmailLog,
+  AdminAuditLog, AdvancedAnalytics,
 } from './types';
 
 export const queryKeys = {
@@ -15,6 +17,14 @@ export const queryKeys = {
   adminStats: ['admin', 'stats'] as const,
   adminCodes: ['admin', 'codes'] as const,
   adminStudents: ['admin', 'students'] as const,
+  // Phase 3
+  lessonNote: (uid: string, lessonId: string) => ['lesson_notes', uid, lessonId] as const,
+  certificate: (uid: string) => ['certificate', uid] as const,
+  feedback: (uid: string) => ['feedback', uid] as const,
+  adminAnalytics: ['admin', 'analytics'] as const,
+  adminFeedback: ['admin', 'feedback'] as const,
+  adminEmails: ['admin', 'emails'] as const,
+  adminAudit: ['admin', 'audit'] as const,
 };
 
 // ── Lessons ────────────────────────────────────────────────────
@@ -156,4 +166,142 @@ export async function adminUpdateBonus(
 ) {
   const { error } = await supabase.from('bonus_resources').update(patch).eq('id', bonusId);
   if (error) throw error;
+}
+
+// ============================================================================
+// Phase 3 — queries
+// ============================================================================
+
+// ── Lesson notes ───────────────────────────────────────────────
+export async function fetchLessonNote(userId: string, lessonId: string): Promise<LessonNote | null> {
+  const { data, error } = await supabase
+    .from('lesson_notes')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('lesson_id', lessonId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as LessonNote | null;
+}
+
+export async function upsertLessonNote(userId: string, lessonId: string, content: string) {
+  const { error } = await supabase
+    .from('lesson_notes')
+    .upsert(
+      { user_id: userId, lesson_id: lessonId, content, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,lesson_id' }
+    );
+  if (error) throw error;
+}
+
+// ── Certificate ────────────────────────────────────────────────
+export async function fetchCertificate(userId: string): Promise<Certificate | null> {
+  const { data, error } = await supabase
+    .from('certificates')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as Certificate | null;
+}
+
+// Alias for backward compat
+export const fetchUserCertificate = fetchCertificate;
+
+export async function rpcCheckAndIssueCertificate(): Promise<CertificateResult> {
+  const { data, error } = await supabase.rpc('check_and_issue_certificate');
+  if (error) throw error;
+  return data as CertificateResult;
+}
+
+// ── Feedback ───────────────────────────────────────────────────
+export async function fetchOwnFeedback(userId: string): Promise<Feedback | null> {
+  const { data, error } = await supabase
+    .from('feedback')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as Feedback | null;
+}
+
+export async function submitFeedback(args: {
+  userId: string;
+  rating: number;
+  testimonial: string | null;
+  wouldRecommend: boolean;
+  isPublic: boolean;
+}) {
+  const { error } = await supabase.from('feedback').insert({
+    user_id: args.userId,
+    rating: args.rating,
+    testimonial: args.testimonial,
+    would_recommend: args.wouldRecommend,
+    is_public: args.isPublic,
+    is_approved: false,
+  });
+  if (error) throw error;
+}
+
+// ── Admin: feedback moderation ─────────────────────────────────
+export async function fetchAdminFeedback(): Promise<(Feedback & { profile?: Pick<Profile, 'first_name' | 'last_name' | 'email'> })[]> {
+  const { data, error } = await supabase
+    .from('feedback')
+    .select('*, profile:profiles(first_name, last_name, email)')
+    .order('submitted_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as never;
+}
+
+export async function adminToggleFeedbackApproved(id: string, isApproved: boolean) {
+  const { error } = await supabase.from('feedback').update({ is_approved: isApproved }).eq('id', id);
+  if (error) throw error;
+  await logAdminAction('feedback_updated', 'feedback', id, { is_approved: isApproved });
+}
+
+// ── Admin: analytics ───────────────────────────────────────────
+export async function fetchAdvancedAnalytics(): Promise<AdvancedAnalytics | null> {
+  const { data, error } = await supabase.rpc('admin_get_advanced_analytics');
+  if (error) throw error;
+  if (!data || (data as { ok: boolean }).ok === false) return null;
+  return data as AdvancedAnalytics;
+}
+
+// ── Admin: emails ──────────────────────────────────────────────
+export async function fetchEmailLogs(filters: { status?: string; emailType?: string; limit?: number } = {}): Promise<EmailLog[]> {
+  let q = supabase.from('email_logs').select('*').order('sent_at', { ascending: false });
+  if (filters.status)    q = q.eq('status', filters.status);
+  if (filters.emailType) q = q.eq('email_type', filters.emailType);
+  q = q.limit(filters.limit ?? 200);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as EmailLog[];
+}
+
+// ── Admin: audit ───────────────────────────────────────────────
+export async function fetchAuditLogs(filters: { actionType?: string; limit?: number } = {}): Promise<AdminAuditLog[]> {
+  let q = supabase.from('admin_audit_logs').select('*').order('created_at', { ascending: false });
+  if (filters.actionType) q = q.eq('action_type', filters.actionType);
+  q = q.limit(filters.limit ?? 200);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as AdminAuditLog[];
+}
+
+export async function logAdminAction(
+  actionType: string,
+  targetType: string | null = null,
+  targetId: string | null = null,
+  metadata: Record<string, unknown> | null = null
+) {
+  const { error } = await supabase.rpc('log_admin_action', {
+    p_action_type: actionType,
+    p_target_type: targetType,
+    p_target_id: targetId,
+    p_metadata: metadata,
+  });
+  if (error) {
+    // eslint-disable-next-line no-console
+    console.warn('[Aurel] logAdminAction failed', error);
+  }
 }

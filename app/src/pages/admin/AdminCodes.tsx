@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Copy, KeyRound, MessageSquare, Search, Filter, Check } from 'lucide-react';
-import { fetchAdminCodes, rpcAdminGenerateCodes, queryKeys } from '@/lib/queries';
+import { fetchAdminCodes, rpcAdminGenerateCodes, queryKeys, logAdminAction } from '@/lib/queries';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
@@ -53,6 +53,12 @@ export function AdminCodes() {
       toast.success(`${r.codes.length} code(s) ${tierLabel(tier)} générés.`);
       qc.invalidateQueries({ queryKey: queryKeys.adminCodes });
       qc.invalidateQueries({ queryKey: queryKeys.adminStats });
+      logAdminAction('code_generated', 'activation_codes', null, {
+        tier,
+        count: r.codes.length,
+        notes: notes.trim() || null,
+        codes: r.codes,
+      });
     } catch (err) {
       toast.error('Erreur réseau ou DB. Réessaie.', 'Erreur');
     } finally {

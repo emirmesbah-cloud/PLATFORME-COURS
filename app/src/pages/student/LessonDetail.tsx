@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, ArrowLeft, Clock, CheckCircle2 } from 'lucid
 import { fetchLessons, fetchLessonByNumber, fetchUserProgress, queryKeys } from '@/lib/queries';
 import { useAuth } from '@/hooks/useAuth';
 import { VideoPlayer } from '@/components/features/VideoPlayer';
+import { LessonNotes } from '@/components/features/LessonNotes';
 import { Spinner } from '@/components/ui/Spinner';
 import { formatDuration, cn } from '@/lib/utils';
 
@@ -91,15 +92,7 @@ export function StudentLessonDetail() {
                 <p>Le détail des chapitres sera affiché ici quand le timecoding des vidéos sera importé.</p>
               </div>
             )}
-            {tab === 'Notes' && (
-              <div>
-                <textarea
-                  className="input min-h-[200px] resize-y"
-                  placeholder="Tes notes personnelles… (sauvegarde auto à venir)"
-                />
-                <p className="mt-2 text-xs text-slate-400">La sauvegarde automatique des notes arrive en Phase 3.</p>
-              </div>
-            )}
+            {tab === 'Notes' && <LessonNotes lessonId={lesson.id} />}
           </div>
         </aside>
       </div>

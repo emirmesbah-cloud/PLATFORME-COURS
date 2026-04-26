@@ -82,3 +82,90 @@ export interface AdminStats {
   codes_available: number;
   avg_completion: number;
 }
+
+// ── Phase 3 ────────────────────────────────────────────────────
+
+export interface LessonNote {
+  id: string;
+  user_id: string;
+  lesson_id: string;
+  content: string;
+  updated_at: string;
+}
+
+export interface Certificate {
+  id: string;
+  user_id: string;
+  certificate_number: string;
+  issued_at: string;
+  pdf_url: string | null;
+  full_name_on_certificate: string;
+  course_completion_date: string;
+}
+
+export interface CertificateResult {
+  ok: boolean;
+  created?: boolean;
+  certificate_id?: string;
+  certificate_number?: string;
+  error?: string;
+  completed?: number;
+  total?: number;
+  remaining?: number;
+}
+
+export interface Feedback {
+  id: string;
+  user_id: string;
+  rating: number;
+  testimonial: string | null;
+  would_recommend: boolean;
+  is_public: boolean;
+  is_approved: boolean;
+  submitted_at: string;
+}
+
+export interface EmailLog {
+  id: string;
+  user_id: string | null;
+  email_type: string;
+  recipient_email: string;
+  subject: string;
+  sent_at: string;
+  status: 'sent' | 'failed' | 'pending';
+  provider_message_id: string | null;
+  error_message: string | null;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  admin_user_id: string;
+  action_type: string;
+  target_type: string | null;
+  target_id: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface AdvancedAnalytics {
+  ok: true;
+  acquisition: { day: string; tier: string; new_students: number }[] | null;
+  engagement: {
+    total_codes: number;
+    codes_used: number;
+    activation_rate: number;
+    completion_rate: number;
+    avg_completion_days: number;
+    active_last_30d: number;
+  };
+  daily_minutes: { day: string; minutes: number }[] | null;
+  funnel: { lesson_number: number; title: string; started: number; completed: number }[] | null;
+  feedback_dist: { rating: number; n: number }[] | null;
+  nps: { total: number; recommend: number; percent: number };
+  top_engaged: {
+    id: string; first_name: string; last_name: string; email: string; tier: string; total_seconds: number;
+  }[] | null;
+  top_fast: {
+    id: string; first_name: string; last_name: string; email: string; tier: string; days_to_complete: number;
+  }[] | null;
+}

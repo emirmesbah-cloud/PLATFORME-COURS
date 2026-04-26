@@ -1,18 +1,48 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Users } from 'lucide-react';
-import { fetchAllStudents, queryKeys } from '@/lib/queries';
+import { Search, Users, Download } from 'lucide-react';
+import { fetchAllStudents, queryKeys, logAdminAction } from '@/lib/queries';
 import { Spinner } from '@/components/ui/Spinner';
+import { useToast } from '@/components/ui/Toast';
 import { tierLabel, formatDate, formatDateTime, initials, cn } from '@/lib/utils';
 
 export function AdminStudents() {
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState<'all' | 'autonome' | 'accompagne'>('all');
+  const toast = useToast();
 
   const { data: students, isLoading } = useQuery({
     queryKey: queryKeys.adminStudents,
     queryFn: fetchAllStudents,
   });
+
+  function csvEscape(val: unknown): string {
+    if (val === null || val === undefined) return '';
+    const s = String(val);
+    if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function handleExportCSV() {
+    if (!students || students.length === 0) {
+      toast.info('Aucun étudiant à exporter.');
+      return;
+    }
+    const headers = ['id', 'email', 'first_name', 'last_name', 'whatsapp', 'tier', 'diplome_algerien', 'activated_at', 'last_login_at'];
+    const rows = students.map((s) => headers.map((h) => csvEscape((s as never)[h])).join(','));
+    const csv = headers.join(',') + '\n' + rows.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `aurel-students-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    logAdminAction('students_exported_csv', null, null, { count: students.length });
+    toast.success(`${students.length} étudiants exportés.`);
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -51,6 +81,9 @@ export function AdminStudents() {
               <option value="autonome">Autonome</option>
               <option value="accompagne">Accompagné</option>
             </select>
+            <button onClick={handleExportCSV} className="btn-outline">
+              <Download className="h-4 w-4" /> Exporter CSV
+            </button>
           </div>
         </div>
 

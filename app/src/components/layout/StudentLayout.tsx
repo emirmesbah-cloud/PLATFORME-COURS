@@ -1,16 +1,17 @@
 import { Link, NavLink, useNavigate, Outlet } from 'react-router-dom';
 import { useState } from 'react';
-import { LayoutDashboard, BookOpen, Gift, User, LogOut, Menu, X, Shield } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Gift, User, LogOut, Menu, X, Shield, Award } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { AurelLogo } from '@/components/features/AurelLogo';
 import { initials, tierLabel } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
 const NAV = [
-  { to: '/dashboard',  label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/lecons',     label: 'Mes leçons', icon: BookOpen },
-  { to: '/bonus',      label: 'Bonus',      icon: Gift },
-  { to: '/profil',     label: 'Profil',     icon: User },
+  { to: '/dashboard',   label: 'Dashboard',  icon: LayoutDashboard },
+  { to: '/lecons',      label: 'Mes leçons', icon: BookOpen },
+  { to: '/bonus',       label: 'Bonus',      icon: Gift },
+  { to: '/certificat',  label: 'Certificat', icon: Award },
+  { to: '/profil',      label: 'Profil',     icon: User },
 ];
 
 export function StudentLayout() {

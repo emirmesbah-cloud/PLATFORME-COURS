@@ -1,16 +1,23 @@
 import { NavLink, useNavigate, Outlet, Link } from 'react-router-dom';
 import { useState } from 'react';
-import { LayoutDashboard, KeyRound, Users, BookOpen, Gift, Menu, X, ArrowLeft, LogOut } from 'lucide-react';
+import {
+  LayoutDashboard, KeyRound, Users, BookOpen, Gift, Menu, X, ArrowLeft, LogOut,
+  TrendingUp, Heart, Mail, Shield,
+} from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { AurelLogo } from '@/components/features/AurelLogo';
 import { cn } from '@/lib/utils';
 
 const NAV = [
-  { to: '/admin',          label: 'Vue globale', icon: LayoutDashboard, end: true },
-  { to: '/admin/codes',    label: 'Codes',       icon: KeyRound },
-  { to: '/admin/students', label: 'Étudiants',   icon: Users },
-  { to: '/admin/lessons',  label: 'Leçons',      icon: BookOpen },
-  { to: '/admin/bonus',    label: 'Bonus',       icon: Gift },
+  { to: '/admin',           label: 'Vue globale', icon: LayoutDashboard, end: true },
+  { to: '/admin/codes',     label: 'Codes',       icon: KeyRound },
+  { to: '/admin/students',  label: 'Étudiants',   icon: Users },
+  { to: '/admin/lessons',   label: 'Leçons',      icon: BookOpen },
+  { to: '/admin/bonus',     label: 'Bonus',       icon: Gift },
+  { to: '/admin/analytics', label: 'Analytics',   icon: TrendingUp },
+  { to: '/admin/feedback',  label: 'Avis',        icon: Heart },
+  { to: '/admin/emails',    label: 'Emails',      icon: Mail },
+  { to: '/admin/audit',     label: 'Audit',       icon: Shield },
 ];
 
 export function AdminLayout() {

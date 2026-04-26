@@ -48,3 +48,9 @@ enable_confirmations = true
 # ────────────────────────────────────────────────────────────────────────────
 [functions.activate-account]
 verify_jwt = false  # endpoint public, l'user n'est pas encore authentifié
+
+[functions.send-email]
+verify_jwt = true   # appelé soit par un user authentifié, soit par service_role
+
+[functions.check-inactive-users]
+verify_jwt = false  # cron-only — protégé par CRON_SECRET header/query

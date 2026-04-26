@@ -13,12 +13,18 @@ import { StudentLessons }      from '@/pages/student/Lessons';
 import { StudentLessonDetail } from '@/pages/student/LessonDetail';
 import { StudentBonus }        from '@/pages/student/Bonus';
 import { StudentProfile }      from '@/pages/student/Profile';
+import { StudentCertificate }  from '@/pages/student/Certificate';
+import { StudentFeedback }     from '@/pages/student/Feedback';
 
 import { AdminDashboard }      from '@/pages/admin/AdminDashboard';
 import { AdminCodes }          from '@/pages/admin/AdminCodes';
 import { AdminStudents }       from '@/pages/admin/AdminStudents';
 import { AdminLessons }        from '@/pages/admin/AdminLessons';
 import { AdminBonus }          from '@/pages/admin/AdminBonus';
+import { AdminAnalytics }      from '@/pages/admin/AdminAnalytics';
+import { AdminFeedback }       from '@/pages/admin/AdminFeedback';
+import { AdminEmails }         from '@/pages/admin/AdminEmails';
+import { AdminAudit }          from '@/pages/admin/AdminAudit';
 
 import { RootRedirect } from '@/components/guards/RootRedirect';
 
@@ -40,6 +46,8 @@ export const routes: RouteObject[] = [
       { path: 'lecons',              element: <StudentLessons /> },
       { path: 'lecons/:lessonNumber',element: <StudentLessonDetail /> },
       { path: 'bonus',               element: <StudentBonus /> },
+      { path: 'certificat',          element: <StudentCertificate /> },
+      { path: 'feedback',            element: <StudentFeedback /> },
       { path: 'profil',              element: <StudentProfile /> },
     ],
   },
@@ -57,6 +65,10 @@ export const routes: RouteObject[] = [
       { path: 'students',    element: <AdminStudents /> },
       { path: 'lessons',     element: <AdminLessons /> },
       { path: 'bonus',       element: <AdminBonus /> },
+      { path: 'analytics',   element: <AdminAnalytics /> },
+      { path: 'feedback',    element: <AdminFeedback /> },
+      { path: 'emails',      element: <AdminEmails /> },
+      { path: 'audit',       element: <AdminAudit /> },
     ],
   },
 
