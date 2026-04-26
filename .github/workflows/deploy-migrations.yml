@@ -1,0 +1,58 @@
+# ============================================================================
+# Auto-apply Supabase migrations SQL sur push vers main
+#
+# ⚠️  Ne push QUE les nouvelles migrations (Supabase tracke déjà les anciennes
+# via la table supabase_migrations.schema_migrations).
+# ⚠️  Si tu veux désactiver l'auto-apply : commente la dernière étape ou supprime
+# ce workflow ; les migrations resteront en repo, à appliquer manuellement.
+# ============================================================================
+name: Deploy Migrations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/workflows/deploy-migrations.yml'
+
+concurrency:
+  group: migrations-deploy
+  cancel-in-progress: false  # NE JAMAIS couper une migration en cours
+
+jobs:
+  deploy:
+    name: Apply pending migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase link \
+            --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} \
+            --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+
+      - name: Push migrations (apply pending)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase db push \
+            --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Migrations summary" >> $GITHUB_STEP_SUMMARY
+          echo "Project ref : \`${{ secrets.SUPABASE_PROJECT_REF }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Files in supabase/migrations/ :" >> $GITHUB_STEP_SUMMARY
+          ls -la supabase/migrations/*.sql >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,50 @@
+# ============================================================================
+# Aurel Academy — Supabase project config
+# Linked to project_id : dvrqtqghgaxhhgkoihcj
+# Region : Frankfurt (eu-central-1)
+# ============================================================================
+
+project_id = "dvrqtqghgaxhhgkoihcj"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "https://app.aurel-academy.com"
+additional_redirect_urls = ["https://app.aurel-academy.com/**", "http://localhost:5173/**"]
+jwt_expiry = 3600
+enable_signup = false  # ← inscription via edge function activate-account uniquement
+enable_confirmations = true
+
+[auth.email]
+enable_signup = false
+double_confirm_changes = true
+enable_confirmations = true
+
+# ────────────────────────────────────────────────────────────────────────────
+# Edge Functions
+# ────────────────────────────────────────────────────────────────────────────
+[functions.activate-account]
+verify_jwt = false  # endpoint public, l'user n'est pas encore authentifié

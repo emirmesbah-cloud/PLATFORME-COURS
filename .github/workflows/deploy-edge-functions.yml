@@ -1,0 +1,38 @@
+# ============================================================================
+# Auto-deploy Supabase Edge Functions sur push vers main
+# ============================================================================
+name: Deploy Edge Functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+      - 'supabase/config.toml'
+      - '.github/workflows/deploy-edge-functions.yml'
+
+concurrency:
+  group: edge-functions-deploy
+  cancel-in-progress: false  # ne pas couper un déploiement en cours
+
+jobs:
+  deploy:
+    name: Deploy activate-account
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy activate-account function
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions deploy activate-account \
+            --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} \
+            --no-verify-jwt
