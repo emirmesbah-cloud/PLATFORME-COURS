@@ -16,7 +16,7 @@ max_rows = 1000
 [db]
 port = 54322
 shadow_port = 54320
-major_version = 15
+major_version = 17
 
 [studio]
 enabled = true
@@ -36,7 +36,6 @@ site_url = "https://app.aurel-academy.com"
 additional_redirect_urls = ["https://app.aurel-academy.com/**", "http://localhost:5173/**"]
 jwt_expiry = 3600
 enable_signup = false  # ← inscription via edge function activate-account uniquement
-enable_confirmations = true
 
 [auth.email]
 enable_signup = false

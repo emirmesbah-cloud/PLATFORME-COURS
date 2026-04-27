@@ -34,8 +34,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-          cache-dependency-path: app/package-lock.json
+          # Pas de cache — on ne commit pas le lockfile (Windows binaries cross-platform issue).
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps --no-audit --no-fund
