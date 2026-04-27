@@ -46,7 +46,11 @@ export function ActivatePage() {
   async function onSubmit(raw: FormValues) {
     const parsed = schema.safeParse(raw);
     if (!parsed.success) {
-      toast.error('Vérifie les champs en rouge.', 'Formulaire invalide');
+      const firstErr = parsed.error.errors[0];
+      const fieldName = firstErr.path.join('.');
+      toast.error(`${fieldName || 'champ'} : ${firstErr.message}`, 'Formulaire invalide');
+      // eslint-disable-next-line no-console
+      console.error('[Aurel] Activate validation errors:', parsed.error.errors);
       return;
     }
 
