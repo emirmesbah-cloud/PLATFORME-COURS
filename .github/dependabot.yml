@@ -1,0 +1,102 @@
+# ============================================================================
+# Aurel Academy — Plateforme étudiant
+# Dependabot config : surveille les deps npm + GitHub Actions
+# ============================================================================
+#
+# - npm (frontend React + Vite + scripts CLI)
+# - github-actions (workflows CI/CD)
+#
+# Stratégie :
+# - PR groupées (limite la spam)
+# - Updates de sécurité : immédiat (priorité haute)
+# - Updates mineures/patches : hebdo, regroupées
+# - Updates majeures : ouvertes une à une (review humaine obligatoire)
+# ============================================================================
+
+version: 2
+updates:
+  # --------------------------------------------------------------------------
+  # Frontend React app (platform/app/)
+  # --------------------------------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/app"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "deps(app)"
+      include: "scope"
+    groups:
+      # Regroupe toutes les minor/patch updates en 1 seule PR par semaine
+      app-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # On ne veut pas auto-bump les majeures sur React/Vite/TS — review manuel
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+  # --------------------------------------------------------------------------
+  # Scripts CLI (platform/scripts/)
+  # --------------------------------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/scripts"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "scripts"
+    commit-message:
+      prefix: "deps(scripts)"
+      include: "scope"
+    groups:
+      scripts-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # --------------------------------------------------------------------------
+  # GitHub Actions workflows (.github/workflows/)
+  # --------------------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci(deps)"
+      include: "scope"
+    groups:
+      actions-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
