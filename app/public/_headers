@@ -4,5 +4,22 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(), camera=(), microphone=()
 
+# Hashed bundles (Vite) → immutable, cache 1 an
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# index.html → JAMAIS cacher (sinon utilisateur reste coincé sur ancien bundle après deploy)
+/
+  Cache-Control: no-cache, no-store, must-revalidate
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Service Worker + manifest → no-cache pour permettre la propagation de mises à jour
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+/registerSW.js
+  Cache-Control: no-cache, no-store, must-revalidate
+/manifest.webmanifest
+  Cache-Control: no-cache, no-store, must-revalidate
+/workbox-*
+  Cache-Control: no-cache, no-store, must-revalidate

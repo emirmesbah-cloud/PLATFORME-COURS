@@ -59,28 +59,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const realtimeChannelRef = useRef<RealtimeChannel | null>(null);
   const isSigningOutRef = useRef(false);
 
-  const loadProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-    if (error) {
+  /**
+   * Charge le profile avec retry + auto-recovery.
+   * Si après 2 tentatives on a une session valide mais aucun profile (cas
+   * pathologique : RLS cassée en prod, JWT expiré, profil supprimé), on
+   * force un signOut pour casser la boucle "/activate → /dashboard → /activate".
+   */
+  const loadProfile = useCallback(async (userId: string): Promise<void> => {
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!error) {
+        const profile = data as Profile | null;
+        setProfile(profile);
+        setSentryUser(profile ? {
+          id: profile.id, email: profile.email,
+          tier: profile.tier, is_admin: profile.is_admin,
+        } : null);
+        return;
+      }
+
+      lastError = error;
       // eslint-disable-next-line no-console
-      console.error('[Aurel] loadProfile error', error);
-      setProfile(null);
-      setSentryUser(null);
-      return;
+      console.warn(`[Aurel] loadProfile attempt ${attempt} failed`, error);
+      if (attempt === 1) await new Promise(r => setTimeout(r, 500));
     }
-    const profile = data as Profile | null;
-    setProfile(profile);
-    // Tag Sentry events with the current user (anonymized)
-    setSentryUser(profile ? {
-      id: profile.id,
-      email: profile.email,
-      tier: profile.tier,
-      is_admin: profile.is_admin,
-    } : null);
+
+    // 2 échecs consécutifs → on auto-recovery en signant l'utilisateur out
+    // pour casser tout état pathologique côté frontend
+    // eslint-disable-next-line no-console
+    console.error('[Aurel] loadProfile failed twice, forcing signOut to recover', lastError);
+    setProfile(null);
+    setSentryUser(null);
+    try {
+      writeLocalSessionId(null);
+      await supabase.auth.signOut();
+    } catch {}
   }, []);
 
   /**
