@@ -29,6 +29,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { reportError } from '../_shared/sentry.ts';
+import { notifyTelegram } from '../_shared/telegram.ts';
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -132,6 +133,15 @@ serve(async (req) => {
       user_id: newUserId,
       extra: { step: 'signInWithPassword' },
     });
+    // CRITICAL : on a créé un user puis échoué à le sign-in → état incohérent
+    await notifyTelegram(
+      `Sign-in FAILED right after createUser — code "${code}" rolled back, user must retry.`,
+      {
+        function: 'activate-account',
+        level: 'critical',
+        extra: { email, code, detail: signInErr?.message ?? 'no session' },
+      },
+    );
     return errorResponse('INTERNAL_ERROR', 500, { detail: signInErr?.message ?? 'no session' });
   }
 
@@ -156,6 +166,21 @@ serve(async (req) => {
       user_id: newUserId,
       extra: { step: 'redeem_activation_code', rpc_error: rData?.error },
     });
+    // CRITICAL: user a déjà payé son code → si redeem échoue il est dans le vide.
+    // On notifie Telegram immédiatement pour qu'on puisse résoudre à la main.
+    await notifyTelegram(
+      `Activation paid but redeem FAILED — user has paid for code "${code}" but didn't get account access. Manual recovery needed.`,
+      {
+        function: 'activate-account',
+        level: 'critical',
+        extra: {
+          email,
+          code,
+          rpc_error: rData?.error ?? 'REDEEM_FAILED',
+          detail: rErr?.message ?? '(no detail)',
+        },
+      },
+    );
     return errorResponse(rData?.error ?? 'REDEEM_FAILED', 500, { detail: rErr?.message });
   }
 

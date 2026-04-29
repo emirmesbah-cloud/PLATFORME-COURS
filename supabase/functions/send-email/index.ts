@@ -32,6 +32,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { buildEmail, TemplateVars } from '../_shared/email-templates.ts';
 import { reportError } from '../_shared/sentry.ts';
+import { notifyTelegram } from '../_shared/telegram.ts';
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -146,6 +147,29 @@ serve(async (req) => {
       level: 'warning',
       extra: { step: 'resend_send', email_type: emailType, log_id: logRow.id },
     });
+    // Detect mass failure: 3+ failed emails in last 15 minutes => Telegram alert.
+    // Avoids spam on a single transient Resend hiccup but catches real outages
+    // (Resend down, DNS pété, API key rotated, etc.)
+    const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { count: recentFails } = await admin
+      .from('email_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'failed')
+      .gt('sent_at', fifteenMinAgo);
+    if ((recentFails ?? 0) >= 3) {
+      await notifyTelegram(
+        `Resend send FAILED — ${recentFails} email failures in the last 15min. Possible Resend outage or DNS issue.`,
+        {
+          function: 'send-email',
+          level: 'critical',
+          extra: {
+            recent_failures: recentFails,
+            last_error: sendResult.error,
+            email_type: emailType,
+          },
+        },
+      );
+    }
     return err('SEND_FAILED', 500, { detail: sendResult.error, log_id: logRow.id });
   }
 
