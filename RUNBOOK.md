@@ -281,6 +281,72 @@ SELECT admin_unrevoke_user('<user_uuid>');
 
 ---
 
+## 🛡️ Règle d'or pour les futures migrations RLS
+
+> **Lesson learned** : la migration 009 a shipped en prod avec une policy RLS
+> récursive qui a bloqué tous les users pendant ~30 min (fix dans 010).
+> Pour ne plus jamais refaire l'erreur, ces règles s'appliquent à **toute**
+> migration touchant aux RLS policies.
+
+### ❌ À ne JAMAIS faire dans une RLS policy de table `X`
+
+```sql
+-- INTERDIT : sub-SELECT vers la même table dans USING/WITH CHECK
+CREATE POLICY "..." ON profiles
+  FOR SELECT USING (
+    EXISTS (SELECT 1 FROM profiles p2 WHERE p2.id = auth.uid() AND p2.is_admin)
+  );
+-- → Provoque "infinite recursion detected in policy for relation profiles"
+```
+
+### ✅ À toujours faire à la place
+
+Encapsuler le check dans une fonction `SECURITY DEFINER STABLE` qui **bypasse
+RLS** par design :
+
+```sql
+CREATE OR REPLACE FUNCTION is_admin(user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE SQL
+SECURITY DEFINER  -- ← BYPASS RLS
+STABLE             -- ← optimisation planner
+SET search_path = public, pg_temp
+AS $$
+  SELECT COALESCE((SELECT is_admin FROM profiles WHERE id = user_id), FALSE);
+$$;
+
+CREATE POLICY "Admins read all profiles" ON profiles
+  FOR SELECT USING (is_admin(auth.uid()));
+```
+
+### Checklist avant de push une migration RLS
+
+1. [ ] Lue avec attention : aucune policy ne fait `SELECT FROM <même_table>` dans `USING` / `WITH CHECK`
+2. [ ] Tous les checks cross-row passent par une fonction `SECURITY DEFINER STABLE`
+3. [ ] La migration tourne sans erreur sur la prod (output `[]` ou les RETURNING attendus)
+4. [ ] **Smoke test** : appeler `/functions/v1/smoke-test` et vérifier `ok: true` sur tous les checks
+5. [ ] Si smoke test échoue → `git revert` immédiat + push hot-fix migration
+
+### Smoke test post-migration (automatique)
+
+```bash
+curl -X POST "https://dvrqtqghgaxhhgkoihcj.supabase.co/functions/v1/smoke-test?secret=$CRON_SECRET"
+# → ok: true partout = on peut respirer
+# → ok: false = Telegram alert déjà parti, fix immédiat
+```
+
+Le smoke test couvre :
+- `auth.signIn` (auth flow)
+- `select_own_profile` (RLS read)
+- `select_lessons` (table secondaire)
+- `rpc_verify_session` + `rpc_admin_get_stats` (RPCs critiques)
+- `insert_progress` (RLS write avec upsert)
+
+Si une de ces 6 vérifs casse, le smoke test push une alerte Telegram critique
+et retourne 500 → le déploiement est invalidé.
+
+---
+
 ## 🔄 V2 — Scénarios à ajouter post-launch
 
 - Scénario 4 : Cloudflare Pages deploy fail
