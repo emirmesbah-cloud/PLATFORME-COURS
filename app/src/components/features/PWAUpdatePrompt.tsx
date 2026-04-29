@@ -79,7 +79,7 @@ export function PWAUpdatePrompt() {
         </>
       ) : (
         <span className="text-sm">
-          ✅ Application prête à fonctionner hors-ligne
+          ✅ App installée — chargement plus rapide
         </span>
       )}
     </div>
