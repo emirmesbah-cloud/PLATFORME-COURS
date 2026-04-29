@@ -28,6 +28,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { reportError } from '../_shared/sentry.ts';
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -85,7 +86,10 @@ serve(async (req) => {
 
   // 1. Validation du code
   const { data: vData, error: vErr } = await admin.rpc('validate_activation_code', { p_code: code });
-  if (vErr)             return errorResponse('INTERNAL_ERROR', 500, { detail: vErr.message });
+  if (vErr) {
+    await reportError(vErr, { function: 'activate-account', extra: { step: 'validate_activation_code' } });
+    return errorResponse('INTERNAL_ERROR', 500, { detail: vErr.message });
+  }
   if (!vData?.ok)       return errorResponse(vData?.error ?? 'CODE_INVALID');
 
   // 2. Création du user (email auto-confirmé pour permettre le login direct)
@@ -101,6 +105,7 @@ serve(async (req) => {
     if (msg.includes('already') || msg.includes('exists') || msg.includes('registered')) {
       return errorResponse('EMAIL_ALREADY_EXISTS');
     }
+    await reportError(createErr, { function: 'activate-account', extra: { step: 'createUser' } });
     return errorResponse('INTERNAL_ERROR', 500, { detail: createErr.message });
   }
 
@@ -122,6 +127,11 @@ serve(async (req) => {
   if (signInErr || !signInData.session) {
     // Le user est créé mais on n'arrive pas à se logguer : rollback.
     await admin.auth.admin.deleteUser(newUserId).catch(() => {});
+    await reportError(signInErr ?? new Error('no session after createUser'), {
+      function: 'activate-account',
+      user_id: newUserId,
+      extra: { step: 'signInWithPassword' },
+    });
     return errorResponse('INTERNAL_ERROR', 500, { detail: signInErr?.message ?? 'no session' });
   }
 
@@ -141,6 +151,11 @@ serve(async (req) => {
   if (rErr || !rData?.ok) {
     // Rollback : on supprime le user qu'on vient de créer.
     await admin.auth.admin.deleteUser(newUserId).catch(() => {});
+    await reportError(rErr ?? new Error(rData?.error ?? 'REDEEM_FAILED'), {
+      function: 'activate-account',
+      user_id: newUserId,
+      extra: { step: 'redeem_activation_code', rpc_error: rData?.error },
+    });
     return errorResponse(rData?.error ?? 'REDEEM_FAILED', 500, { detail: rErr?.message });
   }
 

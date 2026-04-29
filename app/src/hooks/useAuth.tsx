@@ -23,6 +23,7 @@ import {
 } from 'react';
 import type { Session, User, RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { setSentryUser } from '@/lib/sentry';
 import type { Profile } from '@/lib/types';
 
 interface AuthContextValue {
@@ -68,9 +69,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // eslint-disable-next-line no-console
       console.error('[Aurel] loadProfile error', error);
       setProfile(null);
+      setSentryUser(null);
       return;
     }
-    setProfile(data as Profile | null);
+    const profile = data as Profile | null;
+    setProfile(profile);
+    // Tag Sentry events with the current user (anonymized)
+    setSentryUser(profile ? {
+      id: profile.id,
+      email: profile.email,
+      tier: profile.tier,
+      is_admin: profile.is_admin,
+    } : null);
   }, []);
 
   /**
@@ -251,6 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
+    setSentryUser(null);
   }, []);
 
   const value: AuthContextValue = {

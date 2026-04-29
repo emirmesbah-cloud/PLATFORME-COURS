@@ -31,6 +31,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { buildEmail, TemplateVars } from '../_shared/email-templates.ts';
+import { reportError } from '../_shared/sentry.ts';
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -129,6 +130,7 @@ serve(async (req) => {
   }).select('id').single();
 
   if (logErr) {
+    await reportError(logErr, { function: 'send-email', user_id: userId ?? undefined, extra: { step: 'log_insert', email_type: emailType } });
     return err('LOG_INSERT_FAILED', 500, { detail: logErr.message });
   }
 
@@ -138,6 +140,12 @@ serve(async (req) => {
     await admin.from('email_logs').update({
       status: 'failed', error_message: sendResult.error,
     }).eq('id', logRow.id);
+    await reportError(new Error(sendResult.error), {
+      function: 'send-email',
+      user_id: userId ?? undefined,
+      level: 'warning',
+      extra: { step: 'resend_send', email_type: emailType, log_id: logRow.id },
+    });
     return err('SEND_FAILED', 500, { detail: sendResult.error, log_id: logRow.id });
   }
 

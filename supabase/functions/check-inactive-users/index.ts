@@ -19,6 +19,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { reportError } from '../_shared/sentry.ts';
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -47,6 +48,7 @@ serve(async (req) => {
     .or(`last_login_at.is.null,last_login_at.lt.${sevenDaysAgo}`);
 
   if (candErr) {
+    await reportError(candErr, { function: 'check-inactive-users', extra: { step: 'select_candidates' } });
     return new Response(JSON.stringify({ ok: false, error: candErr.message }), { status: 500 });
   }
 
@@ -140,7 +142,22 @@ serve(async (req) => {
       sent++;
     } catch (e) {
       errors.push(`${u.email}: ${(e as Error).message}`);
+      await reportError(e, {
+        function: 'check-inactive-users',
+        user_id: u.id,
+        level: 'warning',
+        extra: { step: 'per_user_loop' },
+      });
     }
+  }
+
+  // If we hit a high error rate, escalate one summary event so the cron is visible.
+  if (errors.length > 0 && errors.length >= Math.max(3, Math.floor((candidates?.length ?? 0) / 4))) {
+    await reportError(new Error(`check-inactive-users: ${errors.length} errors over ${candidates?.length ?? 0} candidates`), {
+      function: 'check-inactive-users',
+      level: 'error',
+      extra: { sent, skipped, sample_errors: errors.slice(0, 5) },
+    });
   }
 
   return new Response(JSON.stringify({
