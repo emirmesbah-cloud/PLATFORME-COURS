@@ -2,6 +2,7 @@ import { BrowserRouter, useRoutes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/hooks/useAuth';
 import { ToastProvider } from '@/components/ui/Toast';
+import { PWAUpdatePrompt } from '@/components/features/PWAUpdatePrompt';
 import { routes } from '@/routes';
 
 const queryClient = new QueryClient({
@@ -21,6 +22,7 @@ export default function App() {
         <BrowserRouter>
           <AuthProvider>
             <AppRoutes />
+            <PWAUpdatePrompt />
           </AuthProvider>
         </BrowserRouter>
       </ToastProvider>
