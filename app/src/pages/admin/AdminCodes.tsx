@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Copy, KeyRound, MessageSquare, Search, Filter, Check } from 'lucide-react';
-import { fetchAdminCodes, rpcAdminGenerateCodes, queryKeys, logAdminAction } from '@/lib/queries';
+import { fetchAdminCodes, rpcAdminGenerateCodes, queryKeys } from '@/lib/queries';
+import type { ActivationCode } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
@@ -42,23 +43,49 @@ export function AdminCodes() {
     }
     setSubmitting(true);
     try {
-      const r = await rpcAdminGenerateCodes({ tier, count, notes: notes.trim() || undefined });
+      const trimmedNotes = notes.trim() || undefined;
+      const r = await rpcAdminGenerateCodes({ tier, count, notes: trimmedNotes });
       if (!r.ok) {
         toast.error(r.error, 'Génération impossible');
         return;
       }
+
+      // Optimistic update : prepend les nouveaux codes dans le cache directement
+      // pour que le tableau historique se mette à jour INSTANT (sans refetch).
+      // L'audit log est désormais inline dans la RPC (migration 011), donc plus
+      // besoin d'un appel logAdminAction séparé → un round-trip réseau de moins.
+      const now = new Date().toISOString();
+      const optimisticCodes: ActivationCode[] = r.codes.map((code) => ({
+        id: `optim-${code}-${now}`,
+        code,
+        tier,
+        is_used: false,
+        used_at: null,
+        used_by_user_id: null,
+        notes: trimmedNotes ?? null,
+        created_at: now,
+        created_by: 'admin-panel',
+      }));
+
+      // Met à jour TOUTES les query keys [adminCodes, ...filters] qui matchent.
+      qc.setQueriesData<ActivationCode[]>(
+        { queryKey: queryKeys.adminCodes },
+        (old) => {
+          if (!old) return old;
+          // Filtre seulement les codes qui matchent les filtres actifs sur cette query
+          // (best-effort : si un filtre exclut le tier généré, on prepend quand même —
+          // un refetch prochain remettra l'ordre. Trade-off acceptable pour latence 0)
+          return [...optimisticCodes, ...old];
+        }
+      );
+
+      // Stats peuvent légèrement bouger (codes_total +N) → invalidate sans await
+      qc.invalidateQueries({ queryKey: queryKeys.adminStats });
+
       setGenerated(r.codes);
       setGeneratedTier(tier);
       setNotes('');
       toast.success(`${r.codes.length} code(s) ${tierLabel(tier)} générés.`);
-      qc.invalidateQueries({ queryKey: queryKeys.adminCodes });
-      qc.invalidateQueries({ queryKey: queryKeys.adminStats });
-      logAdminAction('code_generated', 'activation_codes', null, {
-        tier,
-        count: r.codes.length,
-        notes: notes.trim() || null,
-        codes: r.codes,
-      });
     } catch (err) {
       toast.error('Erreur réseau ou DB. Réessaie.', 'Erreur');
     } finally {
