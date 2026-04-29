@@ -17,9 +17,9 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy activate-account
+    name: Deploy all edge functions
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -29,10 +29,31 @@ jobs:
         with:
           version: latest
 
-      - name: Deploy activate-account function
+      - name: Deploy all functions (auto-discover from supabase/functions/)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
-          supabase functions deploy activate-account \
-            --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} \
-            --no-verify-jwt
+          set -e
+          # Liste des fonctions = chaque dossier dans supabase/functions/ qui a un index.ts
+          # On ignore _shared (utilitaires partagés, pas un endpoint).
+          for dir in supabase/functions/*/; do
+            name=$(basename "$dir")
+            # Skip _shared (modules partagés)
+            if [ "$name" = "_shared" ]; then
+              echo "⏭ Skipping _shared (utilities)"
+              continue
+            fi
+            if [ ! -f "$dir/index.ts" ]; then
+              echo "⏭ Skipping $name (no index.ts)"
+              continue
+            fi
+            echo "═══════════════════════════════════════════"
+            echo "→ Deploying function: $name"
+            echo "═══════════════════════════════════════════"
+            supabase functions deploy "$name" \
+              --project-ref "$SUPABASE_PROJECT_REF" \
+              --no-verify-jwt
+          done
+          echo ""
+          echo "✅ All functions deployed."
