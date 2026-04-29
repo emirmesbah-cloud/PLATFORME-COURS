@@ -1,0 +1,66 @@
+# =================================================================
+# Aurel Academy — gitleaks config (platform repo)
+# Détecte les secrets accidentellement committés.
+# https://github.com/gitleaks/gitleaks
+# =================================================================
+
+title = "Aurel Academy gitleaks config"
+
+# On hérite des règles standard puis on ajoute des spécifiques
+[extend]
+useDefault = true
+
+# Règles custom pour les patterns Aurel-spécifiques
+[[rules]]
+id = "supabase-service-role-jwt"
+description = "Supabase service_role legacy JWT (eyJ...)"
+regex = '''eyJhbGciOi[A-Za-z0-9_-]{120,}'''
+keywords = ["service_role", "supabase", "eyJhbGci"]
+
+[[rules]]
+id = "supabase-secret-key"
+description = "Supabase new-format secret key"
+regex = '''sb_secret_[A-Za-z0-9_-]{30,}'''
+keywords = ["sb_secret_"]
+
+[[rules]]
+id = "supabase-pat"
+description = "Supabase Personal Access Token"
+regex = '''sbp_[a-z0-9]{40,}'''
+keywords = ["sbp_"]
+
+[[rules]]
+id = "resend-api-key"
+description = "Resend API key"
+regex = '''re_[A-Za-z0-9_]{30,}'''
+keywords = ["re_", "resend"]
+
+[[rules]]
+id = "vdocipher-api-key"
+description = "VDOCipher API key (UUID-like)"
+regex = '''(?i)vdocipher[_-]?api[_-]?(key|secret)[\s:=]+[A-Za-z0-9_-]{20,}'''
+keywords = ["vdocipher"]
+
+# Allowlist : faux positifs connus (templates, exemples, valeurs publiques)
+[allowlist]
+description = "Files/paths allowed to contain example tokens"
+paths = [
+    '''(.*?)(test|tests|examples|fixtures|node_modules|dist|build|.git|README|.env\.example)(.*)''',
+    '''app/\.env\.production''',           # contient anon key publishable (par design public)
+    '''public/assets/fonts/''',
+    '''.*\.lock''',
+    '''package-lock\.json''',
+]
+
+# Allow specific values that match patterns but are public by design
+regexes = [
+    # Supabase publishable key (par design public, embedded dans le bundle frontend)
+    '''sb_publishable_[A-Za-z0-9_-]+''',
+    # Apps Script URL (public — endpoint webhook)
+    '''AKfycb[A-Za-z0-9_-]+''',
+]
+
+# Strings spécifiques à ignorer (fingerprints connus de fichiers OK)
+stopwords = [
+    "AKfycbyjgOtm7NHglrwuH_f8L3PSNlIB8ijSMOGb9a2Za4tA21FfINat6NuZq0Fg7jtwVx8B",
+]
