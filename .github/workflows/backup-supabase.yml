@@ -1,0 +1,115 @@
+# ============================================================================
+# Aurel Academy — Backup hebdomadaire Supabase (V1)
+#
+# Stratégie V1 :
+#   - pg_dump complet du schéma public (data + structure)
+#   - Stocké en GitHub Actions artifact (rétention 90 jours, gratuit)
+#   - Run automatique chaque dimanche à 03:00 UTC
+#   - Triggerable manuellement aussi
+#
+# V2 (post-launch) : upload vers Google Drive ou S3 avec rétention 12 mois.
+#
+# SECRETS REQUIS :
+#   SUPABASE_DB_PASSWORD     ← password DB (déjà dans GitHub Secrets)
+#   SUPABASE_PROJECT_REF     ← dvrqtqghgaxhhgkoihcj
+#
+# Pour restaurer : voir RUNBOOK.md → "Restore from backup"
+# ============================================================================
+
+name: Backup Supabase DB
+
+on:
+  schedule:
+    # Dimanche 03:00 UTC = dimanche 04:00 Paris hiver / 05:00 Paris été
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: pg_dump → artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Validate required secrets
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          missing=0
+          for var in SUPABASE_PROJECT_REF SUPABASE_DB_PASSWORD; do
+            if [ -z "${!var}" ]; then
+              echo "::error::Missing secret $var"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then exit 1; fi
+
+      - name: Install postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+          pg_dump --version
+
+      - name: Run pg_dump
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -e
+          # Connection string Supabase pooler (production-grade, recommandé pour pg_dump)
+          # Format : postgresql://postgres.<project-ref>:<password>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres
+          # On utilise le mode session pooler (port 5432) — compatible pg_dump.
+          HOST="aws-0-eu-central-1.pooler.supabase.com"
+          USER="postgres.${SUPABASE_PROJECT_REF}"
+          DB="postgres"
+          PORT="5432"
+
+          STAMP=$(date -u +'%Y%m%d-%H%M%S')
+          OUT="aurel-backup-$STAMP.sql"
+
+          echo "→ Dump du schéma public + auth.users (data + structure)..."
+          pg_dump \
+            --host="$HOST" \
+            --port="$PORT" \
+            --username="$USER" \
+            --dbname="$DB" \
+            --schema=public \
+            --schema=auth \
+            --no-owner \
+            --no-privileges \
+            --clean --if-exists \
+            --quote-all-identifiers \
+            --file="$OUT"
+
+          # Compress
+          gzip -9 "$OUT"
+          ls -lh "${OUT}.gz"
+
+          echo "BACKUP_FILE=${OUT}.gz" >> $GITHUB_ENV
+
+      - name: Upload backup as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BACKUP_FILE }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Backup summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status** : ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp** : $(date -u +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **File** : \`${{ env.BACKUP_FILE }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Restore" >> $GITHUB_STEP_SUMMARY
+          echo '1. Download artifact from this run' >> $GITHUB_STEP_SUMMARY
+          echo '2. \`gunzip aurel-backup-*.sql.gz\`' >> $GITHUB_STEP_SUMMARY
+          echo '3. \`psql "postgresql://postgres.<ref>:<pwd>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres" < aurel-backup-*.sql\`' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '⚠️ Test restores periodically on a staging project.' >> $GITHUB_STEP_SUMMARY
