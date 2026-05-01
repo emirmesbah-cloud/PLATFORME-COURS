@@ -23,3 +23,7 @@
   Cache-Control: no-cache, no-store, must-revalidate
 /workbox-*
   Cache-Control: no-cache, no-store, must-revalidate
+
+# Version probe — JAMAIS cacher (pour cache busting cross-browser via lib/version-check.ts)
+/version.json
+  Cache-Control: no-cache, no-store, must-revalidate, max-age=0

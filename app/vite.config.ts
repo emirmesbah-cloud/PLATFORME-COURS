@@ -3,9 +3,34 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
 
+// Build version pour cache busting cross-browser (lib/version-check.ts)
+const BUILD_VERSION = process.env.VITE_BUILD_VERSION
+  || process.env.GITHUB_SHA
+  || process.env.CF_PAGES_COMMIT_SHA
+  || new Date().toISOString();
+
 export default defineConfig({
+  define: {
+    __BUILD_VERSION__: JSON.stringify(BUILD_VERSION),
+  },
   plugins: [
     react(),
+
+    // Plugin maison : émet /version.json à la fin du build
+    {
+      name: 'emit-version-json',
+      apply: 'build',
+      generateBundle() {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'version.json',
+          source: JSON.stringify({
+            version: BUILD_VERSION,
+            deployedAt: new Date().toISOString(),
+          }, null, 2),
+        });
+      },
+    },
 
     // ============================================================
     // PWA — Aurel Academy plateforme étudiant

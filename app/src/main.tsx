@@ -3,9 +3,15 @@ import ReactDOM from 'react-dom/client';
 import App from '@/App';
 import '@/index.css';
 import { initSentry, SentryErrorBoundary } from '@/lib/sentry';
+import { startVersionCheck } from '@/lib/version-check';
 
 // Init Sentry AVANT tout React render → capture les erreurs d'init aussi
 initSentry();
+
+// Belt-and-suspenders cache busting cross-browser :
+// poll /version.json toutes les 60s, reload si nouveau deploy détecté.
+// Marche partout (Chrome, Firefox, Safari, Edge), même si le SW bug.
+startVersionCheck();
 
 function FallbackError({ error, resetError }: { error: unknown; resetError: () => void }) {
   return (
