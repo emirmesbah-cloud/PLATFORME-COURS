@@ -16,7 +16,7 @@ export function ForgotPasswordPage() {
     if (!email) return;
     setSubmitting(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + '/login',
+      redirectTo: window.location.origin + '/reset-password',
     });
     setSubmitting(false);
     if (error) {

@@ -4,7 +4,7 @@ import { Loader2, LogOut, Mail, Calendar, Award } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/ui/Toast';
-import { tierLabel, formatDate, WHATSAPP_REGEX } from '@/lib/utils';
+import { tierLabel, formatDate, WHATSAPP_REGEX, normalizeWhatsapp } from '@/lib/utils';
 
 export function StudentProfile() {
   const { profile, user, refreshProfile, signOut } = useAuth();
@@ -19,14 +19,15 @@ export function StudentProfile() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
-    if (!WHATSAPP_REGEX.test(whatsapp)) {
-      toast.error('Format WhatsApp : +213XXXXXXXXX', 'Numéro invalide');
+    if (!WHATSAPP_REGEX.test(whatsapp.trim())) {
+      toast.error('Format WhatsApp : 0555290826', 'Numéro invalide');
       return;
     }
+    const normalizedWa = normalizeWhatsapp(whatsapp.trim());
     setSaving(true);
     const { error } = await supabase
       .from('profiles')
-      .update({ first_name: first.trim(), last_name: last.trim(), whatsapp: whatsapp.trim(), diplome_algerien: diplome })
+      .update({ first_name: first.trim(), last_name: last.trim(), whatsapp: normalizedWa, diplome_algerien: diplome })
       .eq('id', user.id);
     setSaving(false);
     if (error) {
@@ -40,7 +41,7 @@ export function StudentProfile() {
   async function handlePasswordReset() {
     if (!profile?.email) return;
     const { error } = await supabase.auth.resetPasswordForEmail(profile.email, {
-      redirectTo: window.location.origin + '/login',
+      redirectTo: window.location.origin + '/reset-password',
     });
     if (error) {
       toast.error('Impossible d\'envoyer l\'email.', 'Erreur');
@@ -88,7 +89,7 @@ export function StudentProfile() {
           </div>
           <div>
             <label className="label">WhatsApp</label>
-            <input className="input" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="+213XXXXXXXXX" />
+            <input className="input" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="0555290826" />
           </div>
           <div>
             <label className="label">Diplôme algérien</label>

@@ -7,6 +7,7 @@ import { AdminLayout } from '@/components/layout/AdminLayout';
 import { LoginPage }           from '@/pages/public/Login';
 import { ActivatePage }        from '@/pages/public/Activate';
 import { ForgotPasswordPage }  from '@/pages/public/ForgotPassword';
+import { ResetPasswordPage }   from '@/pages/public/ResetPassword';
 
 import { StudentDashboard }    from '@/pages/student/Dashboard';
 import { StudentLessons }      from '@/pages/student/Lessons';
@@ -33,6 +34,7 @@ export const routes: RouteObject[] = [
   { path: '/login',             element: <LoginPage /> },
   { path: '/activate',          element: <ActivatePage /> },
   { path: '/forgot-password',   element: <ForgotPasswordPage /> },
+  { path: '/reset-password',    element: <ResetPasswordPage /> },
 
   {
     path: '/',

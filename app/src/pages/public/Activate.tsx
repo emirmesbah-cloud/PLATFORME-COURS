@@ -6,7 +6,7 @@ import { Loader2, KeyRound } from 'lucide-react';
 import { supabase, SUPABASE_URL_PUBLIC } from '@/lib/supabase';
 import { useToast } from '@/components/ui/Toast';
 import { AurelLogo } from '@/components/features/AurelLogo';
-import { ACTIVATION_CODE_REGEX, WHATSAPP_REGEX } from '@/lib/utils';
+import { ACTIVATION_CODE_REGEX, WHATSAPP_REGEX, normalizeWhatsapp } from '@/lib/utils';
 
 const schema = z.object({
   code: z.string().regex(ACTIVATION_CODE_REGEX, 'Format attendu : AU-XXXX ou AC-XXXX'),
@@ -15,7 +15,7 @@ const schema = z.object({
   confirm_password: z.string().min(8),
   first_name: z.string().min(1, 'Prénom requis').max(50),
   last_name: z.string().min(1, 'Nom requis').max(50),
-  whatsapp: z.string().regex(WHATSAPP_REGEX, 'Format : +213XXXXXXXXX (numéro algérien)'),
+  whatsapp: z.string().regex(WHATSAPP_REGEX, 'Format : 0555290826 (numéro algérien)'),
   diplome_algerien: z.enum(['DEI', 'DEMA', 'ATS', 'Autre']),
   accept_terms: z.literal(true, { errorMap: () => ({ message: 'Tu dois accepter les conditions' }) }),
 }).refine((d) => d.password === d.confirm_password, {
@@ -68,7 +68,7 @@ export function ActivatePage() {
           password: parsed.data.password,
           first_name: parsed.data.first_name.trim(),
           last_name: parsed.data.last_name.trim(),
-          whatsapp: parsed.data.whatsapp.trim(),
+          whatsapp: normalizeWhatsapp(parsed.data.whatsapp.trim()),
         }),
       });
       const data = await r.json();
@@ -158,7 +158,7 @@ export function ActivatePage() {
 
             <div>
               <label className="label" htmlFor="whatsapp">WhatsApp</label>
-              <input id="whatsapp" className="input" placeholder="+213XXXXXXXXX" {...register('whatsapp')} />
+              <input id="whatsapp" className="input" placeholder="0555290826" {...register('whatsapp')} />
               {errors.whatsapp && <p className="field-error">{errors.whatsapp.message}</p>}
             </div>
             <div>

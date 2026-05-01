@@ -63,4 +63,25 @@ export function initials(firstName?: string | null, lastName?: string | null): s
 }
 
 export const ACTIVATION_CODE_REGEX = /^(AU|AC)-\d{4}$/;
-export const WHATSAPP_REGEX = /^\+213[567]\d{8}$/;
+
+// WhatsApp : accepte 2 formats côté input:
+//  1. Format algérien local : "0555290826" (commence par 0, 10 chiffres total)
+//  2. Format international : "+213555290826"
+// Côté DB on stocke TOUJOURS en international (+213...).
+export const WHATSAPP_REGEX_LOCAL_DZ = /^0[567]\d{8}$/;
+export const WHATSAPP_REGEX_INTL     = /^\+213[567]\d{8}$/;
+export const WHATSAPP_REGEX          = new RegExp(
+  `(${WHATSAPP_REGEX_LOCAL_DZ.source.slice(1, -1)})|(${WHATSAPP_REGEX_INTL.source.slice(1, -1)})`,
+);
+
+/**
+ * "0555290826" → "+213555290826"
+ * "+213555290826" → "+213555290826" (no-op)
+ */
+export function normalizeWhatsapp(raw: string): string {
+  const trimmed = raw.replace(/\s/g, '');
+  if (WHATSAPP_REGEX_LOCAL_DZ.test(trimmed)) {
+    return '+213' + trimmed.slice(1);
+  }
+  return trimmed;
+}
