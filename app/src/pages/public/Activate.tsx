@@ -55,6 +55,19 @@ export function ActivatePage() {
     }
 
     setSubmitting(true);
+    const email = parsed.data.email.trim().toLowerCase();
+    const password = parsed.data.password;
+
+    // Auto-recovery : si activate-account a déjà créé le compte mais que la
+    // réponse a été perdue (network drop), retry retournerait CODE_ALREADY_USED.
+    // On tente alors un signin silencieux avec les creds que l'user vient de
+    // saisir — si ça marche, l'activation a réellement abouti.
+    const tryAutoLogin = async (): Promise<boolean> => {
+      const { data: signInData, error: signInErr } =
+        await supabase.auth.signInWithPassword({ email, password });
+      return !!signInData?.session && !signInErr;
+    };
+
     try {
       const r = await fetch(`${SUPABASE_URL_PUBLIC}/functions/v1/activate-account`, {
         method: 'POST',
@@ -64,8 +77,8 @@ export function ActivatePage() {
         },
         body: JSON.stringify({
           code: parsed.data.code.trim(),
-          email: parsed.data.email.trim().toLowerCase(),
-          password: parsed.data.password,
+          email,
+          password,
           first_name: parsed.data.first_name.trim(),
           last_name: parsed.data.last_name.trim(),
           whatsapp: normalizeWhatsapp(parsed.data.whatsapp.trim()),
@@ -73,6 +86,12 @@ export function ActivatePage() {
       });
       const data = await r.json();
       if (!data.ok) {
+        const recoverable = ['CODE_ALREADY_USED', 'EMAIL_ALREADY_EXISTS'].includes(data.error);
+        if (recoverable && await tryAutoLogin()) {
+          toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
+          navigate('/dashboard', { replace: true });
+          return;
+        }
         const msg = ERR_MSG[data.error] || 'Erreur inconnue. Contacte Aurel.';
         toast.error(msg, 'Activation impossible');
         return;
@@ -93,6 +112,12 @@ export function ActivatePage() {
       toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
       navigate('/dashboard', { replace: true });
     } catch (e) {
+      // Network error: try auto-login as last resort
+      if (await tryAutoLogin()) {
+        toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
+        navigate('/dashboard', { replace: true });
+        return;
+      }
       toast.error('Erreur réseau. Vérifie ta connexion.', 'Activation impossible');
     } finally {
       setSubmitting(false);
