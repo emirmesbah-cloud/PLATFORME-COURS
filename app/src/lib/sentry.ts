@@ -50,9 +50,23 @@ export function initSentry() {
       if (err?.name === 'AbortError') return null;
       if (err?.message?.includes('NetworkError')) return null;
 
-      // Ne JAMAIS envoyer les requêtes Auth (peuvent contenir le password)
-      if (event.request?.url?.includes('/auth/v1/token')) return null;
-      if (event.request?.url?.includes('/auth/v1/signup')) return null;
+      // Ne JAMAIS envoyer les requêtes Auth (peuvent contenir le password,
+      // les recovery tokens, OTP codes, magic links, etc.).
+      // SHERLOCK FIX : on filtre maintenant TOUT /auth/v1/* (avant : seulement
+      // token + signup, donc /recover, /otp, /verify, /resend leakaient).
+      if (event.request?.url?.match(/\/auth\/v1\//)) return null;
+
+      // Scrub les query params communs qui peuvent contenir des tokens
+      // (recovery, magic link). Belt-and-suspenders avant l'envoi.
+      if (event.request?.url) {
+        try {
+          const u = new URL(event.request.url);
+          for (const k of ['token', 'access_token', 'refresh_token', 'code', 'otp']) {
+            if (u.searchParams.has(k)) u.searchParams.set(k, '<redacted>');
+          }
+          event.request.url = u.toString();
+        } catch {}
+      }
 
       return event;
     },

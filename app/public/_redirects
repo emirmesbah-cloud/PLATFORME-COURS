@@ -1,0 +1,10 @@
+# Cloudflare Pages redirects.
+#
+# 1. Block sourcemaps from being served publicly. Vite builds them in 'hidden'
+#    mode (no //# sourceMappingURL comment in the JS), but Sentry needs them
+#    at upload time. We 404 the URL so even guessed paths don't leak source.
+/assets/*.map  /404  404
+
+# 2. SPA fallback : Cloudflare Pages déjà gère ça automatiquement via
+#    le build (single-page-app behavior). Pas besoin de règle ici tant
+#    qu'on a un index.html à la racine du dist.

@@ -94,8 +94,16 @@ export default defineConfig({
       },
 
       workbox: {
-        // Globaliser tous les assets buildés dans le precache
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2,ico}'],
+        // Globaliser les assets buildés dans le precache.
+        // SHERLOCK FIX : on EXCLUT html (= index.html). Précédemment, le SW
+        // précachait `index.html` immutablement. Combiné avec
+        // `clientsClaim:true` + `skipWaiting:true`, un user sur un SW
+        // intermédiaire pouvait se retrouver avec un index.html stale qui
+        // référençait des chunks JS hashés disparus → blank page jusqu'à
+        // un reload manuel. Maintenant l'app shell est servi via le
+        // navigateFallback (`NetworkFirst` policy) qui force le réseau
+        // d'abord, donc toujours frais.
+        globPatterns: ['**/*.{js,css,svg,png,woff2,ico}'],
         // SW prend la main immédiatement après install (pas besoin de reload manuel)
         clientsClaim: true,
         skipWaiting: true,
@@ -122,16 +130,22 @@ export default defineConfig({
             },
           },
 
-          // 2. API Supabase REST → JAMAIS de cache (données live)
+          // 2. API Supabase REST → JAMAIS de cache (données live).
+          //
+          // SHERLOCK FIX : on RETIRE `backgroundSync`. Avant, Workbox queuait
+          // toutes les requêtes échouées (incluant POST/PATCH/DELETE écrits)
+          // pendant 24h et les replayait quand le réseau revenait. Si l'user
+          // A se déconnectait puis l'user B se loguait sur la même machine
+          // dans cette fenêtre, les écritures queueées de A étaient
+          // potentiellement rejouées avec l'auth de B → corruption des
+          // données. Pour un usage offline propre il faudrait restreindre
+          // aux GET seulement et invalider la queue au signOut — non
+          // implémenté côté Aurel, donc on désactive carrément.
           {
             urlPattern: /^https:\/\/dvrqtqghgaxhhgkoihcj\.supabase\.co\/.*/i,
             handler: 'NetworkOnly',
             options: {
               cacheName: 'supabase-api',
-              backgroundSync: {
-                name: 'supabase-queue',
-                options: { maxRetentionTime: 24 * 60 }, // 24h
-              },
             },
           },
 

@@ -2,11 +2,23 @@
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: geolocation=(), camera=(), microphone=()
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://dvrqtqghgaxhhgkoihcj.supabase.co; font-src 'self' data:; connect-src 'self' https://dvrqtqghgaxhhgkoihcj.supabase.co wss://dvrqtqghgaxhhgkoihcj.supabase.co https://*.ingest.sentry.io https://*.ingest.de.sentry.io https://*.ingest.us.sentry.io; frame-src https://player.vdocipher.com blob:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 
 # Hashed bundles (Vite) → immutable, cache 1 an
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Sourcemaps (build mode 'hidden') → ne JAMAIS servir publiquement.
+# Sentry les upload directement à l'API Sentry au build time, donc le
+# fichier physique sur Cloudflare doit être bloqué côté headers/redirect.
+/assets/*.map
+  X-Robots-Tag: noindex
+  Cache-Control: no-store
+  # Note : pour vraiment 404 ces fichiers, ajouter une règle dans _redirects
+  # (Cloudflare Pages) ou un Worker. Le 'hidden' build mode empêche déjà les
+  # navigateurs de les chercher (pas de //# sourceMappingURL dans le JS).
 
 # index.html → JAMAIS cacher (sinon utilisateur reste coincé sur ancien bundle après deploy)
 /
