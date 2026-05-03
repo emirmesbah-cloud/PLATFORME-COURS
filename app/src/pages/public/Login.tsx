@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Loader2, Mail, Lock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -14,7 +15,11 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export function LoginPage() {
-  const { register, handleSubmit, formState: { errors } } = useForm<FormValues>();
+  // Sherlock fix : was missing `resolver`, so `errors` stayed empty and the
+  // inline {errors.email && ...} messages never rendered.
+  const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+  });
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();

@@ -28,9 +28,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setTimeout(() => setToasts((s) => s.filter((x) => x.id !== id)), 4500);
   }, []);
 
-  const success = (message: string, title?: string) => toast({ variant: 'success', message, title });
-  const error   = (message: string, title?: string) => toast({ variant: 'error',   message, title });
-  const info    = (message: string, title?: string) => toast({ variant: 'info',    message, title });
+  // SHERLOCK FIX : memoize success/error/info pour éviter que les useEffect
+  // qui les listent en deps re-fire à chaque render parent. Avant,
+  // KickedListener (ex.) attachait/détachait son window listener à chaque
+  // render de l'app — un kick event firé pendant le gap était dropped.
+  const success = useCallback((message: string, title?: string) => toast({ variant: 'success', message, title }), [toast]);
+  const error   = useCallback((message: string, title?: string) => toast({ variant: 'error',   message, title }), [toast]);
+  const info    = useCallback((message: string, title?: string) => toast({ variant: 'info',    message, title }), [toast]);
 
   return (
     <ToastContext.Provider value={{ toast, success, error, info }}>

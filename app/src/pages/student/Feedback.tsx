@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Star, Loader2, Heart, CheckCircle2 } from 'lucide-react';
@@ -20,6 +20,11 @@ export function StudentFeedback() {
   const [recommend, setRecommend] = useState<boolean | null>(null);
   const [isPublic, setIsPublic] = useState<boolean | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // SHERLOCK FIX : ref pour bloquer le double-submit. setSubmitting(true) est
+  // async côté React (microtask boundary), donc un double-Enter rapide
+  // pouvait passer DEUX submitFeedback INSERTs avant que le bouton ne se
+  // disable. Le ref est synchrone et bloque immédiatement.
+  const submittingRef = useRef(false);
 
   const { data: existing, isLoading } = useQuery({
     queryKey: queryKeys.feedback(uid),
@@ -54,6 +59,7 @@ export function StudentFeedback() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submittingRef.current) return; // double-submit guard
     if (!uid) return;
     if (rating === 0) {
       toast.error('Sélectionne une note de 1 à 5 étoiles.', 'Note requise');
@@ -68,6 +74,7 @@ export function StudentFeedback() {
       return;
     }
 
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await submitFeedback({
@@ -82,6 +89,7 @@ export function StudentFeedback() {
     } catch (err) {
       toast.error('Impossible d\'envoyer ton avis. Réessaie.', 'Erreur');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }

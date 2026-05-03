@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Award, Download, Lock, Loader2, ArrowRight } from 'lucide-react';
@@ -17,6 +17,10 @@ export function StudentCertificate() {
   const [generating, setGenerating] = useState(false);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  // SHERLOCK FIX : ref pour passer le blob URL synchrone à triggerDownload
+  // (avant : setTimeout(100ms) lisait pdfBlobUrl du state qui n'était pas
+  // toujours flushé → "Télécharger" silently no-op sur 1ère pression).
+  const pdfBlobUrlRef = useRef<string | null>(null);
 
   const certQ = useQuery({
     queryKey: queryKeys.certificate(uid),
@@ -42,15 +46,36 @@ export function StudentCertificate() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
 
+  // SHERLOCK FIX : revoke le blob URL précédent à chaque génération + au
+  // unmount. Sans ça chaque "Voir aperçu" / "Télécharger" leakait un blob
+  // multi-MB en mémoire jusqu'au refresh de la page.
+  useEffect(() => {
+    return () => {
+      if (pdfBlobUrlRef.current) {
+        URL.revokeObjectURL(pdfBlobUrlRef.current);
+        pdfBlobUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  async function generatePdfBlobUrl(): Promise<string | null> {
+    if (!certQ.data) return null;
+    const { pdf } = await import('@react-pdf/renderer');
+    const { CertificatePDF } = await import('@/components/features/CertificatePDF');
+    const blob = await pdf(<CertificatePDF certificate={certQ.data} />).toBlob();
+    // Revoke ancien avant d'en créer un nouveau (évite le leak)
+    if (pdfBlobUrlRef.current) URL.revokeObjectURL(pdfBlobUrlRef.current);
+    const url = URL.createObjectURL(blob);
+    pdfBlobUrlRef.current = url;
+    setPdfBlobUrl(url);
+    return url;
+  }
+
   async function handleGeneratePdf() {
     if (!certQ.data) return;
     setGenerating(true);
     try {
-      const { pdf } = await import('@react-pdf/renderer');
-      const { CertificatePDF } = await import('@/components/features/CertificatePDF');
-      const blob = await pdf(<CertificatePDF certificate={certQ.data} />).toBlob();
-      const url = URL.createObjectURL(blob);
-      setPdfBlobUrl(url);
+      await generatePdfBlobUrl();
       setPreviewing(true);
     } catch (err) {
       toast.error('Erreur lors de la génération du PDF.', 'Erreur');
@@ -60,19 +85,26 @@ export function StudentCertificate() {
   }
 
   async function handleDownload() {
-    if (!pdfBlobUrl) {
-      await handleGeneratePdf();
-      // wait until next render to use blob
-      setTimeout(() => triggerDownload(), 100);
-      return;
+    if (!certQ.data) return;
+    setGenerating(true);
+    try {
+      // SHERLOCK FIX : on récupère l'URL directement de la promise au lieu
+      // de lire pdfBlobUrl du state via setTimeout. Plus de race "first
+      // download silently no-op".
+      const url = pdfBlobUrlRef.current ?? await generatePdfBlobUrl();
+      if (!url) return;
+      triggerDownload(url);
+    } catch (err) {
+      toast.error('Erreur lors du téléchargement.', 'Erreur');
+    } finally {
+      setGenerating(false);
     }
-    triggerDownload();
   }
 
-  function triggerDownload() {
-    if (!pdfBlobUrl || !certQ.data) return;
+  function triggerDownload(url: string) {
+    if (!certQ.data) return;
     const a = document.createElement('a');
-    a.href = pdfBlobUrl;
+    a.href = url;
     a.download = `certificat-aurel-academy-${certQ.data.certificate_number}.pdf`;
     document.body.appendChild(a);
     a.click();

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Loader2, KeyRound } from 'lucide-react';
 import { supabase, SUPABASE_URL_PUBLIC } from '@/lib/supabase';
@@ -39,7 +40,11 @@ export function ActivatePage() {
   const navigate = useNavigate();
   const toast = useToast();
   const [submitting, setSubmitting] = useState(false);
+  // Sherlock fix : was missing `resolver`, so `errors` stayed empty and all
+  // inline {errors.X && ...} messages never rendered. Users only saw a single
+  // generic toast on submit. Now per-field validation works.
   const { register, handleSubmit, formState: { errors }, watch } = useForm<FormValues>({
+    resolver: zodResolver(schema),
     defaultValues: { diplome_algerien: 'DEI' as const, accept_terms: false as never },
   });
 

@@ -1,27 +1,83 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, Mail } from 'lucide-react';
+import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/ui/Toast';
 import { AurelLogo } from '@/components/features/AurelLogo';
+
+const COOLDOWN_KEY = 'aurel:forgot-password-cooldown';
+const COOLDOWN_SECONDS = 60;
+
+const emailSchema = z.string().email('Email invalide').max(254);
+
+function readCooldownEndsAt(): number {
+  try {
+    const raw = localStorage.getItem(COOLDOWN_KEY);
+    return raw ? parseInt(raw, 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeCooldownEndsAt(ts: number) {
+  try { localStorage.setItem(COOLDOWN_KEY, String(ts)); } catch {}
+}
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(0);
   const toast = useToast();
+
+  // SHERLOCK FIX : cooldown 60s persisté en localStorage pour empêcher
+  // un user de spam reset emails (DoS du quota Resend). Le compte à rebours
+  // se met à jour chaque seconde et survit au reload de la page.
+  useEffect(() => {
+    const tick = () => {
+      const ends = readCooldownEndsAt();
+      const left = Math.max(0, Math.ceil((ends - Date.now()) / 1000));
+      setSecondsLeft(left);
+    };
+    tick();
+    const i = setInterval(tick, 1000);
+    return () => clearInterval(i);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email) return;
+
+    // Cooldown gate
+    if (readCooldownEndsAt() > Date.now()) {
+      toast.info(`Patience — réessaie dans ${secondsLeft}s.`, 'Trop rapide');
+      return;
+    }
+
+    // Email validation (Sherlock fix : was just `if (!email) return`,
+    // accepted "foo" as a valid email)
+    const parsed = emailSchema.safeParse(email.trim().toLowerCase());
+    if (!parsed.success) {
+      toast.error(parsed.error.errors[0]?.message ?? 'Email invalide', 'Format invalide');
+      return;
+    }
+
     setSubmitting(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
       redirectTo: window.location.origin + '/reset-password',
     });
     setSubmitting(false);
+
+    // Set cooldown REGARDLESS of error : on ne veut pas révéler si l'email
+    // existe ou pas (privacy + anti-enumeration). Le cooldown s'applique
+    // dans tous les cas.
+    writeCooldownEndsAt(Date.now() + COOLDOWN_SECONDS * 1000);
+
     if (error) {
-      toast.error('Erreur. Réessaie ou contacte Aurel.', 'Envoi impossible');
-      return;
+      // Log silencieusement, mais affiche le message neutre "si compte existe"
+      // pour ne pas leak l'existence de l'email.
+      // eslint-disable-next-line no-console
+      console.warn('[Aurel] reset-password error', error);
     }
     setSent(true);
   }
@@ -51,8 +107,13 @@ export function ForgotPasswordPage() {
                     className="input pl-10" placeholder="ton@email.com" />
                 </div>
               </div>
-              <button type="submit" disabled={submitting} className="btn-primary btn-lg btn-block">
-                {submitting && <Loader2 className="h-4 w-4 animate-spin" />} Envoyer le lien
+              <button
+                type="submit"
+                disabled={submitting || secondsLeft > 0}
+                className="btn-primary btn-lg btn-block"
+              >
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {secondsLeft > 0 ? `Patiente ${secondsLeft}s…` : 'Envoyer le lien'}
               </button>
             </form>
           )}

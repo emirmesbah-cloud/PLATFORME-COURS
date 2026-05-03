@@ -15,6 +15,12 @@ export function LessonNotes({ lessonId }: { lessonId: string }) {
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const debounceRef = useRef<number | null>(null);
   const didLoadRef = useRef(false);
+  // SHERLOCK FIX : ref pour donner accès au content courant au cleanup
+  // du flush effect SANS lister `content` dans les deps. Avant : `content`
+  // était dans les deps de l'effect flush → cleanup re-tournait à chaque
+  // keystroke et déclenchait un upsert avec l'ancienne valeur → DB spam.
+  const contentRef = useRef(content);
+  contentRef.current = content;
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.lessonNote(uid, lessonId),
@@ -55,19 +61,20 @@ export function LessonNotes({ lessonId }: { lessonId: string }) {
     }, AUTOSAVE_DEBOUNCE_MS);
   }
 
-  // Flush on unmount
+  // Flush on unmount (or lesson change). Reads contentRef synchrone pour
+  // avoir la dernière valeur saisie. PAS de `content` dans les deps :
+  // sinon le cleanup re-fire à chaque keystroke → upsert flood.
   useEffect(() => {
     return () => {
       if (debounceRef.current) {
         window.clearTimeout(debounceRef.current);
-        // Final save (best-effort)
-        if (uid && lessonId && didLoadRef.current) {
-          upsertLessonNote(uid, lessonId, content).catch(() => {});
-        }
+      }
+      // Final save (best-effort)
+      if (uid && lessonId && didLoadRef.current) {
+        upsertLessonNote(uid, lessonId, contentRef.current).catch(() => {});
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uid, lessonId, content]);
+  }, [uid, lessonId]);
 
   return (
     <div>

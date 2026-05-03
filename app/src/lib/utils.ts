@@ -70,8 +70,13 @@ export const ACTIVATION_CODE_REGEX = /^(AU|AC)-\d{4}$/;
 // Côté DB on stocke TOUJOURS en international (+213...).
 export const WHATSAPP_REGEX_LOCAL_DZ = /^0[567]\d{8}$/;
 export const WHATSAPP_REGEX_INTL     = /^\+213[567]\d{8}$/;
-export const WHATSAPP_REGEX          = new RegExp(
-  `(${WHATSAPP_REGEX_LOCAL_DZ.source.slice(1, -1)})|(${WHATSAPP_REGEX_INTL.source.slice(1, -1)})`,
+// SHERLOCK FIX : on enveloppe avec ^...$ pour ANCRER le regex composé.
+// Avant, le slice(1,-1) retirait les anchors des deux sous-regex et les
+// concaténait — résultat : `WHATSAPP_REGEX.test()` matchait n'importe
+// quelle string CONTENANT un numéro algérien (ex : "<script>0555290826"
+// passait la validation).
+export const WHATSAPP_REGEX = new RegExp(
+  `^(?:(?:${WHATSAPP_REGEX_LOCAL_DZ.source.slice(1, -1)})|(?:${WHATSAPP_REGEX_INTL.source.slice(1, -1)}))$`,
 );
 
 /**

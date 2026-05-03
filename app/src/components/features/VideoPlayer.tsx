@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Lock, Play } from 'lucide-react';
 import { rpcUpdateLessonProgress } from '@/lib/queries';
 import { useAuth } from '@/hooks/useAuth';
@@ -18,7 +18,7 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
   lesson: Lesson;
   initialPosition?: number;
 }) {
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
   const watchedSecRef = useRef<number>(0);
   const positionSecRef = useRef<number>(initialPosition);
@@ -47,12 +47,23 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
     };
   }, [lesson.id, lesson.vdocipher_video_id]);
 
+  // SHERLOCK FIX : on memoize le watermark via les CHAMPS du profile au lieu
+  // de la référence d'objet. Avant, l'effet dépendait directement de
+  // `profile`, donc chaque mutation (stub JWT → cache → DB) re-créait l'objet
+  // → l'effet re-tournait → iframe.innerHTML='' + nouvel iframe + nouveau
+  // startTs → reset du tracking watchedSeconds. Sur ISP lent qui hydrate le
+  // profile en 2-3 étapes, on perdait des secondes regardées et l'iframe
+  // flickait.
+  const watermark = useMemo(() => {
+    if (!profile) return '';
+    return `${profile.first_name} ${profile.last_name} · ${profile.email}`;
+  }, [profile?.first_name, profile?.last_name, profile?.email]);
+
   // VDOCipher embed (basic — real OTP/playbackInfo flow requires a backend signing endpoint).
   // For Phase 2 MVP, we render the iframe with the public embed URL pattern.
-  // Backend signing → Phase 3.
+  // Backend signing → quand les vidéos seront uploadées (Sherlock TODO #3).
   useEffect(() => {
     if (!lesson.vdocipher_video_id || !containerRef.current) return;
-    const watermark = profile ? `${profile.first_name} ${profile.last_name} · ${profile.email}` : '';
     const iframe = document.createElement('iframe');
     iframe.src =
       `https://player.vdocipher.com/v2/?video=${encodeURIComponent(lesson.vdocipher_video_id)}` +
@@ -65,6 +76,10 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
 
     // Approximate watched-seconds : count time the page is visible while iframe is mounted.
     // Real precise tracking requires VDOCipher's player.js SDK + postMessage events (Phase 3).
+    // Note serveur-side : update_lesson_progress (mig 013) caps watched_seconds
+    // à 120% de la durée + limite l'incrément entre deux calls à wall-clock
+    // plausible. Donc même si ce tick côté client est leaké, le DB ne crédite
+    // pas plus que ce qui est physiquement possible.
     const startTs = Date.now();
     const tick = () => {
       if (document.visibilityState === 'visible') {
@@ -76,7 +91,7 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
     const interval = setInterval(tick, 1000);
     setReady(true);
     return () => clearInterval(interval);
-  }, [lesson.vdocipher_video_id, profile, user?.id]);
+  }, [lesson.vdocipher_video_id, watermark]);
 
   if (!lesson.vdocipher_video_id) {
     return (
