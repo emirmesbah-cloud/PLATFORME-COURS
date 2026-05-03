@@ -35,29 +35,47 @@ const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const SUPABASE_ANON_KEY         = Deno.env.get('SUPABASE_ANON_KEY')!;
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// CORS allowlist (Sherlock fix — was `*`, now restricted to known origins).
+// activate-account doit être joignable depuis le SPA Aurel + dev local.
+// Toute autre origine reçoit 'https://app.aurel-academy.com' qui forcera
+// le navigateur à bloquer la réponse côté client (avec un Origin différent).
+const ALLOWED_ORIGINS = new Set<string>([
+  'https://app.aurel-academy.com',
+  'https://aurel-academy.com',
+  'http://localhost:5173',
+  'http://localhost:4173',
+]);
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-  });
+function buildCors(origin: string | null): Record<string, string> {
+  const allowOrigin = origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://app.aurel-academy.com';
+  return {
+    'Access-Control-Allow-Origin':  allowOrigin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Vary':                         'Origin',
+  };
 }
 
-function errorResponse(error: string, status = 400, extra: Record<string, unknown> = {}): Response {
-  return jsonResponse({ ok: false, error, ...extra }, status);
-}
+// jsonResponse / errorResponse — must include CORS headers from the request
+// origin. They're built inside serve() once we know the origin; see below.
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS });
+  // Build CORS headers from the request origin (allowlist enforced in buildCors)
+  const origin = req.headers.get('origin');
+  const CORS   = buildCors(origin);
+  const jsonResponse  = (body: unknown, status = 200): Response =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+    });
+  const errorResponse = (error: string, status = 400, extra: Record<string, unknown> = {}): Response =>
+    jsonResponse({ ok: false, error, ...extra }, status);
+
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST')    return errorResponse('METHOD_NOT_ALLOWED', 405);
 
   let payload: any;
