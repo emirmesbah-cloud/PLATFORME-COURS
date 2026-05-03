@@ -109,6 +109,33 @@ export function ActivatePage() {
         .update({ diplome_algerien: parsed.data.diplome_algerien })
         .eq('id', data.user.id);
 
+      // Pre-fill profile cache (port from Naim) : sur ISP lent, le cache
+      // localStorage permet à AuthGuard de passer immédiatement vers
+      // /dashboard sans attendre la query DB sur profiles. Sans ça, des
+      // étudiants en première activation pouvaient être bouncés vers
+      // /activate (race condition session-set vs profile-loaded).
+      try {
+        const nowIso = new Date().toISOString();
+        const cachedProfile = {
+          userId:   data.user.id,
+          profile: {
+            id:               data.user.id,
+            email:            email,
+            first_name:       parsed.data.first_name.trim(),
+            last_name:        parsed.data.last_name.trim(),
+            whatsapp:         normalizeWhatsapp(parsed.data.whatsapp.trim()),
+            tier:             data.user.tier,
+            is_admin:         false,
+            activated_at:     nowIso,
+            diplome_algerien: parsed.data.diplome_algerien,
+            created_at:       nowIso,
+            last_login_at:    nowIso,
+          },
+          cachedAt: Date.now(),
+        };
+        localStorage.setItem('aurel:profile-cache:v1', JSON.stringify(cachedProfile));
+      } catch {}
+
       toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
       navigate('/dashboard', { replace: true });
     } catch (e) {
