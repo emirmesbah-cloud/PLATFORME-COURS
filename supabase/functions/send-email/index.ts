@@ -3,29 +3,40 @@
 //
 // Envoie un email transactionnel via Resend + log dans email_logs.
 //
-// Auth :
-//   - Si appelé par un user authentifié (JWT bearer) → autorisé pour son
-//     propre user_id uniquement.
-//   - Si appelé avec service_role (cron, webhook DB) → autorisé pour
-//     n'importe quel user_id.
+// AUTH (Sherlock fix — was COMPLETELY UNAUTHENTICATED before, any logged-in
+// student could phish from noreply@aurel-academy.com via email_type='custom') :
+//   Cette function est SERVER-TO-SERVER ONLY. Les seuls appelants légitimes
+//   sont :
+//     - check-inactive-users (via service_role bearer)
+//     - tout futur cron / DB trigger
+//   Le frontend N'APPELLE PAS cette function (ne pas l'exposer aux clients).
+//
+//   Auth acceptée :
+//     1. Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>  (exact match)
+//     2. x-cron-secret: <CRON_SECRET>                       (exact match)
+//   Tout le reste → 401.
+//
+// CORS : allowlist explicite (au lieu du `*` qui laissait n'importe quel site
+// invoquer la function).
 //
 // Body :
 //   {
 //     email_type: 'welcome' | 'reminder_inactive' | 'milestone_50' |
 //                 'certificate_issued' | 'feedback_request' | 'custom',
 //     to: string,                   // requis
-//     user_id?: string,             // optionnel — pour log + RLS
+//     user_id?: string,             // optionnel — pour log
 //     vars?: Record<string, string>,// vars du template (first_name, etc.)
-//     // Pour 'custom' uniquement :
+//     // Pour 'custom' uniquement (caller server-side de confiance) :
 //     subject?: string,
 //     html?: string,
 //     text?: string,
 //   }
 //
 // Env requises :
-//   RESEND_API_KEY                  ← à mettre dans Supabase Vault
+//   RESEND_API_KEY                  ← Supabase Vault
 //   SUPABASE_URL                    ← auto
 //   SUPABASE_SERVICE_ROLE_KEY       ← auto
+//   CRON_SECRET                     ← Supabase Vault (optionnel mais recommandé)
 // ============================================================================
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
@@ -39,20 +50,28 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const RESEND_API_KEY            = Deno.env.get('RESEND_API_KEY') ?? '';
 const FROM_EMAIL                = Deno.env.get('RESEND_FROM_EMAIL') ?? 'Aurel Academy <noreply@aurel-academy.com>';
 const REPLY_TO                  = Deno.env.get('RESEND_REPLY_TO')   ?? 'aurel@aurel-academy.com';
+const CRON_SECRET               = Deno.env.get('CRON_SECRET') ?? '';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
+// CORS allowlist. send-email est server-to-server donc en pratique l'Origin
+// ne sera jamais set par les callers légitimes (cron pg, edge functions).
+// On reste strict sur la liste pour ne pas signaler "ouvert" via OPTIONS
+// preflight depuis un site arbitraire.
+const ALLOWED_ORIGINS = new Set<string>([
+  'https://app.aurel-academy.com',
+  'https://aurel-academy.com',
+  'http://localhost:5173',
+  'http://localhost:4173',
+]);
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-  });
-}
-function err(error: string, status = 400, extra: Record<string, unknown> = {}): Response {
-  return jsonResponse({ ok: false, error, ...extra }, status);
+function buildCors(origin: string | null): Record<string, string> {
+  const allowOrigin = origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://app.aurel-academy.com';
+  return {
+    'Access-Control-Allow-Origin':  allowOrigin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-cron-secret',
+    'Vary':                         'Origin',
+    'Cache-Control':                'private, no-cache, no-store, must-revalidate',
+  };
 }
 
 async function sendViaResend(args: {
@@ -85,19 +104,44 @@ async function sendViaResend(args: {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS });
-  if (req.method !== 'POST')    return err('METHOD_NOT_ALLOWED', 405);
+  const origin = req.headers.get('origin');
+  const CORS   = buildCors(origin);
+  const json = (body: unknown, status = 200): Response =>
+    new Response(JSON.stringify(body), {
+      status, headers: { ...CORS, 'Content-Type': 'application/json' },
+    });
+
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (req.method !== 'POST')    return json({ ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+
+  // SHERLOCK FIX — Auth strict server-to-server only.
+  // Avant : aucune vérif → un user authentifié pouvait sender via custom html.
+  // Maintenant : exact-match service_role bearer OU cron secret.
+  // Pas de fallback sur user JWT (le frontend n'appelle pas cette function).
+  const auth         = req.headers.get('authorization') || '';
+  const cronHeader   = req.headers.get('x-cron-secret') || '';
+  const isServiceRole = auth === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
+  const isCron        = !!CRON_SECRET && cronHeader === CRON_SECRET;
+  if (!isServiceRole && !isCron) {
+    return json({ ok: false, error: 'UNAUTHORIZED' }, 401);
+  }
 
   let payload: any;
   try { payload = await req.json(); }
-  catch { return err('INVALID_JSON'); }
+  catch { return json({ ok: false, error: 'INVALID_JSON' }, 400); }
 
   const emailType = String(payload?.email_type ?? '');
   const to        = String(payload?.to ?? '').trim().toLowerCase();
   const userId    = payload?.user_id ? String(payload.user_id) : null;
   const vars      = (payload?.vars ?? {}) as TemplateVars;
 
-  if (!emailType || !to) return err('MISSING_FIELDS');
+  if (!emailType || !to) return json({ ok: false, error: 'MISSING_FIELDS' }, 400);
+
+  // Basic email shape check — défense en profondeur même si l'auth caller
+  // est de confiance, on évite les payloads pourris (header injection via \n).
+  if (to.includes('\n') || to.includes('\r') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    return json({ ok: false, error: 'INVALID_EMAIL' }, 400);
+  }
 
   let subject: string;
   let html:    string;
@@ -107,10 +151,15 @@ serve(async (req) => {
     subject = String(payload?.subject ?? '').trim();
     html    = String(payload?.html    ?? '').trim();
     text    = String(payload?.text    ?? '').trim();
-    if (!subject || !html) return err('MISSING_CUSTOM_FIELDS');
+    if (!subject || !html) return json({ ok: false, error: 'MISSING_CUSTOM_FIELDS' }, 400);
+    // Header-injection guard sur subject (les newlines dans un Subject:
+    // permettent d'injecter de nouveaux headers RFC822).
+    if (subject.includes('\n') || subject.includes('\r')) {
+      return json({ ok: false, error: 'INVALID_SUBJECT' }, 400);
+    }
   } else {
     const t = buildEmail(emailType, vars);
-    if (!t) return err('UNKNOWN_EMAIL_TYPE');
+    if (!t) return json({ ok: false, error: 'UNKNOWN_EMAIL_TYPE' }, 400);
     subject = t.subject;
     html    = t.html;
     text    = t.text;
@@ -132,7 +181,7 @@ serve(async (req) => {
 
   if (logErr) {
     await reportError(logErr, { function: 'send-email', user_id: userId ?? undefined, extra: { step: 'log_insert', email_type: emailType } });
-    return err('LOG_INSERT_FAILED', 500, { detail: logErr.message });
+    return json({ ok: false, error: 'LOG_INSERT_FAILED', detail: logErr.message }, 500);
   }
 
   const sendResult = await sendViaResend({ to, subject, html, text });
@@ -170,12 +219,12 @@ serve(async (req) => {
         },
       );
     }
-    return err('SEND_FAILED', 500, { detail: sendResult.error, log_id: logRow.id });
+    return json({ ok: false, error: 'SEND_FAILED', detail: sendResult.error, log_id: logRow.id }, 500);
   }
 
   await admin.from('email_logs').update({
     status: 'sent', provider_message_id: sendResult.id,
   }).eq('id', logRow.id);
 
-  return jsonResponse({ ok: true, message_id: sendResult.id, log_id: logRow.id });
+  return json({ ok: true, message_id: sendResult.id, log_id: logRow.id });
 });

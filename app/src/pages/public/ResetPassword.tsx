@@ -12,7 +12,44 @@ import { AurelLogo } from '@/components/features/AurelLogo';
  * Supabase JS auto-detects the recovery hash on mount and emits a
  * PASSWORD_RECOVERY auth event. We then let the user pick a new password
  * via supabase.auth.updateUser({ password }).
+ *
+ * SECURITY (Sherlock fix) :
+ *   Avant ce fix, la page autorisait un changement de mdp dès qu'une session
+ *   existait — n'importe quel onglet déjà loggué naviguant vers /reset-password
+ *   pouvait silencieusement changer le mdp du user sans re-auth. Maintenant
+ *   on exige un PASSWORD_RECOVERY event OU un JWT avec `amr` claim contenant
+ *   `recovery` — c'est la seule façon d'arriver ici via le mail de reset.
+ *
+ *   Le check `amr` survit au reload de la page (même si l'event PASSWORD_RECOVERY
+ *   a déjà été consommé avant que le composant ne soit monté).
  */
+
+// Decode JWT payload (no verification — just claims read).
+function decodeJwtPayload(token: string | undefined): Record<string, unknown> | null {
+  if (!token) return null;
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const padded = part.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(part.length / 4) * 4, '=');
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
+// True iff the access_token has `amr` claim including method='recovery'.
+// Supabase ajoute cette claim quand la session est issue d'un reset link.
+function jwtIsRecoverySession(accessToken: string | undefined): boolean {
+  const payload = decodeJwtPayload(accessToken);
+  if (!payload) return false;
+  const amr = payload.amr as Array<{ method?: string } | string> | undefined;
+  if (!Array.isArray(amr)) return false;
+  return amr.some((entry) => {
+    if (typeof entry === 'string') return entry === 'recovery';
+    return entry?.method === 'recovery';
+  });
+}
+
 export function ResetPasswordPage() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -27,18 +64,39 @@ export function ResetPasswordPage() {
 
   useEffect(() => {
     let mounted = true;
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+    let recoveryEventSeen = false;
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       if (event === 'PASSWORD_RECOVERY') {
+        recoveryEventSeen = true;
+        setLinkValid(true);
+        setReady(true);
+      }
+      // SIGNED_IN avec un JWT recovery (cas reload après l'event a été consommé)
+      if (event === 'SIGNED_IN' && session && jwtIsRecoverySession(session.access_token)) {
         setLinkValid(true);
         setReady(true);
       }
     });
+
+    // Safety net : check getSession après un court délai. Si le user a une
+    // session AVEC amr=recovery → valid. Sinon, on refuse, MÊME si une
+    // session normale existe (l'ancien comportement laissait passer
+    // n'importe quelle session active = vulnérable).
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!mounted) return;
-      if (session) setLinkValid(true);
-      setReady(true);
+      // Petite grace period au cas où PASSWORD_RECOVERY arrive juste après.
+      setTimeout(() => {
+        if (!mounted) return;
+        if (recoveryEventSeen) return; // déjà géré
+        if (session && jwtIsRecoverySession(session.access_token)) {
+          setLinkValid(true);
+        }
+        setReady(true);
+      }, 500);
     });
+
     return () => { mounted = false; sub.subscription.unsubscribe(); };
   }, []);
 
@@ -61,7 +119,9 @@ export function ResetPasswordPage() {
     }
     setDone(true);
     toast.success('Mot de passe mis à jour.', 'Succès');
-    await supabase.auth.signOut();
+    // scope:'global' pour révoquer le refresh token côté serveur — empêche
+    // un attaquant qui aurait un refresh token volé de rester connecté.
+    await supabase.auth.signOut({ scope: 'global' });
     setTimeout(() => navigate('/login', { replace: true }), 2000);
   }
 
@@ -79,7 +139,7 @@ export function ResetPasswordPage() {
               <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-red-500" />
               <h1 className="mb-2 text-xl font-bold text-aurel-ink">Lien invalide ou expiré</h1>
               <p className="mb-6 text-sm text-slate-600">
-                Ce lien de réinitialisation n'est plus valide. Demande un nouveau lien depuis la page de connexion.
+                Ce lien de réinitialisation n'est plus valide, ou tu n'es pas arrivé·e ici via un mail de reset. Demande un nouveau lien depuis la page de connexion.
               </p>
               <Link to="/forgot-password" className="btn-primary btn-block">
                 Demander un nouveau lien

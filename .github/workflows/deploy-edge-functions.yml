@@ -51,9 +51,13 @@ jobs:
             echo "═══════════════════════════════════════════"
             echo "→ Deploying function: $name"
             echo "═══════════════════════════════════════════"
+            # SHERLOCK FIX : on NE passe PLUS `--no-verify-jwt` en blanket.
+            # Avant, ce flag overridait silencieusement le `verify_jwt = true`
+            # de send-email dans config.toml → la function était deployée
+            # sans JWT gate côté gateway Supabase. Maintenant la valeur du
+            # config.toml fait foi : chaque function a son setting explicite.
             supabase functions deploy "$name" \
-              --project-ref "$SUPABASE_PROJECT_REF" \
-              --no-verify-jwt
+              --project-ref "$SUPABASE_PROJECT_REF"
           done
           echo ""
           echo "✅ All functions deployed."

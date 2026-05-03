@@ -44,12 +44,40 @@ enable_confirmations = true
 
 # ────────────────────────────────────────────────────────────────────────────
 # Edge Functions
+#
+# IMPORTANT (Sherlock fix) : la valeur effective dépend du flag passé à
+# `supabase functions deploy`. Le workflow CI passait `--no-verify-jwt` à
+# TOUTES les functions sans condition, ce qui désactivait silencieusement le
+# JWT gate pour `send-email` et autres. Maintenant le workflow drop le flag
+# global et lit la valeur depuis ce fichier (`supabase functions deploy <name>
+# --import-map ... ` sans le flag). Référence Supabase CLI : la valeur du
+# config.toml est appliquée au déploiement quand `--no-verify-jwt` n'est pas
+# spécifié.
 # ────────────────────────────────────────────────────────────────────────────
 [functions.activate-account]
 verify_jwt = false  # endpoint public, l'user n'est pas encore authentifié
 
 [functions.send-email]
-verify_jwt = true   # appelé soit par un user authentifié, soit par service_role
+# DOIT rester JWT-required côté gateway. Le check serveur exige en plus un
+# bearer service_role OU un x-cron-secret (server-to-server only). Aucun
+# flow client direct.
+verify_jwt = true
 
 [functions.check-inactive-users]
 verify_jwt = false  # cron-only — protégé par CRON_SECRET header/query
+
+[functions.health]
+verify_jwt = false  # health probe public (uptime monitoring)
+
+[functions.sentry-test]
+verify_jwt = false  # canary — protégé par CRON_SECRET (déclenché manuellement)
+
+[functions.telegram-test]
+verify_jwt = false  # canary — protégé par CRON_SECRET
+
+[functions.smoke-test]
+verify_jwt = false  # CI smoke — protégé par CRON_SECRET
+
+[functions.uptimerobot-webhook]
+verify_jwt = false  # webhook externe (UptimeRobot ne peut pas signer un JWT) — protégé par UPTIMEROBOT_WEBHOOK_TOKEN
+

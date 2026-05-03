@@ -178,6 +178,11 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // 'hidden' = build *.map files but don't emit `//# sourceMappingURL=...`
+    // comments in the JS bundles. Sentry can still upload them at deploy
+    // time, but visitors can't download them from prod (was leaking the
+    // entire TS source — RLS query shapes, edge-function URLs, admin
+    // routes — to anyone hitting `/assets/*.map`).
+    sourcemap: 'hidden',
   },
 });
