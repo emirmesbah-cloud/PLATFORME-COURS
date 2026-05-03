@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "CLI utilities for Aurel Academy Supabase backend.",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "generate-codes": "node generate-codes.js"
   },

@@ -1,0 +1,42 @@
+# Post-mortems
+
+Pour chaque incident en prod (downtime, data loss, security event), copier le
+template et écrire un post-mortem dans ce dossier.
+
+Template :
+
+```markdown
+# YYYY-MM-DD — Short title
+
+**Status** : Resolved / Ongoing / Mitigated
+**Severity** : Critical / High / Medium / Low
+**Detected at** : YYYY-MM-DD HH:MM (timezone)
+**Resolved at** : YYYY-MM-DD HH:MM
+**Detected by** : Sentry / UptimeRobot / User report / Telegram alert / etc.
+
+## Summary
+1-2 sentences describing what happened.
+
+## Impact
+- Number of users affected
+- Duration
+- Data lost / corrupted (if any)
+
+## Timeline
+- HH:MM — Event 1
+- HH:MM — Event 2 (mitigation applied)
+- HH:MM — Resolution confirmed
+
+## Root cause
+Why this happened.
+
+## Fix (immediate)
+What was done in the moment.
+
+## Prevention (long-term)
+What changes are landing to prevent recurrence.
+
+## Action items
+- [ ] Owner — task
+- [ ] Owner — task
+```

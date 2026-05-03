@@ -17,6 +17,11 @@ name: Deploy Migrations
 on:
   workflow_dispatch:
 
+# SHERLOCK FIX : explicit permissions block. Avant : default GITHUB_TOKEN
+# scope. Migration deploy n'a besoin que de checkout (read).
+permissions:
+  contents: read
+
 concurrency:
   group: migrations-deploy
   cancel-in-progress: false  # NE JAMAIS couper une migration en cours

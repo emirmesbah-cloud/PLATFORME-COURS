@@ -11,6 +11,12 @@ on:
       - 'supabase/config.toml'
       - '.github/workflows/deploy-edge-functions.yml'
 
+# SHERLOCK FIX : explicit permissions block. Avant : default GITHUB_TOKEN
+# scope (souvent write-all selon repo settings) → trop large pour un job
+# qui ne fait que checkout + deploy.
+permissions:
+  contents: read
+
 concurrency:
   group: edge-functions-deploy
   cancel-in-progress: false  # ne pas couper un déploiement en cours
