@@ -527,7 +527,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             'getSession',
           );
           existingSession = result.data.session;
-          if (mounted) setSession(existingSession);
+          // SHERLOCK R7 fix : if getSession returns NULL but we have a local
+          // session loaded, KEEP the local session. Avant : refresh on slow
+          // ISP could trigger getSession returning null (refresh hiccup, edge
+          // case in supabase-js), which then setSession(null) → AuthGuard
+          // → /login → user reports "refresh deauths automatically".
+          //
+          // Now : only override the local session if getSession actually
+          // returned one. If supabase-js truly determines the session is
+          // dead, it'll fire SIGNED_OUT explicitly via onAuthStateChange,
+          // and that handler clears state.
+          if (mounted && existingSession) {
+            setSession(existingSession);
+          }
         } catch (e) {
           if (!isLockAbortError(e)) {
             // eslint-disable-next-line no-console
@@ -536,10 +548,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Continue avec ce qu'on a (session lue synchrone du localStorage)
         }
 
-        if (existingSession?.user && mounted) {
-          try { subscribeToProfile(existingSession.user.id); }
+        // Use either the freshly-fetched session OR fall back to the local
+        // one we hydrated synchronously in Étape 1. This way loadProfile +
+        // verifyLocalSession still run on slow-ISP refresh.
+        const sessionForBg = existingSession ?? localSession;
+
+        if (sessionForBg?.user && mounted) {
+          try { subscribeToProfile(sessionForBg.user.id); }
           catch (e) { console.warn('[Aurel] subscribeToProfile bg error', e); }
-          try { await loadProfile(existingSession.user.id); }
+          try { await loadProfile(sessionForBg.user.id); }
           catch (e) {
             if (!isLockAbortError(e)) console.warn('[Aurel] loadProfile bg error', e);
           }
@@ -675,23 +692,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session, loadProfile]);
 
   const signOut = useCallback(async () => {
+    // SHERLOCK R7 fix : OPTIMISTIC clear FIRST so the UI flips to logged-out
+    // state immediately, regardless of network. Avant : signOut awaited
+    // supabase.auth.signOut({scope:'global'}) which calls the server. On
+    // slow ISP / when refresh token is rejected, this could hang or throw,
+    // and the user would click "logout" with NO visible effect for 10+ sec.
+    //
+    // Now : local state is cleared instantly (user sees logout). The
+    // server-side revoke fires in background with a 5s timeout. If it
+    // fails (network, expired token), we don't block — local state is
+    // already correct and refresh tokens will expire naturally.
     writeLocalSessionId(null);
-    if (realtimeChannelRef.current) {
-      await supabase.removeChannel(realtimeChannelRef.current);
-      realtimeChannelRef.current = null;
-    }
-    // scope:'global' = révoque le refresh token serveur-side (vs 'local' qui
-    // ne nettoie que le localStorage). Empêche un attaquant qui aurait
-    // exfiltré le JWT/refresh de continuer à l'utiliser après le logout user.
-    await supabase.auth.signOut({ scope: 'global' });
     setSession(null);
     setProfile(null);
     setProfileSource('none');
     clearCachedProfile();
     setSentryUser(null);
-    // SHERLOCK R3 fix : clear queryClient — sinon device partagé voit
-    // les data de l'ancien user briefly via le cache TanStack Query.
     queryClient.clear();
+    // Cleanup channel (sync — supabase removeChannel is local).
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current).catch(() => {});
+      realtimeChannelRef.current = null;
+    }
+    // Best-effort server signOut with timeout. Wrapped in try so a hang/
+    // throw doesn't propagate to the caller that's already navigated away.
+    try {
+      await Promise.race([
+        supabase.auth.signOut({ scope: 'global' }),
+        new Promise<void>((_, rej) => setTimeout(() => rej(new Error('signOut timeout')), 5000)),
+      ]);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[Aurel] server signOut failed/slow (local state already cleared):', (e as Error)?.message ?? e);
+    }
   }, [queryClient]);
 
   // SHERLOCK round 2 fix : useMemo le value object pour stabiliser la

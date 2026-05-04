@@ -228,6 +228,38 @@ serve(async (req) => {
     return errorResponse(rData?.error ?? 'REDEEM_FAILED', 500, { detail: rErr?.message });
   }
 
+  // SHERLOCK R7 fix : trigger welcome email server-to-server. Was MISSING —
+  // students never received the post-activation welcome email. We call
+  // send-email with a service-role bearer (which our R3 hardening accepts).
+  // Fire-and-forget : don't fail activation if email queue hiccups.
+  fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify({
+      email_type: 'welcome',
+      to: email,
+      user_id: newUserId,
+      vars: {
+        first_name,
+        app_url: 'https://app.aurel-academy.com',
+      },
+    }),
+  }).catch((e) => {
+    // Best-effort. Sentry already captures via reportError below if needed.
+    // eslint-disable-next-line no-console
+    console.warn('[Aurel] welcome email dispatch failed (non-blocking):', e?.message ?? e);
+  });
+
+  // Telegram notification : new student inscribed (Aurel admin sees it real-time)
+  notifyTelegram(`Nouvel étudiant inscrit ✅`, {
+    function: 'activate-account',
+    level: 'info',
+    extra: { email, name: `${first_name} ${last_name}`, code, tier: rData.tier },
+  }).catch(() => {});
+
   return jsonResponse({
     ok: true,
     user: {

@@ -19,19 +19,31 @@ export function StudentProfile() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
-    if (!WHATSAPP_REGEX.test(whatsapp.trim())) {
-      toast.error('Format WhatsApp : 0555290826', 'Numéro invalide');
+    // Normalize first so we test the canonical form (handles "+213 555 290 826"
+    // with spaces, or stored values that have minor formatting drift).
+    const trimmedWa = whatsapp.replace(/\s/g, '').trim();
+    if (!WHATSAPP_REGEX.test(trimmedWa)) {
+      toast.error('Format WhatsApp : 0555290826 ou +213555290826', 'Numéro invalide');
       return;
     }
-    const normalizedWa = normalizeWhatsapp(whatsapp.trim());
+    const normalizedWa = normalizeWhatsapp(trimmedWa);
     setSaving(true);
     const { error } = await supabase
       .from('profiles')
       .update({ first_name: first.trim(), last_name: last.trim(), whatsapp: normalizedWa, diplome_algerien: diplome })
-      .eq('id', user.id);
+      .eq('id', user.id)
+      .select('id')
+      .maybeSingle();
     setSaving(false);
     if (error) {
-      toast.error('Impossible de sauvegarder. Réessaie.', 'Erreur');
+      // SHERLOCK R7 fix : surface the actual error code/message instead
+      // of a generic "Réessaie" — helps debug RLS / trigger failures.
+      // eslint-disable-next-line no-console
+      console.warn('[Aurel] profile save error:', error);
+      const msg = error.code === '42501'
+        ? 'Permission refusée (RLS). Si tu viens de te connecter, recharge la page.'
+        : `Impossible de sauvegarder. ${error.message?.slice(0, 80) || 'Réessaie.'}`;
+      toast.error(msg, 'Erreur');
       return;
     }
     await refreshProfile();
@@ -51,8 +63,12 @@ export function StudentProfile() {
   }
 
   async function handleSignOut() {
+    // signOut() is now optimistic (clears local state synchronously before
+    // the server roundtrip), so navigate fires reliably even on slow ISP.
+    // SHERLOCK R7 fix : `replace: true` so back-button doesn't render a
+    // cached profile view post-logout.
     await signOut();
-    navigate('/login');
+    navigate('/login', { replace: true });
   }
 
   if (!profile) return null;
