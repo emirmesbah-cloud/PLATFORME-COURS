@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Loader2, Mail, Lock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/ui/Toast';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { AurelLogo } from '@/components/features/AurelLogo';
 
 const schema = z.object({
@@ -77,17 +78,14 @@ export function LoginPage() {
 
             <div>
               <label className="label" htmlFor="password">Mot de passe</label>
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  className="input pl-10"
-                  placeholder="••••••••"
-                  {...register('password')}
-                />
-              </div>
+              <PasswordInput
+                id="password"
+                autoComplete="current-password"
+                className="input pl-10"
+                placeholder="••••••••"
+                leftIcon={<Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />}
+                {...register('password')}
+              />
               {errors.password && <p className="field-error">{errors.password.message}</p>}
             </div>
 

@@ -4,6 +4,7 @@ import { Loader2, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { jwtIsRecoverySession } from '@/lib/jwt';
 import { useToast } from '@/components/ui/Toast';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { AurelLogo } from '@/components/features/AurelLogo';
 
 /**
@@ -144,37 +145,31 @@ export function ResetPasswordPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="label" htmlFor="pwd">Nouveau mot de passe</label>
-                  <div className="relative">
-                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      id="pwd"
-                      type="password"
-                      autoComplete="new-password"
-                      className="input pl-10"
-                      placeholder="min. 8 caractères"
-                      value={pwd}
-                      onChange={(e) => setPwd(e.target.value)}
-                      required
-                      minLength={8}
-                    />
-                  </div>
+                  <PasswordInput
+                    id="pwd"
+                    autoComplete="new-password"
+                    className="input pl-10"
+                    placeholder="min. 8 caractères"
+                    value={pwd}
+                    onChange={(e) => setPwd(e.target.value)}
+                    required
+                    minLength={8}
+                    leftIcon={<Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />}
+                  />
                 </div>
                 <div>
                   <label className="label" htmlFor="confirm">Confirmer le mot de passe</label>
-                  <div className="relative">
-                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      id="confirm"
-                      type="password"
-                      autoComplete="new-password"
-                      className="input pl-10"
-                      placeholder="min. 8 caractères"
-                      value={confirm}
-                      onChange={(e) => setConfirm(e.target.value)}
-                      required
-                      minLength={8}
-                    />
-                  </div>
+                  <PasswordInput
+                    id="confirm"
+                    autoComplete="new-password"
+                    className="input pl-10"
+                    placeholder="min. 8 caractères"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    required
+                    minLength={8}
+                    leftIcon={<Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />}
+                  />
                 </div>
                 <button type="submit" disabled={submitting} className="btn-primary btn-lg btn-block">
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />} Enregistrer

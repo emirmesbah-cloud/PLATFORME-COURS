@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Loader2, KeyRound } from 'lucide-react';
 import { supabase, SUPABASE_URL_PUBLIC } from '@/lib/supabase';
 import { useToast } from '@/components/ui/Toast';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { AurelLogo } from '@/components/features/AurelLogo';
 import { ACTIVATION_CODE_REGEX, WHATSAPP_REGEX, normalizeWhatsapp } from '@/lib/utils';
 
@@ -221,12 +222,12 @@ export function ActivatePage() {
 
             <div>
               <label className="label" htmlFor="password">Mot de passe</label>
-              <input id="password" type="password" autoComplete="new-password" className="input" placeholder="min. 8 caractères" {...register('password')} />
+              <PasswordInput id="password" autoComplete="new-password" className="input" placeholder="min. 8 caractères" {...register('password')} />
               {errors.password && <p className="field-error">{errors.password.message}</p>}
             </div>
             <div>
               <label className="label" htmlFor="confirm_password">Confirmer le mot de passe</label>
-              <input id="confirm_password" type="password" autoComplete="new-password" className="input" {...register('confirm_password')} />
+              <PasswordInput id="confirm_password" autoComplete="new-password" className="input" {...register('confirm_password')} />
               {errors.confirm_password && <p className="field-error">{errors.confirm_password.message}</p>}
             </div>
 
