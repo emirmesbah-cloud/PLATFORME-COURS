@@ -23,6 +23,24 @@ const ORANGE = '#F97316';
 const TEAL   = '#0D7377';
 const INK    = '#1A1A1A';
 
+// SHERLOCK R3 fix : `vars.first_name` etc. flowent directement dans le HTML.
+// Un user qui s'inscrit avec `first_name='</p><a href="https://evil">click</a>'`
+// peut injecter du HTML dans son propre email (self-phish + reputation damage).
+// On escape tout ce qui vient de vars.* avant interpolation.
+//
+// `esc()` accepte string|number|undefined → HTML-safe string.
+// Les URLs sont passées telles quelles (déjà validées côté caller, ou
+// env-controlled).
+function esc(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  return String(v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function shell(content: string, vars: TemplateVars = {}): string {
   const unsub = vars.unsubscribe_url ?? `${vars.app_url ?? APP_URL_DEFAULT}/profil`;
   return `<!DOCTYPE html>
@@ -68,7 +86,7 @@ export function welcomeEmail(vars: TemplateVars): { subject: string; html: strin
   const wa   = vars.whatsapp_url ?? WHATSAPP_URL_DEFAULT;
   const subject = '🎓 Bienvenue chez Aurel Academy — tes 18 leçons t\'attendent';
   const html = shell(`
-    <h1 style="margin:0 0 12px;font-size:24px;color:${INK};">Bienvenue ${name} !</h1>
+    <h1 style="margin:0 0 12px;font-size:24px;color:${INK};">Bienvenue ${esc(name)} !</h1>
     <p style="margin:0 0 16px;">Ton accès à la formation <strong>Deutsch für Pflegekräfte</strong> est activé. Tu peux dès maintenant attaquer tes 18 leçons et débloquer tes 7 ressources premium :</p>
     <ul style="padding-left:20px;color:#475569;font-size:14px;">
       <li>📚 18 leçons vidéo (~4h30)</li>
@@ -77,7 +95,7 @@ export function welcomeEmail(vars: TemplateVars): { subject: string; html: strin
       <li>🎯 Guide Anerkennung + Méthode prospection 30 chaînes</li>
     </ul>
     ${btn(url + '/dashboard', '🚀 Accéder à ma formation')}
-    <p style="margin:24px 0 0;color:#475569;font-size:13px;">Une question ? Réponds à cet email ou écris-moi sur <a href="${wa}" style="color:${ORANGE};">WhatsApp</a>.</p>
+    <p style="margin:24px 0 0;color:#475569;font-size:13px;">Une question ? Réponds à cet email ou écris-moi sur <a href="${esc(wa)}" style="color:${ORANGE};">WhatsApp</a>.</p>
     <p style="margin:6px 0 0;color:#1A1A1A;font-style:italic;">— Aurel</p>
   `, vars);
   const text = `Bienvenue ${name} ! Ton accès Aurel Academy est activé. ${url}/dashboard`;
@@ -89,12 +107,12 @@ export function reminderInactiveEmail(vars: TemplateVars): { subject: string; ht
   const name = vars.first_name ?? 'l\'ami';
   const url  = vars.app_url ?? APP_URL_DEFAULT;
   const lessonText = vars.next_lesson_number
-    ? `<strong>leçon ${vars.next_lesson_number}${vars.next_lesson_title ? ` — « ${vars.next_lesson_title} »` : ''}</strong>`
+    ? `<strong>leçon ${esc(vars.next_lesson_number)}${vars.next_lesson_title ? ` — « ${esc(vars.next_lesson_title)} »` : ''}</strong>`
     : 'tes leçons';
   const subject = `${name}, où en es-tu dans ta formation Pflege ?`;
   const html = shell(`
-    <h1 style="margin:0 0 12px;font-size:22px;color:${INK};">Bonjour ${name},</h1>
-    <p>Ça fait <strong>une semaine</strong> qu'on ne t'a pas vu sur la plateforme. Tu en es à <strong>${vars.percentage_complete ?? 0}%</strong> de ta formation.</p>
+    <h1 style="margin:0 0 12px;font-size:22px;color:${INK};">Bonjour ${esc(name)},</h1>
+    <p>Ça fait <strong>une semaine</strong> qu'on ne t'a pas vu sur la plateforme. Tu en es à <strong>${esc(vars.percentage_complete ?? 0)}%</strong> de ta formation.</p>
     <p>L'Allemagne, la Pflegeheim, le contrat — tout ça commence par te remettre devant ${lessonText}.</p>
     ${btn(url + '/lecons', '👉 Reprendre ma formation')}
     <p style="margin:24px 0 0;color:#475569;font-size:13px;">Pas de pression. Mais 20 minutes par jour suffisent pour finir avant la fin du mois.</p>
@@ -110,7 +128,7 @@ export function milestone50Email(vars: TemplateVars): { subject: string; html: s
   const url  = vars.app_url ?? APP_URL_DEFAULT;
   const subject = '🔥 Tu as franchi la moitié du chemin';
   const html = shell(`
-    <h1 style="margin:0 0 12px;font-size:24px;color:${ORANGE};">50% atteints, ${name} 🔥</h1>
+    <h1 style="margin:0 0 12px;font-size:24px;color:${ORANGE};">50% atteints, ${esc(name)} 🔥</h1>
     <p>Tu viens de passer la moitié de la formation Deutsch für Pflegekräfte. Mention spéciale, c'est là que la majorité abandonne.</p>
     <p>Maintenant attaque la deuxième moitié — c'est là que les modules Entretien et Anerkennung font la différence.</p>
     <p style="margin:16px 0;color:#475569;font-size:14px;"><strong>Conseil pratique :</strong> exploite tes <strong>7 bonus</strong> en parallèle. Le glossaire 150 termes et le guide Anerkennung sont LE truc qui te démarque en entretien.</p>
@@ -129,10 +147,10 @@ export function certificateIssuedEmail(vars: TemplateVars): { subject: string; h
   const num  = vars.certificate_number ?? '';
   const subject = '🏆 Ton certificat Aurel Academy est prêt';
   const html = shell(`
-    <h1 style="margin:0 0 12px;font-size:24px;color:${ORANGE};">Félicitations ${name} 🏆</h1>
+    <h1 style="margin:0 0 12px;font-size:24px;color:${ORANGE};">Félicitations ${esc(name)} 🏆</h1>
     <p>Tu as terminé l'intégralité de la formation <strong>Deutsch für Pflegekräfte</strong>. Tu fais désormais partie des 18 leçons + 7 bonus complets.</p>
     <p style="background:#FFEDD5;padding:14px;border-radius:8px;color:#7A4A1A;font-size:14px;">
-      <strong>Numéro de certificat :</strong> <code style="font-family:monospace;">${num}</code>
+      <strong>Numéro de certificat :</strong> <code style="font-family:monospace;">${esc(num)}</code>
     </p>
     ${btn(url + '/certificat', '📄 Télécharger mon certificat')}
     <h3 style="margin:24px 0 6px;color:${INK};font-size:16px;">Et maintenant ?</h3>
@@ -155,7 +173,7 @@ export function feedbackRequestEmail(vars: TemplateVars): { subject: string; htm
   const url  = vars.app_url ?? APP_URL_DEFAULT;
   const subject = `Une dernière chose ${name} avant de partir conquérir l'Allemagne 🇩🇪`;
   const html = shell(`
-    <h1 style="margin:0 0 12px;font-size:22px;color:${INK};">Une faveur, ${name} ?</h1>
+    <h1 style="margin:0 0 12px;font-size:22px;color:${INK};">Une faveur, ${esc(name)} ?</h1>
     <p>Tu as terminé la formation. Si tu as 2 minutes, ton retour est précieux pour deux raisons :</p>
     <ol style="padding-left:20px;color:#475569;font-size:14px;line-height:1.7;">
       <li><strong>Pour les futurs apprenants algériens</strong> qui hésitent à se lancer — ton témoignage les rassure.</li>

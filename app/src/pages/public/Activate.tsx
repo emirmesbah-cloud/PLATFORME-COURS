@@ -66,11 +66,28 @@ export function ActivatePage() {
     // Auto-recovery : si activate-account a déjà créé le compte mais que la
     // réponse a été perdue (network drop), retry retournerait CODE_ALREADY_USED.
     // On tente alors un signin silencieux avec les creds que l'user vient de
-    // saisir — si ça marche, l'activation a réellement abouti.
+    // saisir — si ça marche, on vérifie que le profil EXISTE (sinon le user
+    // est dans un état orphan : auth.users sans profile → AuthGuard
+    // bouclera /dashboard ↔ /activate). SHERLOCK R3 fix : on faisait juste
+    // un sign-in successful check, on n'attrapait pas le cas orphan.
     const tryAutoLogin = async (): Promise<boolean> => {
       const { data: signInData, error: signInErr } =
         await supabase.auth.signInWithPassword({ email, password });
-      return !!signInData?.session && !signInErr;
+      if (signInErr || !signInData?.session?.user) return false;
+      // Verify the profile actually exists for this user. If it doesn't,
+      // the activation didn't really succeed — the auth.users row is orphan.
+      // We sign back out and surface an explicit error so the user knows
+      // to contact support instead of looping.
+      const { data: prof, error: profErr } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', signInData.session.user.id)
+        .maybeSingle();
+      if (profErr || !prof) {
+        await supabase.auth.signOut().catch(() => {});
+        return false;
+      }
+      return true;
     };
 
     try {

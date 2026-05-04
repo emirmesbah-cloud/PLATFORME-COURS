@@ -36,7 +36,9 @@ import {
   type ReactNode,
 } from 'react';
 import type { Session, User, RealtimeChannel } from '@supabase/supabase-js';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { decodeJwtPayload } from '@/lib/jwt';
 import { setSentryUser } from '@/lib/sentry';
 import type { Profile } from '@/lib/types';
 
@@ -110,19 +112,6 @@ function isLockAbortError(e: unknown): boolean {
   if (!e) return false;
   const msg = (e as { message?: string }).message || String(e);
   return /Lock broken|AbortError/i.test(msg);
-}
-
-// Decode JWT payload (no verification, just claims read).
-function decodeJwtPayload(token: string | undefined): Record<string, unknown> | null {
-  if (!token) return null;
-  try {
-    const part = token.split('.')[1];
-    if (!part) return null;
-    const padded = part.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(part.length / 4) * 4, '=');
-    return JSON.parse(atob(padded));
-  } catch {
-    return null;
-  }
 }
 
 // Construit un profile MINIMAL depuis le JWT (sans appel réseau).
@@ -207,6 +196,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileSource, setProfileSource] = useState<ProfileSource>('none');
   const [isLoading, setIsLoading] = useState(true);
+
+  // SHERLOCK R3 fix : on a besoin du queryClient pour clear le cache
+  // TanStack Query au signOut. Sans ça, sur un device partagé, l'user B
+  // qui se logguait après l'user A pouvait voir brièvement les données
+  // d'A (queries non-uid-scoped : lessons admin stats, audit, etc.)
+  // jusqu'à staleTime/refocus. Maintenant on clear tout au logout.
+  const queryClient = useQueryClient();
 
   // Refs pour éviter les fuites mémoire et garder la valeur stable dans les callbacks
   const realtimeChannelRef = useRef<RealtimeChannel | null>(null);
@@ -332,6 +328,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setProfileSource('none');
         clearCachedProfile();
+        // SHERLOCK R3 fix : clear queryClient cache + Sentry user. Avant,
+        // un kick laissait les queries d'admin et le contexte Sentry
+        // attribués à l'ancien user.
+        queryClient.clear();
+        setSentryUser(null);
 
         if (reason === 'kicked') {
           window.dispatchEvent(
@@ -347,7 +348,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isSigningOutRef.current = false;
       }
     },
-    []
+    [queryClient]
   );
 
   /**
@@ -630,6 +631,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfileSource('none');
         clearCachedProfile();
         setSentryUser(null);
+        // SHERLOCK R3 fix : clear queryClient on any sign-out path,
+        // including expirations / external signOut calls.
+        queryClient.clear();
       }
     });
 
@@ -685,7 +689,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfileSource('none');
     clearCachedProfile();
     setSentryUser(null);
-  }, []);
+    // SHERLOCK R3 fix : clear queryClient — sinon device partagé voit
+    // les data de l'ancien user briefly via le cache TanStack Query.
+    queryClient.clear();
+  }, [queryClient]);
 
   // SHERLOCK round 2 fix : useMemo le value object pour stabiliser la
   // référence — sinon chaque parent re-render créait un nouveau objet et

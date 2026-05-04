@@ -1,6 +1,7 @@
 import { Link, NavLink, useNavigate, Outlet } from 'react-router-dom';
 import { useState } from 'react';
-import { LayoutDashboard, BookOpen, Gift, User, LogOut, Menu, X, Shield, Award } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Gift, User, LogOut, Menu, X, Shield, Award, AlertTriangle } from 'lucide-react';
+import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
 import { AurelLogo } from '@/components/features/AurelLogo';
 import { initials, tierLabel } from '@/lib/utils';
@@ -21,7 +22,9 @@ export function StudentLayout() {
 
   async function handleSignOut() {
     await signOut();
-    navigate('/login');
+    // SHERLOCK R3 fix : `replace` so back-button doesn't navigate to a
+    // cached student dashboard render (info leak window).
+    navigate('/login', { replace: true });
   }
 
   return (
@@ -114,7 +117,22 @@ export function StudentLayout() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 md:py-10">
-        <Outlet />
+        {/* SHERLOCK R3 fix : per-layout ErrorBoundary. Avant, une erreur dans
+            n'importe quel composant route blank l'app entière (header +
+            sidebar disparus). Maintenant l'header reste affiché, le user
+            peut naviguer hors de la page cassée. */}
+        <SentryErrorBoundary
+          fallback={
+            <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+              <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-red-500" />
+              <h2 className="mb-2 text-lg font-semibold text-aurel-ink">Une erreur est survenue sur cette page</h2>
+              <p className="mb-4 text-sm text-slate-600">L'erreur a été signalée. Reviens à ton dashboard ou réessaie.</p>
+              <Link to="/dashboard" className="btn-primary">Retour au dashboard</Link>
+            </div>
+          }
+        >
+          <Outlet />
+        </SentryErrorBoundary>
       </main>
     </div>
   );

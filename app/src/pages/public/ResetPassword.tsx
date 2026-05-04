@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Loader2, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { jwtIsRecoverySession } from '@/lib/jwt';
 import { useToast } from '@/components/ui/Toast';
 import { AurelLogo } from '@/components/features/AurelLogo';
 
@@ -23,32 +24,6 @@ import { AurelLogo } from '@/components/features/AurelLogo';
  *   Le check `amr` survit au reload de la page (même si l'event PASSWORD_RECOVERY
  *   a déjà été consommé avant que le composant ne soit monté).
  */
-
-// Decode JWT payload (no verification — just claims read).
-function decodeJwtPayload(token: string | undefined): Record<string, unknown> | null {
-  if (!token) return null;
-  try {
-    const part = token.split('.')[1];
-    if (!part) return null;
-    const padded = part.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(part.length / 4) * 4, '=');
-    return JSON.parse(atob(padded));
-  } catch {
-    return null;
-  }
-}
-
-// True iff the access_token has `amr` claim including method='recovery'.
-// Supabase ajoute cette claim quand la session est issue d'un reset link.
-function jwtIsRecoverySession(accessToken: string | undefined): boolean {
-  const payload = decodeJwtPayload(accessToken);
-  if (!payload) return false;
-  const amr = payload.amr as Array<{ method?: string } | string> | undefined;
-  if (!Array.isArray(amr)) return false;
-  return amr.some((entry) => {
-    if (typeof entry === 'string') return entry === 'recovery';
-    return entry?.method === 'recovery';
-  });
-}
 
 export function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -122,8 +97,17 @@ export function ResetPasswordPage() {
     // scope:'global' pour révoquer le refresh token côté serveur — empêche
     // un attaquant qui aurait un refresh token volé de rester connecté.
     await supabase.auth.signOut({ scope: 'global' });
-    setTimeout(() => navigate('/login', { replace: true }), 2000);
+    // SHERLOCK R3 fix : `done` flag déclenche un redirect via useEffect
+    // (cf. ci-dessous) plutôt qu'un setTimeout direct ici. Ça évite que
+    // le navigate fire APRÈS un démontage si l'user back-button rapide.
   }
+
+  // Redirect 2s après le done : useEffect garantit clearTimeout au unmount.
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => navigate('/login', { replace: true }), 2000);
+    return () => clearTimeout(t);
+  }, [done, navigate]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">

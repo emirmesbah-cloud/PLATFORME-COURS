@@ -29,30 +29,24 @@ export function LoginPage() {
     const parse = schema.safeParse(values);
     if (!parse.success) return;
     setSubmitting(true);
-    const { data: signInData, error } = await supabase.auth.signInWithPassword(parse.data);
+    const { error } = await supabase.auth.signInWithPassword(parse.data);
     if (error) {
       setSubmitting(false);
       toast.error('Email ou mot de passe incorrect.', 'Connexion impossible');
       return;
     }
 
-    // Vérifie si l'user est admin pour rediriger correctement
-    let isAdmin = false;
-    if (signInData?.user) {
-      const { data: prof } = await supabase
-        .from('profiles')
-        .select('is_admin')
-        .eq('id', signInData.user.id)
-        .maybeSingle();
-      isAdmin = !!prof?.is_admin;
-    }
-
     setSubmitting(false);
 
-    // Priorité au "from" si l'user a tenté d'accéder à une page protégée avant login
+    // SHERLOCK R3 fix : on N'EXÉCUTE PLUS un SELECT is_admin manuel ici.
+    // Avant, ce check bypassait le `isAdmin = profileSource === 'db'` gate
+    // de useAuth — un admin avec poisoned cache était routé vers /admin
+    // dès le sign-in, exposant l'URL admin avant la confirmation DB.
+    // Maintenant : on route toujours vers "/" (RootRedirect), qui attend
+    // la confirmation DB du profile et tranche admin/student avec le
+    // isAdmin gated du context. Single source of truth.
     const fromPath = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-    const dest = fromPath || (isAdmin ? '/admin' : '/dashboard');
-    navigate(dest, { replace: true });
+    navigate(fromPath || '/', { replace: true });
   }
 
   return (

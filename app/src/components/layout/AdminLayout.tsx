@@ -2,8 +2,9 @@ import { NavLink, useNavigate, Outlet, Link } from 'react-router-dom';
 import { useState } from 'react';
 import {
   LayoutDashboard, KeyRound, Users, BookOpen, Gift, Menu, X, ArrowLeft, LogOut,
-  TrendingUp, Heart, Mail, Shield,
+  TrendingUp, Heart, Mail, Shield, AlertTriangle,
 } from 'lucide-react';
+import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
 import { AurelLogo } from '@/components/features/AurelLogo';
 import { cn } from '@/lib/utils';
@@ -25,7 +26,7 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
-  async function handleSignOut() { await signOut(); navigate('/login'); }
+  async function handleSignOut() { await signOut(); navigate('/login', { replace: true }); }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -73,7 +74,20 @@ export function AdminLayout() {
             })}
           </nav>
         </aside>
-        <main className="min-w-0 flex-1"><Outlet /></main>
+        <main className="min-w-0 flex-1">
+          <SentryErrorBoundary
+            fallback={
+              <div className="m-6 rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+                <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-red-500" />
+                <h2 className="mb-2 text-lg font-semibold text-aurel-ink">Une erreur est survenue</h2>
+                <p className="mb-4 text-sm text-slate-600">Reviens à la vue globale ou réessaie.</p>
+                <Link to="/admin" className="btn-primary">Vue globale</Link>
+              </div>
+            }
+          >
+            <Outlet />
+          </SentryErrorBoundary>
+        </main>
       </div>
     </div>
   );

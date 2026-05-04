@@ -33,6 +33,52 @@ interface TelegramOptions {
   extra?: Record<string, unknown>;    // contexte ajouté en bullet points
 }
 
+// ============================================================================
+// PII REDACTION (Sherlock R3 fix)
+//
+// Les call sites passaient des emails et codes d'activation bruts (`extra: {
+// email, code, ... }`). Telegram archive les messages côté serveur ; un leak
+// du bot token ou un membre malveillant du chat = leak des codes payants
+// + emails étudiants. On masque côté helper pour que tous les call sites
+// soient automatiquement couverts (DRY + safe-by-default).
+//
+// Stratégie :
+//  - Keys dans REDACT_KEYS : valeur entièrement masquée → `<redacted>`
+//  - Code-shaped (AU-XXXX, AC-XXXX) : masque les chiffres
+//  - Email-shaped : conserve domaine, masque local-part
+//  - Le reste passe tel quel (incluant les UUIDs, qui ne sont pas PII).
+// ============================================================================
+const REDACT_KEYS = new Set(['password', 'token', 'access_token', 'refresh_token']);
+const CODE_RE  = /\b(AU|AC)-\d{4}\b/g;
+const EMAIL_RE = /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g;
+
+function redactString(s: string): string {
+  return s
+    .replace(EMAIL_RE, (m) => {
+      const at = m.indexOf('@');
+      if (at <= 0) return '<email>';
+      const local = m.slice(0, at);
+      const domain = m.slice(at);
+      const head = local.length <= 2 ? local[0] ?? '' : local.slice(0, 2);
+      return `${head}***${domain}`;
+    })
+    .replace(CODE_RE, (m) => `${m.slice(0, 3)}****`);
+}
+
+function redactValue(key: string, val: unknown): unknown {
+  if (REDACT_KEYS.has(key.toLowerCase())) return '<redacted>';
+  if (key.toLowerCase() === 'code' && typeof val === 'string') {
+    // Show prefix only for codes
+    return val.length >= 3 ? `${val.slice(0, 3)}****` : '<code>';
+  }
+  if (typeof val === 'string') return redactString(val);
+  if (typeof val === 'object' && val !== null) {
+    // Stringify then redact — covers nested objects and arrays.
+    try { return redactString(JSON.stringify(val)); } catch { return '<unstringifiable>'; }
+  }
+  return val;
+}
+
 const LEVEL_EMOJI: Record<NonNullable<TelegramOptions['level']>, string> = {
   info:     'ℹ️',
   warning:  '⚠️',
@@ -66,13 +112,16 @@ export async function notifyTelegram(
       lines.push(`Function: \`${escapeMd(opts.function)}\``);
     }
     lines.push('');
-    lines.push(escapeMd(message));
+    // Redact emails and codes from the free-text message body too — many
+    // call sites paste user data into the message.
+    lines.push(escapeMd(redactString(message)));
 
     if (opts.extra && Object.keys(opts.extra).length > 0) {
       lines.push('');
       lines.push('*Context:*');
       for (const [k, v] of Object.entries(opts.extra)) {
-        const val = typeof v === 'string' ? v : JSON.stringify(v);
+        const redacted = redactValue(k, v);
+        const val = typeof redacted === 'string' ? redacted : JSON.stringify(redacted);
         // Truncate long values to keep the message under Telegram's 4096 char limit
         const truncated = val.length > 200 ? val.slice(0, 200) + '…' : val;
         lines.push(`• \`${escapeMd(k)}\`: ${escapeMd(truncated)}`);

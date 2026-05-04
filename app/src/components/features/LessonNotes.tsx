@@ -37,9 +37,13 @@ export function LessonNotes({ lessonId }: { lessonId: string }) {
   }, [isLoading, data]);
 
   // Reset hydration flag when lesson changes
+  // SHERLOCK R3 fix : also reset contentRef so the unmount flush doesn't
+  // overwrite the new lesson's notes with the previous lesson's content
+  // when the component re-mounts mid-flight.
   useEffect(() => {
     didLoadRef.current = false;
     setContent('');
+    contentRef.current = '';
     setStatus('idle');
   }, [lessonId]);
 

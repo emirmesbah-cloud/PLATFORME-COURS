@@ -145,19 +145,37 @@ serve(async (req) => {
 
   if (signInErr || !signInData.session) {
     // Le user est créé mais on n'arrive pas à se logguer : rollback.
-    await admin.auth.admin.deleteUser(newUserId).catch(() => {});
+    // SHERLOCK R3 fix : on capture le résultat du deleteUser au lieu de
+    // .catch(() => {}). Avant, si Supabase retournait 5xx sur deleteUser,
+    // l'erreur était silently swallowed → orphan auth.users sans profile,
+    // sans code redemption → user locked out, support manuel obligatoire.
+    // Maintenant on signale le orphan dans le Telegram → admin sait
+    // qu'il faut delete manuellement.
+    let deleteOk = true;
+    let deleteErr: string | null = null;
+    try {
+      const dr = await admin.auth.admin.deleteUser(newUserId);
+      if (dr.error) { deleteOk = false; deleteErr = dr.error.message; }
+    } catch (e) {
+      deleteOk = false; deleteErr = e instanceof Error ? e.message : String(e);
+    }
     await reportError(signInErr ?? new Error('no session after createUser'), {
       function: 'activate-account',
       user_id: newUserId,
-      extra: { step: 'signInWithPassword' },
+      extra: { step: 'signInWithPassword', delete_ok: deleteOk, delete_err: deleteErr },
     });
-    // CRITICAL : on a créé un user puis échoué à le sign-in → état incohérent
     await notifyTelegram(
-      `Sign-in FAILED right after createUser — code "${code}" rolled back, user must retry.`,
+      `Sign-in FAILED right after createUser. ${deleteOk ? 'Auth user rolled back OK.' : 'ROLLBACK FAILED — orphan auth.users row needs manual cleanup.'}`,
       {
         function: 'activate-account',
         level: 'critical',
-        extra: { email, code, detail: signInErr?.message ?? 'no session' },
+        extra: {
+          email,
+          code,
+          orphan_user_id: deleteOk ? null : newUserId,
+          delete_err: deleteErr,
+          detail: signInErr?.message ?? 'no session',
+        },
       },
     );
     return errorResponse('INTERNAL_ERROR', 500, { detail: signInErr?.message ?? 'no session' });
@@ -178,23 +196,31 @@ serve(async (req) => {
 
   if (rErr || !rData?.ok) {
     // Rollback : on supprime le user qu'on vient de créer.
-    await admin.auth.admin.deleteUser(newUserId).catch(() => {});
+    // SHERLOCK R3 fix : capture deleteUser result (was silently swallowed).
+    let deleteOk = true;
+    let deleteErr: string | null = null;
+    try {
+      const dr = await admin.auth.admin.deleteUser(newUserId);
+      if (dr.error) { deleteOk = false; deleteErr = dr.error.message; }
+    } catch (e) {
+      deleteOk = false; deleteErr = e instanceof Error ? e.message : String(e);
+    }
     await reportError(rErr ?? new Error(rData?.error ?? 'REDEEM_FAILED'), {
       function: 'activate-account',
       user_id: newUserId,
-      extra: { step: 'redeem_activation_code', rpc_error: rData?.error },
+      extra: { step: 'redeem_activation_code', rpc_error: rData?.error, delete_ok: deleteOk, delete_err: deleteErr },
     });
-    // CRITICAL: user a déjà payé son code → si redeem échoue il est dans le vide.
-    // On notifie Telegram immédiatement pour qu'on puisse résoudre à la main.
     await notifyTelegram(
-      `Activation paid but redeem FAILED — user has paid for code "${code}" but didn't get account access. Manual recovery needed.`,
+      `Activation paid but redeem FAILED — manual recovery needed. ${deleteOk ? 'Auth user rolled back OK.' : 'ROLLBACK FAILED — orphan auth.users row.'}`,
       {
         function: 'activate-account',
         level: 'critical',
         extra: {
           email,
           code,
+          orphan_user_id: deleteOk ? null : newUserId,
           rpc_error: rData?.error ?? 'REDEEM_FAILED',
+          delete_err: deleteErr,
           detail: rErr?.message ?? '(no detail)',
         },
       },

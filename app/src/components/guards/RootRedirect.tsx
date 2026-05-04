@@ -20,11 +20,16 @@ export function RootRedirect() {
   useEffect(() => {
     const needsWait = session && (!profile || profileSource !== 'db');
     if (needsWait) {
-      setWaited(false);
+      // SHERLOCK R3 fix : ne re-set PAS waited=false ici. Une fois le
+      // timeout 5s écoulé, on reste en mode "go ahead with what we have"
+      // jusqu'au prochain user.id change. Sinon, profile arrives → waited
+      // flip false → spinner re-flicker → DB confirms → final route.
       const t = setTimeout(() => setWaited(true), 5000);
       return () => clearTimeout(t);
     }
-    setWaited(false);
+    // Pas de needsWait → pas besoin de timer. On reset waited à false
+    // SEULEMENT au logout (session=null) — sinon on garde l'état stable.
+    if (!session) setWaited(false);
   }, [session?.user?.id, profile?.id, profileSource]);
 
   if (isLoading) return <FullPageSpinner />;
