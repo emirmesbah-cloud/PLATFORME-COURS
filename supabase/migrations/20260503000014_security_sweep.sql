@@ -96,17 +96,21 @@ ALTER TABLE lesson_notes
 
 
 -- ----------------------------------------------------------------------------
--- 5. bonus_downloads : rate-limit (1 row max par user/bonus/heure)
---    Évite le log-flood DoS si un client spam le bouton download.
---    Le INSERT échouera silencieusement côté frontend (le toast s'affiche
---    quand même — c'est OK, l'effet "downloaded" reste juste).
+-- 5. bonus_downloads : rate-limit (DEFERRED to follow-up migration).
+--
+--    On voulait un UNIQUE index `date_trunc('hour', downloaded_at)` mais
+--    Postgres refuse : `date_trunc('hour', timestamptz)` est STABLE, pas
+--    IMMUTABLE (dépend implicitement du timezone session). Solutions
+--    propres : trigger BEFORE INSERT qui rejette si un row existe déjà
+--    pour (user, bonus) dans la dernière heure, OU generated column
+--    stockée + index dessus. À faire dans une mig 015 ultérieure.
+--
+--    En attendant, le risque résiduel (log-flood DoS via spam-click) est
+--    mitigé par le rate-limit Cloudflare en amont + le fait que
+--    bonus_downloads est append-only avec une ligne par INSERT (pas un
+--    blow-up exponentiel).
 -- ----------------------------------------------------------------------------
-CREATE UNIQUE INDEX IF NOT EXISTS bonus_downloads_rate_limit_idx
-  ON bonus_downloads (
-    user_id,
-    bonus_resource_id,
-    date_trunc('hour', downloaded_at)
-  );
+-- (vide intentionnellement)
 
 
 -- ----------------------------------------------------------------------------
