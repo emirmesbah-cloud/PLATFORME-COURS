@@ -2,6 +2,7 @@ import { lazy, Suspense, type ComponentType } from 'react';
 import { Navigate, type RouteObject } from 'react-router-dom';
 import { AuthGuard } from '@/components/guards/AuthGuard';
 import { AdminGuard } from '@/components/guards/AdminGuard';
+import { ChunkErrorBoundary } from '@/components/guards/ChunkErrorBoundary';
 import { StudentLayout } from '@/components/layout/StudentLayout';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { FullPageSpinner } from '@/components/ui/Spinner';
@@ -59,8 +60,16 @@ const AdminAudit     = lazyNamed(() => import('@/pages/admin/AdminAudit'),      
 const UnsubscribePage = lazyNamed(() => import('@/pages/public/Unsubscribe'), 'UnsubscribePage');
 
 // Wrapper pour Suspense fallback uniforme sur les routes lazy.
+// SHERLOCK R5 fix : ChunkErrorBoundary capture les ChunkLoadError quand
+// une stale tab essaie de lazy-load un chunk dont le hash a changé après
+// un deploy. Le boundary auto-reload une fois (anti-loop via sessionStorage),
+// puis affiche un CTA "Recharger" si le reload n'a pas suffi.
 function L({ children }: { children: React.ReactNode }) {
-  return <Suspense fallback={<FullPageSpinner label="Chargement…" />}>{children}</Suspense>;
+  return (
+    <ChunkErrorBoundary>
+      <Suspense fallback={<FullPageSpinner label="Chargement…" />}>{children}</Suspense>
+    </ChunkErrorBoundary>
+  );
 }
 
 export const routes: RouteObject[] = [

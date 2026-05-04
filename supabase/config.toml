@@ -81,3 +81,8 @@ verify_jwt = false  # CI smoke — protégé par CRON_SECRET
 [functions.uptimerobot-webhook]
 verify_jwt = false  # webhook externe (UptimeRobot ne peut pas signer un JWT) — protégé par UPTIMEROBOT_WEBHOOK_TOKEN
 
+[functions.admin-purge-user]
+# DOIT rester JWT-required côté gateway. La RPC SQL appelée derrière vérifie
+# en plus is_admin(auth.uid()) — defense en profondeur.
+verify_jwt = true
+

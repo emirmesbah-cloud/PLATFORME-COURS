@@ -154,7 +154,7 @@ export function ResetPasswordPage() {
                     onChange={(e) => setPwd(e.target.value)}
                     required
                     minLength={8}
-                    leftIcon={<Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />}
+                    leftIcon={<Lock className="h-4 w-4" />}
                   />
                 </div>
                 <div>
@@ -168,7 +168,7 @@ export function ResetPasswordPage() {
                     onChange={(e) => setConfirm(e.target.value)}
                     required
                     minLength={8}
-                    leftIcon={<Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />}
+                    leftIcon={<Lock className="h-4 w-4" />}
                   />
                 </div>
                 <button type="submit" disabled={submitting} className="btn-primary btn-lg btn-block">

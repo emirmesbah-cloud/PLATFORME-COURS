@@ -83,7 +83,7 @@ export function LoginPage() {
                 autoComplete="current-password"
                 className="input pl-10"
                 placeholder="••••••••"
-                leftIcon={<Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />}
+                leftIcon={<Lock className="h-4 w-4" />}
                 {...register('password')}
               />
               {errors.password && <p className="field-error">{errors.password.message}</p>}

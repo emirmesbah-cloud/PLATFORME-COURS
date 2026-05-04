@@ -52,9 +52,9 @@ export function UnsubscribePage() {
           ) : status === 'done' ? (
             <>
               <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-green-600" />
-              <h1 className="mb-2 text-xl font-bold text-aurel-ink">Tu es désinscrit·e</h1>
+              <h1 className="mb-2 text-xl font-bold text-aurel-ink">Désinscription enregistrée</h1>
               <p className="mb-6 text-sm text-slate-600">
-                Tu ne recevras plus d'emails de relance. Les emails essentiels (compte créé, certificat émis) restent envoyés. Tu peux te ré-inscrire en répondant à un email Aurel.
+                Si tu étais inscrit·e aux emails de relance, tu n'en recevras plus. Les emails essentiels (compte créé, certificat émis) restent envoyés. Tu peux te ré-inscrire en répondant à un email Aurel.
               </p>
               <Link to="/login" className="btn-primary btn-block">Retour à la connexion</Link>
             </>
