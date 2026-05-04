@@ -40,10 +40,17 @@ serve(async (req) => {
   // 1. Find inactive users
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
 
+  // SHERLOCK R3 + GDPR : skip users qui ont opt-out des emails marketing.
+  // `email_opt_out_marketing=TRUE` est défini quand l'user clique sur le
+  // lien /unsubscribe?token=... dans n'importe quel mail précédent.
+  // On select aussi `email_opt_out_token` qui est passé comme variable
+  // dans l'email pour permettre le 1-click-unsubscribe.
   const { data: candidates, error: candErr } = await admin
     .from('profiles')
-    .select('id, email, first_name, last_login_at, activated_at')
+    .select('id, email, first_name, last_login_at, activated_at, email_opt_out_token, email_opt_out_marketing, revoked_at')
     .eq('is_admin', false)
+    .eq('email_opt_out_marketing', false)
+    .is('revoked_at', null)
     .lt('activated_at', sevenDaysAgo)
     .or(`last_login_at.is.null,last_login_at.lt.${sevenDaysAgo}`);
 
@@ -130,6 +137,9 @@ serve(async (req) => {
             percentage_complete: pct,
             next_lesson_number: nextLessonNumber,
             next_lesson_title: nextLessonTitle,
+            // GDPR : 1-click unsubscribe link, token-gated public RPC.
+            unsubscribe_url:
+              `https://app.aurel-academy.com/unsubscribe?token=${u.email_opt_out_token}`,
           },
         }),
       });

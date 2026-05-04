@@ -198,7 +198,7 @@ ${codes.map((c) => `• ${c}`).join('\n')}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input className="input w-44 pl-9" placeholder="Rechercher AU-..." value={search} onChange={(e) => setSearch(e.target.value)} />
+              <input className="input w-44 pl-9" placeholder="Rechercher AU-… / AC-…" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <select value={filterTier} onChange={(e) => setFilterTier(e.target.value as 'all' | Tier)} className="input w-36">
               <option value="all">Tous tiers</option>

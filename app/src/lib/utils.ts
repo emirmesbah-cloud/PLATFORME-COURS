@@ -62,7 +62,11 @@ export function initials(firstName?: string | null, lastName?: string | null): s
   return ((a[0] || '') + (b[0] || '')).toUpperCase() || '?';
 }
 
-export const ACTIVATION_CODE_REGEX = /^(AU|AC)-\d{4}$/;
+// SHERLOCK R3 fix : on accepte les 2 formats pendant la transition.
+//   - Legacy 4-digit  : AU-1234 / AC-5678 (générés avant mig 017)
+//   - New 6-char alphanum (no I/L/O/0/1) : AU-X3K7M9 / AC-PQR2T8
+// Une fois tous les codes legacy redeem'és, on pourra durcir à 6-char only.
+export const ACTIVATION_CODE_REGEX = /^(AU|AC)-(?:\d{4}|[A-HJ-NP-Z2-9]{6})$/;
 
 // WhatsApp : accepte 2 formats côté input:
 //  1. Format algérien local : "0555290826" (commence par 0, 10 chiffres total)

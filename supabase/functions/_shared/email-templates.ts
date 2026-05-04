@@ -42,7 +42,12 @@ function esc(v: unknown): string {
 }
 
 function shell(content: string, vars: TemplateVars = {}): string {
-  const unsub = vars.unsubscribe_url ?? `${vars.app_url ?? APP_URL_DEFAULT}/profil`;
+  // SHERLOCK R3 / GDPR : `unsubscribe_url` est passé par check-inactive-users
+  // (et tout futur sender d'emails marketing) avec un token unique par user.
+  // Fallback /profil pour les emails transactionnels (welcome, certificat —
+  // pas de droit de désinscription pour ces types). On ESCAPE l'URL au cas
+  // où elle viendrait d'un input non sanitized.
+  const unsub = esc(vars.unsubscribe_url ?? `${vars.app_url ?? APP_URL_DEFAULT}/profil`);
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -62,7 +67,7 @@ function shell(content: string, vars: TemplateVars = {}): string {
         </td></tr>
         <tr><td style="padding:32px;color:${INK};font-size:15px;">${content}</td></tr>
         <tr><td style="background:#F8FAFC;padding:18px 32px;text-align:center;color:#94A3B8;font-size:11px;border-top:1px solid #E2E8F0;">
-          Aurel Academy · <a href="${WHATSAPP_URL_DEFAULT}" style="color:#94A3B8;">WhatsApp +213 555 290 826</a> · <a href="${unsub}" style="color:#94A3B8;">Préférences</a>
+          Aurel Academy · <a href="${WHATSAPP_URL_DEFAULT}" style="color:#94A3B8;">WhatsApp +213 555 290 826</a> · <a href="${unsub}" style="color:#94A3B8;">Se désinscrire</a>
         </td></tr>
       </table>
     </td></tr>

@@ -10,7 +10,7 @@ import { AurelLogo } from '@/components/features/AurelLogo';
 import { ACTIVATION_CODE_REGEX, WHATSAPP_REGEX, normalizeWhatsapp } from '@/lib/utils';
 
 const schema = z.object({
-  code: z.string().regex(ACTIVATION_CODE_REGEX, 'Format attendu : AU-XXXX ou AC-XXXX'),
+  code: z.string().regex(ACTIVATION_CODE_REGEX, 'Format attendu : AU-XXXXXX ou AC-XXXXXX (6 caractères)'),
   email: z.string().email('Email invalide'),
   password: z.string().min(8, 'Au moins 8 caractères'),
   confirm_password: z.string().min(8),
@@ -198,7 +198,7 @@ export function ActivatePage() {
           <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 gap-4 md:grid-cols-2" noValidate>
             <div className="md:col-span-2">
               <label className="label" htmlFor="code">Code d'activation</label>
-              <input id="code" placeholder="AU-XXXX ou AC-XXXX" className="input font-mono uppercase tracking-widest" {...register('code')} />
+              <input id="code" placeholder="AU-XXXXXX ou AC-XXXXXX" className="input font-mono uppercase tracking-widest" {...register('code')} />
               {errors.code && <p className="field-error">{errors.code.message}</p>}
             </div>
 
