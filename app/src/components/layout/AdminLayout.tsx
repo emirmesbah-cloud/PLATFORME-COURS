@@ -29,8 +29,9 @@ export function AdminLayout() {
   async function handleSignOut() { await signOut(); navigate('/login', { replace: true }); }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="sticky top-0 z-30 border-b border-aurel-teal bg-aurel-dark text-white">
+    // SHERLOCK R6 fix : safe-area top + bottom for iOS notch + home-bar.
+    <div className="min-h-screen bg-slate-50 pb-[env(safe-area-inset-bottom)]">
+      <header className="sticky top-0 z-30 border-b border-aurel-teal bg-aurel-dark text-white pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <Link to="/dashboard" className="flex items-center gap-1 text-xs text-slate-300 hover:text-white">
@@ -45,8 +46,15 @@ export function AdminLayout() {
             <button onClick={handleSignOut} className="hidden md:flex btn-ghost text-white hover:bg-white/10">
               <LogOut className="h-4 w-4" />
             </button>
-            <button className="rounded p-2 hover:bg-white/10 md:hidden" onClick={() => setOpen(!open)}>
-              {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {/* SHERLOCK R6 fix : aria-label + aria-expanded + 44px min target. */}
+            <button
+              type="button"
+              aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
+              aria-expanded={open}
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-2 hover:bg-white/10 md:hidden"
+              onClick={() => setOpen(!open)}
+            >
+              {open ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
             </button>
           </div>
         </div>

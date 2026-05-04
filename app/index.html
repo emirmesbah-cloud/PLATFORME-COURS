@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#F97316" />
+    <!-- SHERLOCK R6 fix : disable iOS auto-linking of phone numbers in body
+         text. Aurel can show numbers in profiles/admin views — without this
+         they'd become unstyled blue tap-to-call links. -->
+    <meta name="format-detection" content="telephone=no" />
     <title>Aurel Academy — Espace étudiant</title>
     <meta name="description" content="Plateforme étudiant Aurel Academy : Deutsch für Pflegekräfte." />
     <meta name="robots" content="noindex,nofollow" />
@@ -15,7 +19,10 @@
 
     <!-- iOS Safari : standalone mode + status bar -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- SHERLOCK R6 fix : black-translucent gives white status-bar text over
+         the orange app theme (vs default's black on translucent white which
+         was unreadable). Layout must reserve env(safe-area-inset-top). -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Aurel Academy" />
 
     <!-- Android Chrome : mobile web app -->

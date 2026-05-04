@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -41,6 +41,8 @@ export function ActivatePage() {
   const navigate = useNavigate();
   const toast = useToast();
   const [submitting, setSubmitting] = useState(false);
+  // SHERLOCK R6 fix : double-submit ref guard (sync) for slow 3G.
+  const submittingRef = useRef(false);
   // Sherlock fix : was missing `resolver`, so `errors` stayed empty and all
   // inline {errors.X && ...} messages never rendered. Users only saw a single
   // generic toast on submit. Now per-field validation works.
@@ -50,6 +52,7 @@ export function ActivatePage() {
   });
 
   async function onSubmit(raw: FormValues) {
+    if (submittingRef.current) return;
     const parsed = schema.safeParse(raw);
     if (!parsed.success) {
       const firstErr = parsed.error.errors[0];
@@ -60,6 +63,7 @@ export function ActivatePage() {
       return;
     }
 
+    submittingRef.current = true;
     setSubmitting(true);
     const email = parsed.data.email.trim().toLowerCase();
     const password = parsed.data.password;
@@ -170,6 +174,7 @@ export function ActivatePage() {
       }
       toast.error('Erreur réseau. Vérifie ta connexion.', 'Activation impossible');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -199,24 +204,24 @@ export function ActivatePage() {
           <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 gap-4 md:grid-cols-2" noValidate>
             <div className="md:col-span-2">
               <label className="label" htmlFor="code">Code d'activation</label>
-              <input id="code" placeholder="AU-XXXXXX ou AC-XXXXXX" className="input font-mono uppercase tracking-widest" {...register('code')} />
+              <input id="code" placeholder="AU-XXXXXX ou AC-XXXXXX" autoCapitalize="characters" autoCorrect="off" spellCheck={false} className="input font-mono uppercase tracking-widest" {...register('code')} />
               {errors.code && <p className="field-error">{errors.code.message}</p>}
             </div>
 
             <div>
               <label className="label" htmlFor="first_name">Prénom</label>
-              <input id="first_name" className="input" {...register('first_name')} />
+              <input id="first_name" autoComplete="given-name" autoCapitalize="words" className="input" {...register('first_name')} />
               {errors.first_name && <p className="field-error">{errors.first_name.message}</p>}
             </div>
             <div>
               <label className="label" htmlFor="last_name">Nom</label>
-              <input id="last_name" className="input" {...register('last_name')} />
+              <input id="last_name" autoComplete="family-name" autoCapitalize="words" className="input" {...register('last_name')} />
               {errors.last_name && <p className="field-error">{errors.last_name.message}</p>}
             </div>
 
             <div className="md:col-span-2">
               <label className="label" htmlFor="email">Email</label>
-              <input id="email" type="email" autoComplete="email" className="input" placeholder="ton@email.com" {...register('email')} />
+              <input id="email" type="email" autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} className="input" placeholder="ton@email.com" {...register('email')} />
               {errors.email && <p className="field-error">{errors.email.message}</p>}
             </div>
 
@@ -233,7 +238,7 @@ export function ActivatePage() {
 
             <div>
               <label className="label" htmlFor="whatsapp">WhatsApp</label>
-              <input id="whatsapp" className="input" placeholder="0555290826" {...register('whatsapp')} />
+              <input id="whatsapp" type="tel" inputMode="tel" autoComplete="tel" autoCapitalize="none" className="input" placeholder="0555290826" {...register('whatsapp')} />
               {errors.whatsapp && <p className="field-error">{errors.whatsapp.message}</p>}
             </div>
             <div>

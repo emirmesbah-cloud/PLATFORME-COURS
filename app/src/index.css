@@ -31,7 +31,12 @@
   .btn-block { @apply flex w-full; }
 
   .input {
-    @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-aurel-ink placeholder-slate-400 shadow-sm focus:border-aurel-orange focus:outline-none focus:ring-2 focus:ring-aurel-orange/20 disabled:bg-slate-50 disabled:opacity-60;
+    /* SHERLOCK R6 fix : font-size is 16px on mobile (text-base), 14px (text-sm)
+       on >= md screens. iOS Safari auto-zooms inputs whose computed font-size
+       is < 16px on focus — that zoom never restores cleanly without manual
+       pinch-out. text-base on mobile prevents the zoom; we keep text-sm on
+       desktop where the zoom doesn't apply. */
+    @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base md:text-sm text-aurel-ink placeholder-slate-400 shadow-sm focus:border-aurel-orange focus:outline-none focus:ring-2 focus:ring-aurel-orange/20 disabled:bg-slate-50 disabled:opacity-60;
   }
   .label {
     @apply mb-1.5 block text-sm font-medium text-slate-700;

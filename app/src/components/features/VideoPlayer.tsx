@@ -68,7 +68,10 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
     iframe.src =
       `https://player.vdocipher.com/v2/?video=${encodeURIComponent(lesson.vdocipher_video_id)}` +
       `&primaryColor=F97316&watermark=${encodeURIComponent(watermark)}`;
-    iframe.allow = 'encrypted-media';
+    // SHERLOCK R6 fix : iOS Safari needs explicit autoplay/fullscreen/PiP
+    // perms to enter fullscreen on tap. Was just 'encrypted-media' →
+    // tap-to-fullscreen silently failed on iPhone PWA standalone.
+    iframe.allow = 'autoplay; fullscreen; picture-in-picture; encrypted-media';
     iframe.allowFullscreen = true;
     iframe.className = 'h-full w-full border-0';
     containerRef.current.innerHTML = '';

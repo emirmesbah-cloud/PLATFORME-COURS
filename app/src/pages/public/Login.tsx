@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,21 +22,29 @@ export function LoginPage() {
     resolver: zodResolver(schema),
   });
   const [submitting, setSubmitting] = useState(false);
+  // SHERLOCK R6 fix : ref-guard against double-submit on slow 3G.
+  // disabled={submitting} commits async; ref is sync — blocks the second
+  // tap before React schedules the disable. Mirrors Feedback.tsx pattern.
+  const submittingRef = useRef(false);
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
 
   async function onSubmit(values: FormValues) {
+    if (submittingRef.current) return;
     const parse = schema.safeParse(values);
     if (!parse.success) return;
+    submittingRef.current = true;
     setSubmitting(true);
     const { error } = await supabase.auth.signInWithPassword(parse.data);
     if (error) {
+      submittingRef.current = false;
       setSubmitting(false);
       toast.error('Email ou mot de passe incorrect.', 'Connexion impossible');
       return;
     }
 
+    submittingRef.current = false;
     setSubmitting(false);
 
     // SHERLOCK R3 fix : on N'EXÉCUTE PLUS un SELECT is_admin manuel ici.
@@ -68,6 +76,10 @@ export function LoginPage() {
                   id="email"
                   type="email"
                   autoComplete="email"
+                  inputMode="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   className="input pl-10"
                   placeholder="ton@email.com"
                   {...register('email')}

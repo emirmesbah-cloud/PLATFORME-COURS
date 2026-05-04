@@ -28,8 +28,12 @@ export function StudentLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+    // SHERLOCK R6 fix : pb-[env(safe-area-inset-bottom)] reserves space for
+    // the iOS home-bar so bottom buttons aren't hidden in PWA standalone.
+    <div className="min-h-screen bg-slate-50 pb-[env(safe-area-inset-bottom)]">
+      {/* pt-[env(safe-area-inset-top)] keeps header content out of the
+          notch / dynamic island when status-bar-style is black-translucent. */}
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <Link to="/dashboard"><AurelLogo /></Link>
 
@@ -77,8 +81,15 @@ export function StudentLayout() {
                 <LogOut className="h-4 w-4" />
               </button>
             </div>
-            <button className="rounded p-2 text-slate-600 hover:bg-slate-100 md:hidden" onClick={() => setOpen(!open)}>
-              {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {/* SHERLOCK R6 fix : aria-label + aria-expanded + 44px min target. */}
+            <button
+              type="button"
+              aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
+              aria-expanded={open}
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-2 text-slate-600 hover:bg-slate-100 md:hidden"
+              onClick={() => setOpen(!open)}
+            >
+              {open ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
             </button>
           </div>
         </div>

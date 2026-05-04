@@ -49,10 +49,9 @@ export const PasswordInput = forwardRef<HTMLInputElement, Props>(
         <input
           ref={ref}
           type={show ? 'text' : 'password'}
-          // pr-10 garantit que le toggle n'overlap pas le texte saisi sur
-          // les passwords longs. cn() respecte la dernière classe (Tailwind
-          // avec twMerge dans cn → pr-10 wins même si className contient pr-X).
-          className={cn(className, 'pr-10')}
+          // pr-12 (48px) reserves space for the 44×44 toggle button at
+          // right-1. cn() uses twMerge → pr-12 wins over any pr-* in className.
+          className={cn(className, 'pr-12')}
           {...rest}
         />
         <button
@@ -60,12 +59,16 @@ export const PasswordInput = forwardRef<HTMLInputElement, Props>(
           onClick={() => setShow(!show)}
           aria-label={show ? hideLabel : showLabel}
           aria-pressed={show}
-          // Tabbable (default tabIndex). Keyboard users CAN reach the toggle.
-          // Trade-off : tab order is Pwd → Toggle → Submit. Standard pattern,
-          // users expect it. Replaces R4's tabIndex={-1} which was inaccessible.
-          className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded p-1 text-slate-400 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aurel-orange"
+          // SHERLOCK R6 fix : touch target 44×44 px (Apple HIG / WCAG 2.5.5).
+          // Was p-1 + h-4 w-4 = ~24×24 px → easy mis-tap on mobile.
+          // Now p-3 with same icon = 40×40, plus min-w/h-[44px] guarantee.
+          //
+          // R6 fix : drop hover-only :hover state for active:/focus-visible:
+          // — on mobile, :hover sticks until next tap elsewhere ("phantom
+          // hover" bug). active: + focus-visible: cover keyboard + touch.
+          className="absolute right-1 top-1/2 -translate-y-1/2 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-3 text-slate-400 active:text-slate-700 focus-visible:text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aurel-orange md:hover:text-slate-700"
         >
-          {show ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+          {show ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
         </button>
       </div>
     );

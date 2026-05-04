@@ -73,8 +73,14 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
         {toast.title && <div className="font-semibold text-aurel-ink">{toast.title}</div>}
         <div className="text-slate-700">{toast.message}</div>
       </div>
-      <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-        <X className="h-4 w-4" />
+      {/* SHERLOCK R6 fix : 44×44 touch target + a11y label + drop sticky-hover. */}
+      <button
+        onClick={onClose}
+        type="button"
+        aria-label="Fermer"
+        className="-m-2 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-2 text-slate-400 active:text-slate-600 focus-visible:text-slate-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aurel-orange md:hover:text-slate-600"
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
       </button>
     </div>
   );
