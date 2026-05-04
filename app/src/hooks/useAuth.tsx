@@ -30,6 +30,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -39,11 +40,37 @@ import { supabase } from '@/lib/supabase';
 import { setSentryUser } from '@/lib/sentry';
 import type { Profile } from '@/lib/types';
 
+/**
+ * Where did the current profile come from ?
+ *   - 'none' : pas de profile (pre-login OR signed-out)
+ *   - 'jwt'  : stub construit depuis les claims du JWT (zero-network, pas
+ *              autoritatif — is_admin/tier sont les defaults, pas la vérité)
+ *   - 'cache': lu depuis localStorage (ancien profile DB-confirmé, peut être
+ *              stale jusqu'à 24h)
+ *   - 'db'   : query DB fraîche, autoritative
+ *
+ * SHERLOCK round 2 fix : on expose cet état pour que les guards de sécurité
+ * (AdminGuard, RootRedirect) puissent attendre la confirmation DB avant
+ * d'agir sur is_admin. Avant ce fix, un user qui poisonnait son cache
+ * localStorage (devtools edit) avec is_admin:true voyait l'admin UI render
+ * pendant les 30s du loadProfile background — les RPC admin échouaient
+ * (RLS protège côté DB) mais la structure des routes + erreurs leakaient.
+ */
+type ProfileSource = 'none' | 'jwt' | 'cache' | 'db';
+
 interface AuthContextValue {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
+  /** Source du profile courant. Voir `ProfileSource`. */
+  profileSource: ProfileSource;
   isLoading: boolean;
+  /**
+   * `isAdmin` est CONFIRMED-only : retourne `true` UNIQUEMENT quand le profile
+   * vient de la DB (`profileSource === 'db'`) ET que `is_admin === true`.
+   * Pendant les transitions stub→cache→db, isAdmin reste `false` même si le
+   * cache poisoned dit le contraire. Les consumers UI fail-closed par défaut.
+   */
   isAdmin: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -178,6 +205,7 @@ function clearCachedProfile() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileSource, setProfileSource] = useState<ProfileSource>('none');
   const [isLoading, setIsLoading] = useState(true);
 
   // Refs pour éviter les fuites mémoire et garder la valeur stable dans les callbacks
@@ -198,16 +226,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * — AuthGuard tranche à la fin via son propre timeout 30s.
    */
   const loadProfile = useCallback(async (userId: string): Promise<void> => {
-    // Étape 1a : cache valide → use it immediately
+    // Étape 1a : cache valide → use it immediately. Source = 'cache' (le
+    // is_admin du cache n'est PAS autoritatif tant que la DB n'a pas
+    // confirmé — voir AuthContextValue.isAdmin commentaire).
     const cached = readCachedProfile(userId);
     if (cached) {
       setProfile(cached);
+      setProfileSource('cache');
       setSentryUser({
         id: cached.id, email: cached.email,
         tier: cached.tier, is_admin: cached.is_admin,
       });
     } else {
-      // Étape 1b : pas de cache → stub depuis le JWT courant.
+      // Étape 1b : pas de cache → stub depuis le JWT courant. Source = 'jwt'.
       // Bullet-proof : même sans aucun call réseau, le user a un profile
       // de base affiché. AuthGuard passe vers /dashboard.
       try {
@@ -215,6 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const stub = profileFromJwt(session);
         if (stub && stub.id === userId) {
           setProfile(stub);
+          setProfileSource('jwt');
           setSentryUser({ id: stub.id, email: stub.email, tier: stub.tier, is_admin: stub.is_admin });
         }
       } catch {}
@@ -245,19 +277,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!error) {
         if (data) {
           setProfile(data);
+          setProfileSource('db');
           writeCachedProfile(userId, data);
           setSentryUser({
             id: data.id, email: data.email,
             tier: data.tier, is_admin: data.is_admin,
           });
         } else {
-          // No row : profile inexistant. On clear le cache mais on ne signOut PAS
-          // (AuthGuard décidera côté UI sans tuer la session JWT — ça évite la
-          // boucle activate↔dashboard si la query renvoie null par erreur RLS
-          // transitoire).
-          setProfile(null);
-          clearCachedProfile();
-          setSentryUser(null);
+          // SHERLOCK round 2 fix : on NE clear PAS le cache sur data===null.
+          // Avant : null → setProfile(null) + clearCachedProfile() →
+          // AuthGuard fallback /login → user perd la session sur un simple
+          // hiccup RLS / replication lag. Maintenant on log et on garde
+          // l'état précédent (cache + stub). Si le user n'a vraiment pas
+          // de profile, AuthGuard's 30s timeout l'enverra à /login sans
+          // que le JWT ne soit invalidé.
+          // eslint-disable-next-line no-console
+          console.warn('[Aurel] loadProfile returned null (transient?), keeping previous state');
         }
         return;
       }
@@ -295,6 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await supabase.auth.signOut({ scope: 'global' });
         setSession(null);
         setProfile(null);
+        setProfileSource('none');
         clearCachedProfile();
 
         if (reason === 'kicked') {
@@ -459,11 +495,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               const cached = readCachedProfile(localSession.user.id);
               if (cached) {
                 setProfile(cached);
+                setProfileSource('cache');
                 setSentryUser({ id: cached.id, email: cached.email, tier: cached.tier, is_admin: cached.is_admin });
               } else {
                 const stub = profileFromJwt(localSession);
                 if (stub) {
                   setProfile(stub);
+                  setProfileSource('jwt');
                   setSentryUser({ id: stub.id, email: stub.email, tier: stub.tier, is_admin: stub.is_admin });
                 }
               }
@@ -533,10 +571,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // STUB profile depuis JWT immédiatement (cache hit OR JWT decode)
         // → AuthGuard passe sans attendre la query DB même sur ISP très lent
         const cached = readCachedProfile(newSession.user.id);
-        if (cached) setProfile(cached);
-        else {
+        if (cached) {
+          setProfile(cached);
+          setProfileSource('cache');
+        } else {
           const stub = profileFromJwt(newSession);
-          if (stub) setProfile(stub);
+          if (stub) {
+            setProfile(stub);
+            setProfileSource('jwt');
+          }
         }
         try { subscribeToProfile(newSession.user.id); } catch {}
         try { await loadProfile(newSession.user.id); } catch (e) {
@@ -551,10 +594,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // SAME : stub profile from JWT immediately so dashboard renders
         // without waiting query DB. Critical for first login on slow ISP.
         const cachedSi = readCachedProfile(newSession.user.id);
-        if (cachedSi) setProfile(cachedSi);
-        else {
+        if (cachedSi) {
+          setProfile(cachedSi);
+          setProfileSource('cache');
+        } else {
           const stub = profileFromJwt(newSession);
-          if (stub) setProfile(stub);
+          if (stub) {
+            setProfile(stub);
+            setProfileSource('jwt');
+          }
         }
 
         // RACE FIX : on N'attache PAS subscribeToProfile avant que claim_session
@@ -579,6 +627,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         writeLocalSessionId(null);
         setProfile(null);
+        setProfileSource('none');
         clearCachedProfile();
         setSentryUser(null);
       }
@@ -633,19 +682,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut({ scope: 'global' });
     setSession(null);
     setProfile(null);
+    setProfileSource('none');
     clearCachedProfile();
     setSentryUser(null);
   }, []);
 
-  const value: AuthContextValue = {
+  // SHERLOCK round 2 fix : useMemo le value object pour stabiliser la
+  // référence — sinon chaque parent re-render créait un nouveau objet et
+  // tous les useAuth() consumers re-rendaient (kicked-listener, header,
+  // guards, ...). Ne change pas la sémantique, juste les perf.
+  //
+  // SHERLOCK round 2 fix : isAdmin est confirmed-only — true UNIQUEMENT
+  // quand le profile vient de la DB. Avant, un cache poisoned avec
+  // is_admin:true (devtools edit du localStorage, OU stub depuis JWT
+  // d'un user dont les claims user_metadata seraient compromis) faisait
+  // render l'admin UI pendant 30s avant que la DB ne corrige. Le DB
+  // protégeait les données via RLS, mais la structure des routes admin
+  // + endpoints listés leakaient. Maintenant : fail-closed par défaut,
+  // l'admin UI n'apparaît que sur confirmation DB.
+  const value: AuthContextValue = useMemo(() => ({
     session,
     user: session?.user ?? null,
     profile,
+    profileSource,
     isLoading,
-    isAdmin: !!profile?.is_admin,
+    isAdmin: !!profile?.is_admin && profileSource === 'db',
     refreshProfile,
     signOut,
-  };
+  }), [session, profile, profileSource, isLoading, refreshProfile, signOut]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
