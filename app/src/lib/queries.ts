@@ -1,5 +1,22 @@
 // Centralized React Query keys + queries.
 import { supabase } from './supabase';
+
+// Timeout wrapper for Supabase queries — empêche les fetches qui hang
+// (ISP lent, edge réseau bizarre, Supabase Realtime down) de bloquer
+// le dashboard indéfiniment. Reject = TanStack Query treat as error.
+// On laisse retry: 1 du QueryClient gérer un retry rapide.
+function withQueryTimeout<T>(p: PromiseLike<T>, ms = 10000, label = 'query'): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`[Aurel] ${label} timed out after ${ms}ms (slow network?)`)),
+      ms,
+    );
+    Promise.resolve(p).then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
 import type {
   Lesson, LessonProgress, BonusResource, ActivationCode,
   Profile, ProgressSummary, AdminStats,
@@ -29,10 +46,11 @@ export const queryKeys = {
 
 // ── Lessons ────────────────────────────────────────────────────
 export async function fetchLessons(): Promise<Lesson[]> {
-  const { data, error } = await supabase
-    .from('lessons')
-    .select('*')
-    .order('lesson_number', { ascending: true });
+  const { data, error } = await withQueryTimeout(
+    supabase.from('lessons').select('*').order('lesson_number', { ascending: true }),
+    10000,
+    'fetchLessons',
+  );
   if (error) throw error;
   return data as Lesson[];
 }
@@ -49,26 +67,32 @@ export async function fetchLessonByNumber(n: number): Promise<Lesson | null> {
 
 // ── Bonus ──────────────────────────────────────────────────────
 export async function fetchBonus(): Promise<BonusResource[]> {
-  const { data, error } = await supabase
-    .from('bonus_resources')
-    .select('*')
-    .order('order_index', { ascending: true });
+  const { data, error } = await withQueryTimeout(
+    supabase.from('bonus_resources').select('*').order('order_index', { ascending: true }),
+    10000,
+    'fetchBonus',
+  );
   if (error) throw error;
   return data as BonusResource[];
 }
 
 // ── Progress ───────────────────────────────────────────────────
 export async function fetchUserProgress(userId: string): Promise<LessonProgress[]> {
-  const { data, error } = await supabase
-    .from('lesson_progress')
-    .select('*')
-    .eq('user_id', userId);
+  const { data, error } = await withQueryTimeout(
+    supabase.from('lesson_progress').select('*').eq('user_id', userId),
+    10000,
+    'fetchUserProgress',
+  );
   if (error) throw error;
   return data as LessonProgress[];
 }
 
 export async function fetchProgressSummary(): Promise<ProgressSummary | null> {
-  const { data, error } = await supabase.rpc('get_user_progress_summary');
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('get_user_progress_summary'),
+    10000,
+    'fetchProgressSummary',
+  );
   if (error) throw error;
   if (!data || (data as { ok: boolean }).ok === false) return null;
   return data as ProgressSummary;

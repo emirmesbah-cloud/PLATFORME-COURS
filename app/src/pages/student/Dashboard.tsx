@@ -20,7 +20,16 @@ export function StudentDashboard() {
   const progQ     = useQuery({ queryKey: queryKeys.progress(uid),      queryFn: () => fetchUserProgress(uid), enabled: !!uid });
   const summaryQ  = useQuery({ queryKey: queryKeys.progressSummary(uid), queryFn: fetchProgressSummary,         enabled: !!uid });
 
-  if (lessonsQ.isLoading || bonusQ.isLoading) return <Spinner label="Chargement de ton espace..." />;
+  // SLOW-ISP HARDENING : on ne bloque le render QUE pendant un fetch initial.
+  // Si fetchLessons OU fetchBonus erreur (timeout 10s), on render quand même
+  // avec un état vide + un message de retry. Avant : spinner infini "Chargement
+  // de ton espace..." sur ISP lent → user croit que l'app est cassée.
+  const lessonsLoading = lessonsQ.isLoading && !lessonsQ.isError;
+  const bonusLoading   = bonusQ.isLoading   && !bonusQ.isError;
+  const hasError       = lessonsQ.isError || bonusQ.isError;
+  const showSpinner    = (lessonsLoading || bonusLoading) && !hasError;
+
+  if (showSpinner) return <Spinner label="Chargement de ton espace..." />;
 
   const lessons = lessonsQ.data ?? [];
   const bonus   = bonusQ.data ?? [];
@@ -41,6 +50,28 @@ export function StudentDashboard() {
         </h1>
         <p className="mt-1 text-slate-600">Continue ton apprentissage là où tu t'es arrêté·e.</p>
       </header>
+
+      {/* Banner d'erreur réseau — affiché si une query critique a timeout/échoué */}
+      {hasError && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="flex items-start gap-3">
+            <span className="text-xl leading-none">⚠️</span>
+            <div className="flex-1">
+              <p className="font-semibold">Connexion lente détectée</p>
+              <p className="mt-1 text-amber-800">
+                On n'a pas pu charger toutes tes données (réseau lent ou instable).
+                L'app reste utilisable, mais certaines infos peuvent manquer.
+              </p>
+              <button
+                onClick={() => { lessonsQ.refetch(); bonusQ.refetch(); progQ.refetch(); summaryQ.refetch(); }}
+                className="mt-3 rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                Réessayer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Progression globale */}
       <section className="card-padded">
