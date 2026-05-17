@@ -560,10 +560,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           catch (e) {
             if (!isLockAbortError(e)) console.warn('[Aurel] loadProfile bg error', e);
           }
-          // Side effects non-critiques en parallèle
-          verifyLocalSession().catch((e) => {
-            if (!isLockAbortError(e)) console.warn('[Aurel] verifyLocalSession bg error', e);
-          });
+
+          // SHERLOCK R8 fix (admin refresh = logged out) : on n'appelle PLUS
+          // verifyLocalSession au bootstrap. Ancien comportement :
+          //   - claim_session lors du login pouvait timeout sans persister le
+          //     session_id en localStorage (Supabase EU lent depuis DZ).
+          //   - Au refresh, verifyLocalSession lisait l'ancien session_id de
+          //     localStorage (stale car claim n'avait pas écrit) → DB compare
+          //     vs current → mismatch → forceSignOut('verify_failed').
+          //
+          // Maintenant : bootstrap = trust local. Le single-active-session reste
+          // enforcé par :
+          //   1. Realtime kick instantané quand un autre device claim une session
+          //   2. setInterval verifyLocalSession toutes les 3 min (voir effect ci-dessous)
+          // touch_last_login reste un fire-and-forget pour les analytics.
           supabase.rpc('touch_last_login').then(() => {}, () => {});
         }
       })();
