@@ -116,7 +116,7 @@ export function ActivatePage() {
         const recoverable = ['CODE_ALREADY_USED', 'EMAIL_ALREADY_EXISTS'].includes(data.error);
         if (recoverable && await tryAutoLogin()) {
           toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
-          navigate('/dashboard', { replace: true });
+          window.location.replace('/dashboard');
           return;
         }
         const msg = ERR_MSG[data.error] || 'Erreur inconnue. Contacte Aurel.';
@@ -204,12 +204,22 @@ export function ActivatePage() {
       } catch {}
 
       toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
-      navigate('/dashboard', { replace: true });
+      // SHERLOCK R11 fix : window.location.replace au lieu de navigate().
+      // navigate() est un client-side route change qui ne re-bootstrap PAS useAuth.
+      // useAuth état React = session: null (car setSession est fire-and-forget en R10).
+      // → AuthGuard voit session null → redirect /login → user voit Connexion form
+      //   au lieu du dashboard alors que toast disait "Compte activé".
+      // window.location.replace force un full reload :
+      //   1. App React re-mount
+      //   2. useAuth bootstrap lit localStorage (qu'on a écrit manuellement en R10)
+      //   3. Session hydrate synchrone, AuthGuard pass, /dashboard render.
+      // Timing : ~500ms de white flash, c'est OK pour une activation one-time.
+      window.location.replace('/dashboard');
     } catch (e) {
       // Network error: try auto-login as last resort
       if (await tryAutoLogin()) {
         toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
-        navigate('/dashboard', { replace: true });
+        window.location.replace('/dashboard');
         return;
       }
       toast.error('Erreur réseau. Vérifie ta connexion.', 'Activation impossible');
