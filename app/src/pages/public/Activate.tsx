@@ -130,11 +130,20 @@ export function ActivatePage() {
         refresh_token: data.session.refresh_token,
       });
 
-      // MAJ diplôme (optionnel — le profile est déjà créé par l'edge function)
-      await supabase
+      // MAJ diplôme — FIRE AND FORGET (SHERLOCK R9).
+      // Avant : await sur cette update bloquait le navigate('/dashboard')
+      // jusqu'à 30s+ sur ISP lent. User restait sur "Activer mon compte"
+      // avec spinner alors que l'activation avait DÉJÀ réussi côté serveur.
+      // Maintenant : le diplôme s'update en background. Si ça fail, le user
+      // peut le changer dans /profil. Le profile est déjà créé avec un
+      // default par l'edge function.
+      supabase
         .from('profiles')
         .update({ diplome_algerien: parsed.data.diplome_algerien })
-        .eq('id', data.user.id);
+        .eq('id', data.user.id)
+        .then(({ error }) => {
+          if (error) console.warn('[Aurel] diplome update failed (non-blocking):', error.message);
+        }, (e) => console.warn('[Aurel] diplome update threw (non-blocking):', e?.message ?? e));
 
       // Pre-fill profile cache (port from Naim) : sur ISP lent, le cache
       // localStorage permet à AuthGuard de passer immédiatement vers
