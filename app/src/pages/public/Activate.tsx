@@ -124,19 +124,50 @@ export function ActivatePage() {
         return;
       }
 
-      // Pose la session côté client
-      await supabase.auth.setSession({
+      // SHERLOCK R10 fix — TOTALEMENT non-bloquant.
+      // Bug : sur ISP lent, soit `await supabase.auth.setSession()` soit le
+      // SIGNED_IN handler interne (qui appelle claim_session RPC) hang 15-30s,
+      // bloquant le navigate vers /dashboard. User stuck sur "Activer mon
+      // compte" alors que tout a réussi côté serveur (auth.users + profile
+      // créés, code redeemed, welcome email envoyé).
+      //
+      // Fix : on stocke MANUELLEMENT les tokens dans localStorage au format
+      // attendu par supabase-js (clé 'aurel-academy-auth'). useAuth bootstrap
+      // les hydratera au prochain render. setSession() est fired in background
+      // pour activer les handlers Supabase officiels — mais on navigate AVANT
+      // qu'il complete. Le diplôme update suit le même pattern.
+      try {
+        const sessionPayload = {
+          currentSession: {
+            access_token:  data.session.access_token,
+            refresh_token: data.session.refresh_token,
+            expires_at:    data.session.expires_at,
+            expires_in:    data.session.expires_in,
+            token_type:    data.session.token_type ?? 'bearer',
+            user: data.user ? {
+              id:    data.user.id,
+              email: data.user.email ?? email,
+              user_metadata: {
+                first_name: parsed.data.first_name.trim(),
+                last_name:  parsed.data.last_name.trim(),
+                whatsapp:   normalizeWhatsapp(parsed.data.whatsapp.trim()),
+              },
+            } : undefined,
+          },
+          expiresAt: data.session.expires_at,
+        };
+        localStorage.setItem('aurel-academy-auth', JSON.stringify(sessionPayload));
+      } catch (e) {
+        console.warn('[Aurel] manual session storage failed:', e);
+      }
+
+      // Fire setSession in background — non-blocking
+      supabase.auth.setSession({
         access_token:  data.session.access_token,
         refresh_token: data.session.refresh_token,
-      });
+      }).then(() => {}, (e) => console.warn('[Aurel] setSession bg failed (non-blocking):', e?.message ?? e));
 
-      // MAJ diplôme — FIRE AND FORGET (SHERLOCK R9).
-      // Avant : await sur cette update bloquait le navigate('/dashboard')
-      // jusqu'à 30s+ sur ISP lent. User restait sur "Activer mon compte"
-      // avec spinner alors que l'activation avait DÉJÀ réussi côté serveur.
-      // Maintenant : le diplôme s'update en background. Si ça fail, le user
-      // peut le changer dans /profil. Le profile est déjà créé avec un
-      // default par l'edge function.
+      // Fire diplôme update in background — non-blocking
       supabase
         .from('profiles')
         .update({ diplome_algerien: parsed.data.diplome_algerien })
