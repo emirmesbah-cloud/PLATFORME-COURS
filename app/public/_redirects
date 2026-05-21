@@ -1,0 +1,6 @@
+# SHERLOCK R13 — B5: deny access to bundler sourcemaps in production.
+# Sourcemaps can be useful for Sentry, but should not be public on the CDN.
+/assets/*.map  /404  404
+
+# SPA fallback — last rule, lowest priority.
+/*  /index.html  200

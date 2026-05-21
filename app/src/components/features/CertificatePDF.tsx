@@ -1,4 +1,5 @@
-import { Document, Page, Text, View, StyleSheet, Svg, Circle, Path, Image } from '@react-pdf/renderer';
+// SHERLOCK R13 — B12: dropped unused Svg/Circle/Path/Image imports.
+import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Certificate } from '@/lib/types';
 
 // PDF certificate (A4 landscape, brand colors).

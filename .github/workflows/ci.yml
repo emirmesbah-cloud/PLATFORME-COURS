@@ -39,11 +39,12 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps --no-audit --no-fund
 
-      # TypeScript check non bloquant (esbuild/Vite ne fait pas de typecheck au build,
-      # donc des erreurs TS ne cassent pas la prod). Visible dans les logs.
-      - name: TypeScript check (non blocking)
+      # SHERLOCK R13 — C2: typecheck is BLOCKING. esbuild/Vite doesn't run tsc
+      # at build time, so without this step a "any" creep or a missing prop
+      # ships to prod silently. If a TS error lands in main, the deploy stops
+      # here instead of after Cloudflare has already swapped the bundle.
+      - name: TypeScript check
         run: npm run lint
-        continue-on-error: true
 
       - name: Build
         env:

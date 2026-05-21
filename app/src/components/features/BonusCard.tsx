@@ -18,13 +18,11 @@ export function BonusCard({ bonus }: { bonus: BonusResource }) {
     if (!user) return;
     setDownloading(true);
 
-    // SHERLOCK FIX : on ouvre la fenêtre IMMÉDIATEMENT (synchrone vis-à-vis
-    // du clic user) — sinon Safari et certains popup-blockers la bloquent
-    // car l'open arrive après un await. On charge l'URL signée dans la
-    // fenêtre fraîchement ouverte une fois prête. Si l'URL n'arrive pas
-    // (erreur), on close la fenêtre.
-    const popup = window.open('', '_blank', 'noopener,noreferrer');
-
+    // SHERLOCK R13 — B2: window.open('', '_blank') returns null on modern
+    // Chrome even from a sync click. Use a temporary anchor instead: the
+    // browser handles the navigation just like a native link click, no
+    // popup-blocker false positives, and no fallback that would nuke the
+    // current SPA route via window.location.href.
     try {
       const signed = await getBonusSignedUrl(bonus);
       if (!signed) throw new Error('No signed URL');
@@ -32,15 +30,18 @@ export function BonusCard({ bonus }: { bonus: BonusResource }) {
       // pour l'écriture en DB. Si le INSERT échoue (rate-limit unique idx
       // de mig 014), pas grave — l'effet UX reste juste.
       logBonusDownload(bonus.id, user.id).catch(() => {});
-      if (popup) {
-        popup.location.href = signed;
-      } else {
-        // Popup blocker absolu → fallback sur navigation in-place
-        window.location.href = signed;
-      }
+
+      const a = document.createElement('a');
+      a.href = signed;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
       toast.success(`Téléchargement de "${bonus.name}" lancé.`);
-    } catch (e) {
-      if (popup) popup.close();
+    } catch {
       toast.error('Erreur lors du téléchargement. Réessaie.', 'Téléchargement impossible');
     } finally {
       setDownloading(false);

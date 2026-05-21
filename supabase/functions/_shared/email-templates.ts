@@ -78,9 +78,14 @@ function shell(content: string, vars: TemplateVars = {}): string {
 
 function btn(href: string, text: string, color: 'orange' | 'teal' = 'orange'): string {
   const bg = color === 'teal' ? TEAL : ORANGE;
+  // SHERLOCK R13 — B7: HTML-escape and protocol-restrict href so call sites
+  // that pass user-controlled URLs (or simply a typo) can't inject
+  // `javascript:` / `data:` / `vbscript:` into the email body. Only http(s)
+  // is accepted; anything else collapses to a safe '#'.
+  const safeHref = /^https?:\/\//i.test(href) ? esc(href) : '#';
   return `<table cellpadding="0" cellspacing="0" border="0" align="center" style="margin:24px auto;">
 <tr><td style="background:${bg};border-radius:8px;">
-<a href="${href}" style="display:inline-block;padding:14px 28px;color:#FFFFFF;text-decoration:none;font-weight:bold;font-size:15px;">${text}</a>
+<a href="${safeHref}" style="display:inline-block;padding:14px 28px;color:#FFFFFF;text-decoration:none;font-weight:bold;font-size:15px;">${esc(text)}</a>
 </td></tr></table>`;
 }
 

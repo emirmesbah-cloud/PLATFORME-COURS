@@ -9,6 +9,20 @@ const BUILD_VERSION = process.env.VITE_BUILD_VERSION
   || process.env.CF_PAGES_COMMIT_SHA
   || new Date().toISOString();
 
+// SHERLOCK R13 — C1: derive the Supabase host from env at build time so the
+// workbox runtimeCaching regex matches the project actually being shipped.
+// Falls back to the historical hardcoded host for local dev / sanity.
+const FALLBACK_SUPABASE_HOST = 'dvrqtqghgaxhhgkoihcj.supabase.co';
+let SUPABASE_HOST = FALLBACK_SUPABASE_HOST;
+try {
+  const u = process.env.VITE_SUPABASE_URL;
+  if (u) SUPABASE_HOST = new URL(u).host;
+} catch {
+  // Bad URL in env — keep fallback rather than break the build.
+}
+// Escape dots for the workbox urlPattern regex.
+const SUPABASE_HOST_RE = SUPABASE_HOST.replace(/\./g, '\\.');
+
 export default defineConfig({
   define: {
     __BUILD_VERSION__: JSON.stringify(BUILD_VERSION),
@@ -142,7 +156,10 @@ export default defineConfig({
           // aux GET seulement et invalider la queue au signOut — non
           // implémenté côté Aurel, donc on désactive carrément.
           {
-            urlPattern: /^https:\/\/dvrqtqghgaxhhgkoihcj\.supabase\.co\/.*/i,
+            // SHERLOCK R13 — C1: pattern built from VITE_SUPABASE_URL (with
+            // fallback to the prod project host) so a staging build doesn't
+            // miss its own Supabase requests.
+            urlPattern: new RegExp(`^https://${SUPABASE_HOST_RE}/.*`, 'i'),
             handler: 'NetworkOnly',
             options: {
               cacheName: 'supabase-api',

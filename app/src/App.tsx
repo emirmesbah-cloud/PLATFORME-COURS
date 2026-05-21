@@ -31,9 +31,13 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <KickedListener />
         <BrowserRouter>
           <AuthProvider>
+            {/* SHERLOCK R13 — B9: KickedListener moved inside BrowserRouter
+                + AuthProvider. Sits in the same context layer as the routes
+                so it can use router hooks if needed and observes auth state
+                directly (the kicked event is dispatched from useAuth). */}
+            <KickedListener />
             <AppRoutes />
             <PWAUpdatePrompt />
           </AuthProvider>

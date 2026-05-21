@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -21,11 +21,36 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // SHERLOCK R13 — C4: track each toast's auto-dismiss timer so manual close
+  // can cancel it (no late removal after the user already dismissed) and
+  // unmount clears all pending timers (no setState-after-unmount).
+  const timersRef = useRef<Map<number, number>>(new Map());
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      timers.forEach((handle) => window.clearTimeout(handle));
+      timers.clear();
+    };
+  }, []);
 
   const toast = useCallback((t: Omit<Toast, 'id'>) => {
     const id = Date.now() + Math.random();
     setToasts((s) => [...s, { ...t, id }]);
-    setTimeout(() => setToasts((s) => s.filter((x) => x.id !== id)), 4500);
+    const handle = window.setTimeout(() => {
+      timersRef.current.delete(id);
+      setToasts((s) => s.filter((x) => x.id !== id));
+    }, 4500);
+    timersRef.current.set(id, handle);
+  }, []);
+
+  const dismiss = useCallback((id: number) => {
+    const handle = timersRef.current.get(id);
+    if (handle !== undefined) {
+      window.clearTimeout(handle);
+      timersRef.current.delete(id);
+    }
+    setToasts((s) => s.filter((x) => x.id !== id));
   }, []);
 
   // SHERLOCK FIX : memoize success/error/info pour éviter que les useEffect
@@ -41,7 +66,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="fixed top-4 right-4 z-[100] flex max-w-sm flex-col gap-2">
         {toasts.map((t) => (
-          <ToastItem key={t.id} toast={t} onClose={() => setToasts((s) => s.filter((x) => x.id !== t.id))} />
+          <ToastItem key={t.id} toast={t} onClose={() => dismiss(t.id)} />
         ))}
       </div>
     </ToastContext.Provider>

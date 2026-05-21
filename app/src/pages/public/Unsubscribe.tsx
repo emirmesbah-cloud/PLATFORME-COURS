@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Loader2, MailMinus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { AurelLogo } from '@/components/features/AurelLogo';
 
@@ -14,37 +14,57 @@ import { AurelLogo } from '@/components/features/AurelLogo';
  * GDPR : 1-clic, sans login. La RPC retourne toujours ok=true (anti-
  * enumeration) — on affiche donc toujours le succès, même si le token
  * ne match aucun user.
+ *
+ * SHERLOCK R13 — B3: require an explicit user click before calling the RPC.
+ * Auto-firing on mount triggers spurious unsubscribes from email anti-virus
+ * / link-prefetchers (Outlook SafeLinks, Gmail prefetch, antispam bots).
  */
 export function UnsubscribePage() {
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
 
-  useEffect(() => {
+  async function confirm() {
     if (!token) { setStatus('error'); return; }
-
-    let cancelled = false;
     setStatus('loading');
-    supabase.rpc('unsubscribe_via_token', { p_token: token }).then(({ data, error }) => {
-      if (cancelled) return;
-      if (error || !data?.ok) {
-        // eslint-disable-next-line no-console
-        console.warn('[Aurel] unsubscribe rpc error', error || data);
-        setStatus('error');
-        return;
-      }
-      setStatus('done');
-    });
-
-    return () => { cancelled = true; };
-  }, [token]);
+    const { data, error } = await supabase.rpc('unsubscribe_via_token', { p_token: token });
+    if (error || !data?.ok) {
+      // eslint-disable-next-line no-console
+      console.warn('[Aurel] unsubscribe rpc error', error || data);
+      setStatus('error');
+      return;
+    }
+    setStatus('done');
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
       <div className="w-full max-w-md">
         <div className="mb-8 flex justify-center"><AurelLogo size="lg" /></div>
         <div className="card-padded text-center">
-          {status === 'loading' || status === 'idle' ? (
+          {!token ? (
+            <>
+              <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-red-500" />
+              <h1 className="mb-2 text-xl font-bold text-aurel-ink">Lien invalide</h1>
+              <p className="mb-6 text-sm text-slate-600">
+                Ce lien de désinscription est incomplet. Réessaie depuis l'email Aurel.
+              </p>
+              <Link to="/login" className="btn-primary btn-block">Retour à la connexion</Link>
+            </>
+          ) : status === 'idle' ? (
+            <>
+              <MailMinus className="mx-auto mb-3 h-10 w-10 text-aurel-orange" />
+              <h1 className="mb-2 text-xl font-bold text-aurel-ink">Se désinscrire des emails</h1>
+              <p className="mb-6 text-sm text-slate-600">
+                Tu vas te désinscrire des emails de relance Aurel. Les emails essentiels
+                (compte créé, certificat émis) continueront d'arriver. Tu peux te
+                ré-inscrire à tout moment en répondant à un email Aurel.
+              </p>
+              <button onClick={confirm} className="btn-primary btn-block">
+                Confirmer la désinscription
+              </button>
+            </>
+          ) : status === 'loading' ? (
             <>
               <Loader2 className="mx-auto mb-3 h-10 w-10 animate-spin text-aurel-orange" />
               <h1 className="text-xl font-bold text-aurel-ink">Désinscription en cours…</h1>

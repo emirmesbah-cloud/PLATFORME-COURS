@@ -8,9 +8,17 @@
 
 declare const __BUILD_VERSION__: string;
 
+// SHERLOCK R13 — B14: when the Service Worker is alive, PWAUpdatePrompt
+// already polls /sw.js every 60s and auto-reloads on a new bundle. Polling
+// /version.json on top of that doubles the network chatter AND races the SW
+// update — both can fire location.reload() within the same second. We keep
+// version-check as the FALLBACK for browsers where the SW is unsupported
+// or blocked (some corporate Safari, FF private mode), and disable it
+// otherwise.
 const CHECK_INTERVAL_MS = 60_000;
 let lastKnownServerVersion: string | null = null;
 let reloading = false;
+let started = false;
 
 async function fetchServerVersion(): Promise<string | null> {
   try {
@@ -48,17 +56,46 @@ async function checkAndReload(): Promise<void> {
 }
 
 export function startVersionCheck(): () => void {
+  // SHERLOCK R13 — B14: idempotency guard + SW-aware short-circuit.
+  // If a SW is registered (PWAUpdatePrompt path), skip the duplicate poll.
+  // We re-check after a small delay because the SW registers asynchronously.
+  if (started) return () => {};
+  started = true;
+
+  const hasSW = typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
+  if (hasSW) {
+    // Wait a beat — if a controller shows up, the SW is alive and will
+    // handle freshness; we stay quiet. Otherwise, fall through and poll.
+    let cancelled = false;
+    const fallbackTimer = window.setTimeout(() => {
+      if (cancelled) return;
+      if (navigator.serviceWorker.controller) return; // SW is handling it
+      armPolling();
+    }, 5000);
+    return () => { cancelled = true; clearTimeout(fallbackTimer); disarm(); };
+  }
+
+  armPolling();
+  return disarm;
+}
+
+let intervalId: number | null = null;
+let onVisibility: (() => void) | null = null;
+let onFocus: (() => void) | null = null;
+
+function armPolling() {
   checkAndReload();
-  const intervalId = setInterval(checkAndReload, CHECK_INTERVAL_MS);
-  const onVisibility = () => {
+  intervalId = window.setInterval(checkAndReload, CHECK_INTERVAL_MS);
+  onVisibility = () => {
     if (document.visibilityState === 'visible') checkAndReload();
   };
   document.addEventListener('visibilitychange', onVisibility);
-  const onFocus = () => checkAndReload();
+  onFocus = () => checkAndReload();
   window.addEventListener('focus', onFocus);
-  return () => {
-    clearInterval(intervalId);
-    document.removeEventListener('visibilitychange', onVisibility);
-    window.removeEventListener('focus', onFocus);
-  };
+}
+
+function disarm() {
+  if (intervalId !== null) { clearInterval(intervalId); intervalId = null; }
+  if (onVisibility) { document.removeEventListener('visibilitychange', onVisibility); onVisibility = null; }
+  if (onFocus) { window.removeEventListener('focus', onFocus); onFocus = null; }
 }

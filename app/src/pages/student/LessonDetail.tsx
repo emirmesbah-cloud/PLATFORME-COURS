@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, ArrowLeft, Clock, CheckCircle2 } from 'lucide-react';
 import { fetchLessons, fetchLessonByNumber, fetchUserProgress, queryKeys } from '@/lib/queries';
@@ -18,9 +18,16 @@ export function StudentLessonDetail() {
   const uid = user?.id ?? '';
   const [tab, setTab] = useState<typeof TABS[number]>('Objectifs');
 
-  const lessonQ  = useQuery({ queryKey: queryKeys.lesson(n),       queryFn: () => fetchLessonByNumber(n) });
+  // SHERLOCK R13 — B4: validate lesson number BEFORE firing queries.
+  // Garde-fou contre `/lecons/abc`, `/lecons/-1`, `/lecons/9999` etc.
+  const lessonValid = Number.isInteger(n) && n >= 1 && n <= 100;
+
+  const lessonQ  = useQuery({ queryKey: queryKeys.lesson(n),       queryFn: () => fetchLessonByNumber(n), enabled: lessonValid });
   const lessonsQ = useQuery({ queryKey: queryKeys.lessons,         queryFn: fetchLessons });
   const progQ    = useQuery({ queryKey: queryKeys.progress(uid),   queryFn: () => fetchUserProgress(uid), enabled: !!uid });
+
+  // SHERLOCK R13 — B4: out-of-range / non-integer lesson number → /lecons.
+  if (!lessonValid) return <Navigate to="/lecons" replace />;
 
   if (lessonQ.isLoading || lessonsQ.isLoading) return <Spinner label="Chargement..." />;
   const lesson = lessonQ.data;

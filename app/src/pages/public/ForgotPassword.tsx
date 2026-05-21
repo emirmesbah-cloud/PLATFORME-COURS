@@ -73,11 +73,30 @@ export function ForgotPasswordPage() {
     // dans tous les cas.
     writeCooldownEndsAt(Date.now() + COOLDOWN_SECONDS * 1000);
 
+    // SHERLOCK R13 — B8: distinguer "vraie panne serveur / rate-limit Resend"
+    // (toast + on n'affiche pas le faux succès) de "email non trouvé"
+    // (silently true, anti-enumeration). Supabase ne révèle pas l'existence
+    // d'un email — donc `error != null` ici signale un VRAI problème
+    // (network, 429, 500, captcha, smtp down). On ne ment pas à l'user dans
+    // ces cas-là.
     if (error) {
-      // Log silencieusement, mais affiche le message neutre "si compte existe"
-      // pour ne pas leak l'existence de l'email.
       // eslint-disable-next-line no-console
       console.warn('[Aurel] reset-password error', error);
+      const status = (error as { status?: number }).status ?? 0;
+      const msg = (error.message ?? '').toLowerCase();
+      const isRateLimited = status === 429 || msg.includes('rate') || msg.includes('limit');
+      const isServer = status >= 500 || msg.includes('network') || msg.includes('failed to fetch');
+      if (isRateLimited || isServer) {
+        toast.error(
+          isRateLimited
+            ? 'Trop de tentatives. Réessaie dans quelques minutes.'
+            : 'Service indisponible. Réessaie dans quelques instants.',
+          'Envoi impossible',
+        );
+        setSent(false);
+        return;
+      }
+      // Autre erreur (validation, etc.) — on reste sur le message neutre.
     }
     setSent(true);
   }

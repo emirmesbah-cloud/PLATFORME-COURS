@@ -18,7 +18,9 @@ export function AdminStudents() {
 
   function csvEscape(val: unknown): string {
     if (val === null || val === undefined) return '';
-    const s = String(val);
+    let s = String(val);
+    // SHERLOCK R13 — B1: neutralize CSV injection (formula-like leading chars).
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
     if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
     return s;
   }

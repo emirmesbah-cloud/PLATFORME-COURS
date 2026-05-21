@@ -55,9 +55,30 @@ function BonusRow({ bonus, onTogglePublished, onUploaded }: {
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // SHERLOCK R13 — B13: client-side validation (size + extension) before
+    // hitting Supabase storage. Server-side rules still apply (RLS + bucket
+    // limits) — this just gives instant feedback and stops obviously bad
+    // uploads from wasting bandwidth.
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (!['docx', 'pdf'].includes(ext)) {
+      toast.error('Format invalide. Seuls .docx et .pdf sont acceptés.');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 25_000_000) {
+      toast.error('Fichier trop volumineux (max 25 MB).');
+      e.target.value = '';
+      return;
+    }
+
     setUploading(true);
     try {
-      const path = `bonus-${bonus.order_index}-${Date.now()}.${(file.name.split('.').pop() || 'docx').toLowerCase()}`;
+      // SHERLOCK R13 — C5: random suffix via crypto.randomUUID() instead of
+      // Date.now(). Date.now() collides under rapid double-upload from
+      // distinct admin tabs and is also guessable, which matters slightly
+      // because the bucket is private but signed URLs are bearer-style.
+      const path = `bonus-${bonus.order_index}-${crypto.randomUUID()}.${ext}`;
       const { error } = await supabase.storage.from('bonus-resources').upload(path, file, { upsert: true, contentType: file.type });
       if (error) throw error;
       await onUploaded(path);

@@ -49,7 +49,10 @@ interface TelegramOptions {
 //  - Le reste passe tel quel (incluant les UUIDs, qui ne sont pas PII).
 // ============================================================================
 const REDACT_KEYS = new Set(['password', 'token', 'access_token', 'refresh_token']);
-const CODE_RE  = /\b(AU|AC)-\d{4}\b/g;
+// SHERLOCK R13 — B6: post-migration 017, codes use the 6-char Crockford-style
+// alphabet (no I, L, O, 0, 1) in addition to the legacy 4-digit codes. Cover
+// both shapes so redaction doesn't silently leak the new keyspace.
+const CODE_RE  = /\b(AU|AC)-(?:\d{4}|[A-HJ-NP-Z2-9]{6})\b/gi;
 const EMAIL_RE = /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g;
 
 function redactString(s: string): string {

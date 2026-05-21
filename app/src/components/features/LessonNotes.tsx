@@ -15,6 +15,11 @@ export function LessonNotes({ lessonId }: { lessonId: string }) {
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const debounceRef = useRef<number | null>(null);
   const didLoadRef = useRef(false);
+  // SHERLOCK R13 — B11: skip setState after unmount to avoid "set state on
+  // unmounted component" warnings + leak of the saved/idle timer if the user
+  // navigates away mid-upsert.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   // SHERLOCK FIX : ref pour donner accès au content courant au cleanup
   // du flush effect SANS lister `content` dans les deps. Avant : `content`
   // était dans les deps de l'effect flush → cleanup re-tournait à chaque
@@ -56,11 +61,13 @@ export function LessonNotes({ lessonId }: { lessonId: string }) {
     debounceRef.current = window.setTimeout(async () => {
       try {
         await upsertLessonNote(uid, lessonId, value);
+        // SHERLOCK R13 — B11: bail if user navigated away mid-flight.
+        if (!mountedRef.current) return;
         qc.invalidateQueries({ queryKey: queryKeys.lessonNote(uid, lessonId) });
         setStatus('saved');
-        setTimeout(() => setStatus('idle'), 2000);
+        setTimeout(() => { if (mountedRef.current) setStatus('idle'); }, 2000);
       } catch {
-        setStatus('idle');
+        if (mountedRef.current) setStatus('idle');
       }
     }, AUTOSAVE_DEBOUNCE_MS);
   }
