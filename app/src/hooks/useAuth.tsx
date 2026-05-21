@@ -208,6 +208,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const realtimeChannelRef = useRef<RealtimeChannel | null>(null);
   const isSigningOutRef = useRef(false);
 
+  // SHERLOCK R12 (BULLETPROOF) — Persist auth forever, until explicit user logout.
+  // Tracks WHO triggered the SIGNED_OUT event :
+  //   true  = user clicked logout button OR realtime kicked us (legitimate)
+  //   false = supabase-js auto-fired SIGNED_OUT (token refresh fail, network hiccup,
+  //          transient 401 from slow Supabase EU from DZ — NOT a real signout)
+  // The SIGNED_OUT handler below checks this ref. If false → ignore event,
+  // keep user logged in. If true → execute cleanup normally.
+  // → User experience : « jamais déco sauf si je clique logout », même quand
+  //   le réseau merde / Supabase rame / le token essaie de se refresh.
+  const intentionalSignOutRef = useRef(false);
+
   /**
    * Charge le profile via SELECT direct sur profiles.
    *
@@ -314,6 +325,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (reason?: 'kicked' | 'verify_failed') => {
       if (isSigningOutRef.current) return;
       isSigningOutRef.current = true;
+      // R12 : mark this signOut as intentional so the SIGNED_OUT handler
+      // actually executes cleanup (vs ignoring spurious supabase-js firings)
+      intentionalSignOutRef.current = true;
       try {
         writeLocalSessionId(null);
         if (realtimeChannelRef.current) {
@@ -648,6 +662,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Refresh JWT silencieux → on touche à rien sauf si le profile manque
         if (!profile) await loadProfile(newSession.user.id);
       } else if (event === 'SIGNED_OUT') {
+        // SHERLOCK R12 (BULLETPROOF) — never logout except via explicit user
+        // action. supabase-js fires SIGNED_OUT for many reasons : explicit
+        // signOut call, token refresh failure, transient 401 from slow auth
+        // endpoint, refresh-token revoked, etc.
+        //
+        // We only want to acknowledge SIGNED_OUT when WE triggered it (user
+        // clicked logout button OR realtime kicked another session). Any
+        // other SIGNED_OUT = spurious = ignore = keep user logged in.
+        //
+        // Users on slow DZ → Supabase EU routing had constant random logouts.
+        // No more. The session JWT might be stale but the React state stays.
+        // Next API call may 401, but user can click around or refresh and
+        // supabase-js will auto-refresh. Worst case : a few failed queries
+        // until the next refresh cycle. Never a logout unless intentional.
+        if (!intentionalSignOutRef.current) {
+          console.warn('[Aurel] Ignoring spurious SIGNED_OUT — user stays logged in (R12)');
+          return;
+        }
+        intentionalSignOutRef.current = false;
+
         lastHandledUserId = null;
         if (realtimeChannelRef.current) {
           await supabase.removeChannel(realtimeChannelRef.current);
@@ -675,26 +709,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // SINGLE-SESSION HARDENING — Safety net si Realtime down.
-  // Poll DB toutes les 3 min, mais SEULEMENT quand l'onglet est visible —
-  // user en arrière-plan ne consomme pas DB. Au visibility change (retour
-  // sur l'onglet après une longue absence), on poll immédiatement.
-  useEffect(() => {
-    if (!session?.user) return;
-    const tick = () => {
-      if (document.visibilityState !== 'visible') return;
-      verifyLocalSession().catch(() => {});
-    };
-    const interval = setInterval(tick, 180_000);
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') tick();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [session?.user?.id, verifyLocalSession]);
+  // SHERLOCK R12 (BULLETPROOF) — removed the periodic verifyLocalSession poll.
+  //
+  // Why : the poll was supposed to be a safety net if Realtime is down for
+  // single-active-session enforcement. But on slow DZ → Supabase EU, the
+  // verify_session RPC frequently timed out OR returned ok:false transiently
+  // (replication lag, network blip), causing forceSignOut('verify_failed')
+  // and kicking legitimate users out of their session.
+  //
+  // The Realtime channel (subscribeToProfile) handles real-time kicks when
+  // another device truly claims the session. That's the primary mechanism
+  // and it works fine. The poll was a paranoid backup we don't need.
+  //
+  // Outcome : user stays logged in across slow-ISP refreshes, app sleeps,
+  // tab returns from background, etc. Only explicit logout or genuine
+  // realtime kick can sign them out.
 
   const refreshProfile = useCallback(async () => {
     if (!session?.user) return;
@@ -702,6 +731,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session, loadProfile]);
 
   const signOut = useCallback(async () => {
+    // R12 : mark this signOut as user-initiated so SIGNED_OUT event executes
+    // its cleanup branch. Without this flag, my R12 fix would treat the
+    // event as spurious and refuse to clear state.
+    intentionalSignOutRef.current = true;
+
     // SHERLOCK R7 fix : OPTIMISTIC clear FIRST so the UI flips to logged-out
     // state immediately, regardless of network. Avant : signOut awaited
     // supabase.auth.signOut({scope:'global'}) which calls the server. On
