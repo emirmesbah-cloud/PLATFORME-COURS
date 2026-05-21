@@ -33,10 +33,17 @@ export function StudentCertificate() {
     enabled:  !!uid,
   });
 
-  // Try to issue certificate when user lands on the page (in case trigger missed it)
+  // SHERLOCK R14 — L3 : triedRef pour skip re-trigger. Avant : si l'effect
+  // re-fire (certQ.data devient null après un cache invalidate, ou hot-reload
+  // dev), on rappelle rpcCheckAndIssueCertificate qui touche la DB. Maintenant
+  // on ne tente QU'UNE SEULE FOIS par mount.
+  const triedRef = useRef(false);
   useEffect(() => {
     if (!uid) return;
+    if (triedRef.current) return;
     if (certQ.data) return;
+    if (certQ.isLoading) return; // attendre la query initiale avant de tenter d'issue
+    triedRef.current = true;
     rpcCheckAndIssueCertificate().then((res) => {
       if (res.ok && res.created) {
         certQ.refetch();
@@ -44,7 +51,7 @@ export function StudentCertificate() {
       }
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uid]);
+  }, [uid, certQ.data, certQ.isLoading]);
 
   // SHERLOCK FIX : revoke le blob URL précédent à chaque génération + au
   // unmount. Sans ça chaque "Voir aperçu" / "Télécharger" leakait un blob

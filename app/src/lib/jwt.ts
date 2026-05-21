@@ -16,7 +16,14 @@ export function decodeJwtPayload(token: string | undefined): Record<string, unkn
     const part = token.split('.')[1];
     if (!part) return null;
     const padded = part.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(part.length / 4) * 4, '=');
-    return JSON.parse(atob(padded));
+    // SHERLOCK R14 — H1 : `JSON.parse(atob(...))` casse les noms accentués
+    // (« Aurélien », « Médéa », noms arabes en UTF-8) car atob retourne
+    // une string où chaque caractère porte un byte (ISO-8859-1-ish), pas
+    // un code-point UTF-8. JSON.parse voit alors des séquences mal
+    // décodées et soit throw soit produit des Mojibake (« Ã© » au lieu
+    // de « é »). On passe par TextDecoder qui décode les bytes en UTF-8.
+    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     return null;
   }

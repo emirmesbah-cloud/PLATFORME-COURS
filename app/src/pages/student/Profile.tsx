@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, LogOut, Mail, Calendar, Award } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -15,6 +15,20 @@ export function StudentProfile() {
   const [whatsapp, setWhatsapp] = useState(profile?.whatsapp ?? '');
   const [diplome, setDiplome] = useState(profile?.diplome_algerien ?? 'DEI');
   const [saving, setSaving] = useState(false);
+
+  // SHERLOCK R14 — H3 : sync form state quand le profile arrive de la DB
+  // après le boot. useState n'init qu'au 1er render — si AuthProvider hydrate
+  // profile depuis cache/JWT (donc vide ou stub), puis remplace par les
+  // vraies données DB 200ms plus tard, les inputs restaient sur l'ancienne
+  // valeur. Bug user-visible : "j'ai changé mon nom mais après refresh le
+  // form affiche l'ancien et écraserait le bon si je sauve". On re-sync à
+  // chaque changement effectif d'identité du profile.
+  useEffect(() => {
+    setFirst(profile?.first_name ?? '');
+    setLast(profile?.last_name ?? '');
+    setWhatsapp(profile?.whatsapp ?? '');
+    setDiplome(profile?.diplome_algerien ?? 'DEI');
+  }, [profile?.id, profile?.first_name, profile?.last_name, profile?.whatsapp, profile?.diplome_algerien]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();

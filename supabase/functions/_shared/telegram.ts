@@ -68,6 +68,33 @@ function redactString(s: string): string {
     .replace(CODE_RE, (m) => `${m.slice(0, 3)}****`);
 }
 
+// SHERLOCK R14 — M4 : deep recursive walk pour redact les nested objets.
+// Avant : nested object → JSON.stringify puis redactString → on perdait la
+// structure ET on ratait les keys sensitives (`password`, `token`) inside
+// nested objects parce que REDACT_KEYS s'applique uniquement à la key du
+// niveau racine. Maintenant : on walk récursivement, on check REDACT_KEYS
+// à CHAQUE niveau (case-insensitive), et on garde la structure intacte
+// pour un meilleur diagnostic dans les Telegram alerts.
+function deepRedact(val: unknown): unknown {
+  if (typeof val === 'string') return redactString(val);
+  if (Array.isArray(val)) return val.map(deepRedact);
+  if (val && typeof val === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+      const lk = k.toLowerCase();
+      if (REDACT_KEYS.has(lk)) {
+        out[k] = '<redacted>';
+      } else if (lk === 'code' && typeof v === 'string') {
+        out[k] = v.length >= 3 ? `${v.slice(0, 3)}****` : '<code>';
+      } else {
+        out[k] = deepRedact(v);
+      }
+    }
+    return out;
+  }
+  return val;
+}
+
 function redactValue(key: string, val: unknown): unknown {
   if (REDACT_KEYS.has(key.toLowerCase())) return '<redacted>';
   if (key.toLowerCase() === 'code' && typeof val === 'string') {
@@ -75,9 +102,9 @@ function redactValue(key: string, val: unknown): unknown {
     return val.length >= 3 ? `${val.slice(0, 3)}****` : '<code>';
   }
   if (typeof val === 'string') return redactString(val);
-  if (typeof val === 'object' && val !== null) {
-    // Stringify then redact — covers nested objects and arrays.
-    try { return redactString(JSON.stringify(val)); } catch { return '<unstringifiable>'; }
+  if (val !== null && typeof val === 'object') {
+    // SHERLOCK R14 — M4 : deep redact + stringify (vs flat stringify avant)
+    return JSON.stringify(deepRedact(val));
   }
   return val;
 }

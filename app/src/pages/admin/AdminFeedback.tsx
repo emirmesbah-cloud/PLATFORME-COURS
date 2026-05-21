@@ -6,7 +6,10 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDate, cn } from '@/lib/utils';
 
-type Filter = 'all' | 'pending' | 'approved' | 'public';
+// SHERLOCK R14 — L8 : ajout du filter "critiques" (rating ≤ 2). Sans ça
+// l'admin doit scroller la liste entière pour repérer les avis négatifs
+// qui méritent un follow-up perso WhatsApp.
+type Filter = 'all' | 'pending' | 'approved' | 'public' | 'critiques';
 
 export function AdminFeedback() {
   const qc = useQueryClient();
@@ -20,9 +23,10 @@ export function AdminFeedback() {
 
   const filtered = useMemo(() => {
     const all = data ?? [];
-    if (filter === 'pending')  return all.filter((f) => !f.is_approved);
-    if (filter === 'approved') return all.filter((f) => f.is_approved);
-    if (filter === 'public')   return all.filter((f) => f.is_public && f.is_approved);
+    if (filter === 'pending')   return all.filter((f) => !f.is_approved);
+    if (filter === 'approved')  return all.filter((f) => f.is_approved);
+    if (filter === 'public')    return all.filter((f) => f.is_public && f.is_approved);
+    if (filter === 'critiques') return all.filter((f) => f.rating <= 2);
     return all;
   }, [data, filter]);
 
@@ -48,7 +52,7 @@ export function AdminFeedback() {
       </header>
 
       <div className="flex flex-wrap gap-2">
-        {(['all', 'pending', 'approved', 'public'] as Filter[]).map((f) => (
+        {(['all', 'pending', 'approved', 'public', 'critiques'] as Filter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -61,6 +65,8 @@ export function AdminFeedback() {
             {f === 'pending' && 'En attente'}
             {f === 'approved' && 'Approuvés'}
             {f === 'public' && 'Publics affichables'}
+            {/* SHERLOCK R14 — L8 */}
+            {f === 'critiques' && 'Critiques (1-2★)'}
           </button>
         ))}
       </div>

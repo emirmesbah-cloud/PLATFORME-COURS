@@ -108,10 +108,12 @@ export function StudentDashboard() {
         </section>
       )}
 
-      {/* Liste des 18 leçons */}
+      {/* SHERLOCK R14 — L2 : count dynamique au lieu de "18" hardcoded.
+          Quand on publishera la leçon 19 ou qu'on dépubliera une leçon
+          temporairement, le header reflète la réalité. */}
       <section>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-aurel-ink">Tes 18 leçons</h2>
+          <h2 className="text-xl font-bold text-aurel-ink">Tes {lessons.length} leçons</h2>
           <Link to="/lecons" className="text-sm font-medium text-aurel-teal hover:underline">Tout voir →</Link>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

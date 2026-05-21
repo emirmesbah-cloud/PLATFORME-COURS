@@ -24,6 +24,14 @@ import type {
   AdminAuditLog, AdvancedAnalytics,
 } from './types';
 
+// SHERLOCK R14 — H10 : profile shape côté admin inclut revoked_at + reason
+// (champs DB pas exposés sur le type Profile public). Type local pour les
+// 2 RPCs admin students concernées.
+export interface AdminStudentRow extends Profile {
+  revoked_at: string | null;
+  revoked_reason: string | null;
+}
+
 export const queryKeys = {
   lessons: ['lessons'] as const,
   lesson: (n: number) => ['lessons', n] as const,
@@ -166,14 +174,62 @@ export async function fetchAdminCodes(filters: {
   return data as ActivationCode[];
 }
 
-export async function fetchAllStudents(): Promise<Profile[]> {
-  const { data, error } = await supabase
+// SHERLOCK R14 — H10 : option `includeRevoked` pour permettre à AdminStudents
+// d'afficher (ou pas) les comptes révoqués. Par défaut FALSE : on ne pollue
+// pas la vue par défaut avec des comptes morts. Quand ON, on récupère
+// aussi revoked_at + revoked_reason pour afficher un badge "Révoqué".
+export async function fetchAllStudents(
+  opts: { includeRevoked?: boolean } = {},
+): Promise<AdminStudentRow[]> {
+  let q = supabase
     .from('profiles')
     .select('*')
     .eq('is_admin', false)
     .order('created_at', { ascending: false });
+  if (!opts.includeRevoked) q = q.is('revoked_at', null);
+  const { data, error } = await q;
   if (error) throw error;
-  return data as Profile[];
+  return (data ?? []) as AdminStudentRow[];
+}
+
+// SHERLOCK R14 — H9 : RPC admin_revoke_user(uuid, text). Signature dans
+// migration 016 (sherlock_r3_backend) + 009 (soft_delete). Retourne
+// { ok, error?, already_revoked? }. Idempotent : 2e appel retourne
+// ALREADY_REVOKED sans rollback.
+export async function rpcAdminRevokeUser(userId: string, reason: string)
+: Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data, error } = await supabase.rpc('admin_revoke_user', {
+    p_user_id: userId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  return data as { ok: true } | { ok: false; error: string };
+}
+
+// SHERLOCK R14 — H9 : call edge function admin-purge-user (GDPR Art. 17).
+// La function fait : RPC SQL admin_purge_user + auth.admin.deleteUser via
+// service_role. Le caller doit être admin authentifié — la function vérifie
+// auth.uid() côté SQL.
+export async function callAdminPurgeUser(userId: string, reason?: string)
+: Promise<{ ok: true; anon_email: string } | { ok: false; error: string }> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) return { ok: false, error: 'NOT_AUTHENTICATED' };
+  const url = `${(import.meta as { env: Record<string, string> }).env.VITE_SUPABASE_URL}/functions/v1/admin-purge-user`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+      'apikey': (import.meta as { env: Record<string, string> }).env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ user_id: userId, reason: reason ?? null }),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok || !body?.ok) {
+    return { ok: false, error: body?.error || `HTTP ${r.status}` };
+  }
+  return body;
 }
 
 export async function adminUpdateLesson(

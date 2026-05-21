@@ -19,6 +19,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { notifyTelegram } from '../_shared/telegram.ts';
+import { timingSafeEqual } from '../_shared/security.ts';
 
 const WEBHOOK_TOKEN = Deno.env.get('UPTIMEROBOT_WEBHOOK_TOKEN') ?? '';
 
@@ -49,7 +50,8 @@ serve(async (req) => {
   // Auth: token in query param (UptimeRobot doesn't support custom headers in free tier)
   const url   = new URL(req.url);
   const token = url.searchParams.get('token') ?? '';
-  if (!WEBHOOK_TOKEN || token !== WEBHOOK_TOKEN) {
+  // SHERLOCK R14 — M3 : timing-safe compare (anti side-channel oracle).
+  if (!WEBHOOK_TOKEN || !timingSafeEqual(token, WEBHOOK_TOKEN)) {
     return new Response(JSON.stringify({ ok: false, error: 'UNAUTHORIZED' }), {
       status: 401, headers: { 'Content-Type': 'application/json' },
     });

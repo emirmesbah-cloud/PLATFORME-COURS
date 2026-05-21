@@ -44,6 +44,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { buildEmail, TemplateVars } from '../_shared/email-templates.ts';
 import { reportError } from '../_shared/sentry.ts';
 import { notifyTelegram } from '../_shared/telegram.ts';
+import { timingSafeEqual } from '../_shared/security.ts';
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -120,8 +121,10 @@ serve(async (req) => {
   // Pas de fallback sur user JWT (le frontend n'appelle pas cette function).
   const auth         = req.headers.get('authorization') || '';
   const cronHeader   = req.headers.get('x-cron-secret') || '';
-  const isServiceRole = auth === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
-  const isCron        = !!CRON_SECRET && cronHeader === CRON_SECRET;
+  // SHERLOCK R14 — M3 : timing-safe compare. `===` short-circuits at first
+  // diff and leaks a prefix-length oracle via response latency.
+  const isServiceRole = timingSafeEqual(auth, `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`);
+  const isCron        = !!CRON_SECRET && timingSafeEqual(cronHeader, CRON_SECRET);
   if (!isServiceRole && !isCron) {
     return json({ ok: false, error: 'UNAUTHORIZED' }, 401);
   }

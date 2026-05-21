@@ -17,9 +17,17 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { timingSafeEqual } from '../_shared/security.ts';
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+// SHERLOCK R14 — M1 : un secret pour gater le health check. Avant : endpoint
+// public sans auth → un attaquant pouvait hammer 1000 req/s, chaque hit
+// déclenche 3 calls Supabase (DB + Storage + Auth admin) → DoS amplification
+// + facture inflated. Maintenant : ?secret=<HEALTH_SECRET> requis.
+// UptimeRobot doit être reconfigured pour inclure le secret dans son URL.
+// HEALTH_SECRET doit être ajouté aux Supabase Vault secrets.
+const HEALTH_SECRET = Deno.env.get('HEALTH_SECRET') ?? '';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin':  '*',
@@ -46,6 +54,18 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ ok: boolean; latency_ms
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS });
+
+  // SHERLOCK R14 — M1 : gate par secret. Accept header (x-health-secret)
+  // OR query (?secret=...) — UptimeRobot free tier ne supporte pas les
+  // custom headers, donc query est le fallback. timingSafeEqual = M3.
+  const url = new URL(req.url);
+  const provided = req.headers.get('x-health-secret') ?? url.searchParams.get('secret') ?? '';
+  if (!HEALTH_SECRET || !timingSafeEqual(provided, HEALTH_SECRET)) {
+    return new Response(JSON.stringify({ status: 'unauthorized' }), {
+      status: 401,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    });
+  }
 
   const t_total_start = Date.now();
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

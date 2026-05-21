@@ -99,7 +99,11 @@ export function Modal({
       >
         <div className="flex items-start justify-between border-b border-slate-100 p-5">
           <h3 className="text-lg font-bold text-aurel-ink">{title}</h3>
-          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="Fermer">
+          {/* SHERLOCK R14 — M13 : type="button" pour éviter que ce close button
+              soit interprété comme submit dans un parent <form> (Modal est
+              utilisé dans plusieurs forms admin — sans type explicite, un
+              click sur la X submit le form silencieusement). */}
+          <button type="button" onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="Fermer">
             <X className="h-5 w-5" />
           </button>
         </div>

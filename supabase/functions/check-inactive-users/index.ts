@@ -20,16 +20,33 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { reportError } from '../_shared/sentry.ts';
+import { timingSafeEqual } from '../_shared/security.ts';
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const CRON_SECRET               = Deno.env.get('CRON_SECRET') ?? '';
 
+// SHERLOCK R14 — M2 : mask les emails dans les errors retournés au caller.
+// Avant : on push `${u.email}: ...` direct dans errors[] qui apparaît dans
+// la réponse JSON du cron (et donc dans les logs Supabase + Sentry breadcrumbs
+// + Telegram extras quand la summary alert fire). Email étudiant en clair
+// dans des logs partagés → leak PII contre GDPR. On masque le local-part.
+function maskEmail(e: string): string {
+  if (!e || typeof e !== 'string') return '<email>';
+  const at = e.indexOf('@');
+  if (at <= 0) return '<email>';
+  const local = e.slice(0, at);
+  const domain = e.slice(at);
+  const head = local.length <= 2 ? (local[0] ?? '') : local.slice(0, 2);
+  return `${head}***${domain}`;
+}
+
 serve(async (req) => {
   // Vérification du secret (header OR query param)
   const url    = new URL(req.url);
   const secret = req.headers.get('x-cron-secret') ?? url.searchParams.get('secret') ?? '';
-  if (!CRON_SECRET || secret !== CRON_SECRET) {
+  // SHERLOCK R14 — M3 : timing-safe compare.
+  if (!CRON_SECRET || !timingSafeEqual(secret, CRON_SECRET)) {
     return new Response(JSON.stringify({ ok: false, error: 'UNAUTHORIZED' }), { status: 401 });
   }
 
@@ -146,12 +163,14 @@ serve(async (req) => {
 
       if (!fnRes.ok) {
         const t = await fnRes.text();
-        errors.push(`${u.email}: ${t}`);
+        // SHERLOCK R14 — M2 : mask email avant push dans errors[].
+        errors.push(`${maskEmail(u.email)}: ${t}`);
         continue;
       }
       sent++;
     } catch (e) {
-      errors.push(`${u.email}: ${(e as Error).message}`);
+      // SHERLOCK R14 — M2 : idem ici.
+      errors.push(`${maskEmail(u.email)}: ${(e as Error).message}`);
       await reportError(e, {
         function: 'check-inactive-users',
         user_id: u.id,

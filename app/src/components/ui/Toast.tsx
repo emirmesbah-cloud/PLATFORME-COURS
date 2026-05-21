@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -34,13 +34,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // SHERLOCK R14 — L5 : durées différentes par variant. 4.5s pour les
+  // success/info, 8s pour les erreurs (l'user a besoin de lire le détail
+  // d'une error, surtout sur mobile où l'attention est divisée).
+  const DURATIONS: Record<ToastVariant, number> = { success: 4500, info: 4500, error: 8000 };
   const toast = useCallback((t: Omit<Toast, 'id'>) => {
     const id = Date.now() + Math.random();
     setToasts((s) => [...s, { ...t, id }]);
+    const duration = DURATIONS[t.variant] ?? 4500;
     const handle = window.setTimeout(() => {
       timersRef.current.delete(id);
       setToasts((s) => s.filter((x) => x.id !== id));
-    }, 4500);
+    }, duration);
     timersRef.current.set(id, handle);
   }, []);
 
@@ -61,8 +66,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const error   = useCallback((message: string, title?: string) => toast({ variant: 'error',   message, title }), [toast]);
   const info    = useCallback((message: string, title?: string) => toast({ variant: 'info',    message, title }), [toast]);
 
+  // SHERLOCK R14 — H4 : useMemo l'objet value du Provider. Sans ça chaque
+  // render créait un nouveau objet {toast, success, error, info} avec la
+  // même identité de callbacks (déjà memoized) mais une nouvelle ref de
+  // wrapper → tous les useContext(ToastContext) re-rendaient à chaque
+  // render parent. Avec useMemo, on garde la même ref tant que les
+  // callbacks ne changent pas.
+  const value = useMemo(() => ({ toast, success, error, info }), [toast, success, error, info]);
+
   return (
-    <ToastContext.Provider value={{ toast, success, error, info }}>
+    <ToastContext.Provider value={value}>
       {children}
       <div className="fixed top-4 right-4 z-[100] flex max-w-sm flex-col gap-2">
         {toasts.map((t) => (

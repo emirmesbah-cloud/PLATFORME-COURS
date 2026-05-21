@@ -26,6 +26,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { notifyTelegram } from '../_shared/telegram.ts';
+import { timingSafeEqual } from '../_shared/security.ts';
 
 const SUPABASE_URL    = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON   = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -54,7 +55,8 @@ async function timed<T>(name: string, fn: () => Promise<T>): Promise<CheckResult
 serve(async (req) => {
   const url    = new URL(req.url);
   const secret = req.headers.get('x-cron-secret') ?? url.searchParams.get('secret') ?? '';
-  if (!CRON_SECRET || secret !== CRON_SECRET) {
+  // SHERLOCK R14 — M3 : timing-safe compare.
+  if (!CRON_SECRET || !timingSafeEqual(secret, CRON_SECRET)) {
     return new Response(JSON.stringify({ ok: false, error: 'UNAUTHORIZED' }), {
       status: 401, headers: { 'Content-Type': 'application/json' },
     });

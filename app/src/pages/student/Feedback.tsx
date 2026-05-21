@@ -225,6 +225,19 @@ export function StudentFeedback() {
           {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
           Envoyer mon avis
         </button>
+        {/* SHERLOCK R14 — L7 : "Plus tard" pour permettre à l'user de revenir
+            au dashboard sans soumettre. Avant : pas de moyen de sortir sans
+            cliquer Submit (qui validait les 4 sections), → user back-button →
+            perte du flow. */}
+        <div className="text-center">
+          <button
+            type="button"
+            onClick={() => navigate('/dashboard')}
+            className="text-sm text-slate-500 hover:text-aurel-ink hover:underline"
+          >
+            Plus tard
+          </button>
+        </div>
       </form>
     </div>
   );

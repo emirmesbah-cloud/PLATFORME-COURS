@@ -20,7 +20,11 @@ export function LessonCard({ lesson, progress }: {
   lesson: Lesson;
   progress?: LessonProgress;
 }) {
-  const totalSec = lesson.duration_minutes * 60;
+  // SHERLOCK R14 — H8 : guard divide-by-zero. Si duration_minutes=0 (lesson
+  // mal seedée OU admin qui clear le champ par accident), `watchedSec/0`
+  // produit Infinity → Math.min(100, Math.round(Infinity)) = 100 → la
+  // leçon affichée comme 100% sans qu'aucune vidéo n'ait été regardée.
+  const totalSec = Math.max(1, lesson.duration_minutes * 60);
   const watchedSec = progress?.watched_seconds ?? 0;
   const completed = progress?.completed ?? false;
   const pct = Math.min(100, Math.round((watchedSec / totalSec) * 100));

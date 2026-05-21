@@ -172,7 +172,16 @@ ${codes.map((c) => `• ${c}`).join('\n')}
           <div>
             <label className="label">Nombre</label>
             <input type="number" min={1} max={50} value={count}
-              onChange={(e) => setCount(parseInt(e.target.value || '1', 10))}
+              onChange={(e) => {
+                // SHERLOCK R14 — H11 : parseInt('') = NaN, parseInt('abc') = NaN.
+                // Avant : NaN set dans le state, l'input affichait vide, le check
+                // `count < 1 || count > 50` au submit passait sans erreur (NaN <
+                // 1 = false, NaN > 50 = false) → la RPC partait avec count=NaN
+                // → la RPC échouait avec INVALID_COUNT côté SQL. Maintenant
+                // on clamp côté input pour rejet immédiat.
+                const n = parseInt(e.target.value, 10);
+                setCount(Number.isFinite(n) ? Math.max(1, Math.min(50, n)) : 1);
+              }}
               className="input" />
             <p className="mt-1 text-xs text-slate-400">Entre 1 et 50</p>
           </div>

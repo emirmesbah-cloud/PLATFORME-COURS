@@ -725,6 +725,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // tab returns from background, etc. Only explicit logout or genuine
   // realtime kick can sign them out.
 
+  // SHERLOCK R14 — H12 : on remet un poll TRÈS smart pour rattraper le cas
+  // où Realtime n'a pas pu broadcast (user offline pendant le kick d'un
+  // autre device → re-online → Realtime catch-up unreliable). Le poll
+  // tourne TOUTES LES 10 MIN (vs 3 min historiquement) ET ne déclenche
+  // forceSignOut qu'après 3 verify_session ok:false CONSÉCUTIFS — donc
+  // 30 min de mauvaise reception réseau avant kick. Les network errors
+  // (try/catch) ne comptent PAS comme failures (anti-flap pur). Le poll
+  // pause aussi quand le tab est invisible (battery + network friendly).
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    let consecutiveFailures = 0;
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      const localSid = readLocalSessionId();
+      if (!localSid) return;
+      try {
+        type VerifyData = { ok?: boolean; error?: string } | null;
+        const result = await withTimeout<{ data: VerifyData; error: unknown }>(
+          supabase.rpc('verify_session', { p_session_id: localSid }) as unknown as PromiseLike<{ data: VerifyData; error: unknown }>,
+          6000,
+          'verify_session R14-H12 poll',
+        );
+        if (result.error) {
+          // Network/RPC error → don't count as failure (anti-flap).
+          return;
+        }
+        if (result.data?.ok === false) {
+          consecutiveFailures += 1;
+          // 3 strikes : on accepte que le user est vraiment kicked.
+          if (consecutiveFailures >= 3) {
+            intentionalSignOutRef.current = true;
+            await forceSignOut('kicked');
+          }
+        } else if (result.data?.ok === true) {
+          consecutiveFailures = 0;
+        }
+        // ok undefined → ignore (peut être un état transitoire RPC)
+      } catch {
+        // Swallow — network error, do not count toward strike count.
+      }
+    };
+
+    const interval = window.setInterval(tick, 600_000); // 10 min
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [session?.user?.id, forceSignOut]);
+
   const refreshProfile = useCallback(async () => {
     if (!session?.user) return;
     await loadProfile(session.user.id);

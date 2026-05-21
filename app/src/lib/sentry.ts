@@ -49,6 +49,11 @@ export function initSentry() {
       const err = hint.originalException as Error | undefined;
       if (err?.name === 'AbortError') return null;
       if (err?.message?.includes('NetworkError')) return null;
+      // SHERLOCK R14 — M7 : drop nos timeouts maison qui sont des warning-level
+      // par design (slow ISP normal en DZ → Supabase EU). Pattern :
+      // `[Aurel] fetchX timed out after Yms (slow network?)`. Sans ça on
+      // floode Sentry de bruits transients qui masquent les vraies errors.
+      if (err?.message?.match(/^\[Aurel\] .+ timed out after \d+ms/)) return null;
 
       // Ne JAMAIS envoyer les requêtes Auth (peuvent contenir le password,
       // les recovery tokens, OTP codes, magic links, etc.).
@@ -79,13 +84,15 @@ export function initSentry() {
       },
     },
 
-    // Ignore certaines erreurs de bibliothèques tierces qui polluent
+    // Ignore certaines erreurs de bibliothèques tierces qui polluent.
+    // SHERLOCK R14 — M7 : on retire `'Failed to fetch'` du blanket-ignore.
+    // C'était trop large : ça swallow aussi les vrais bugs (Supabase API
+    // down, CORS misconfig, etc.). Les "user navigated away mid-fetch"
+    // sont déjà couverts par AbortError + le timing-out filter ci-dessus.
     ignoreErrors: [
       'ResizeObserver loop limit exceeded',
       'Non-Error promise rejection captured',
       'NetworkError when attempting to fetch resource',
-      // Gestionnaire navigateur qui throw quand l'user navigue avant qu'une promise résolve
-      'Failed to fetch',
     ],
   });
 }

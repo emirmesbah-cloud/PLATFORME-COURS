@@ -57,12 +57,27 @@ export function AdminLessons() {
 function LessonRow({ lesson, onSave }: { lesson: Lesson; onSave: (patch: Partial<Lesson>) => Promise<void> }) {
   const [vid, setVid] = useState(lesson.vdocipher_video_id ?? '');
   const [saving, setSaving] = useState(false);
+  // SHERLOCK R14 — L4 : flag local quand le Switch is_published est en cours
+  // de mutation. Avant : le user pouvait re-cliquer pendant le round-trip
+  // → double-mutation, race, et UI restait avec l'ancien check pendant ~1s
+  // sans feedback. Maintenant on disable + pulse anim pendant la mutation.
+  const [togglingPub, setTogglingPub] = useState(false);
 
   async function saveVid() {
     if (vid.trim() === (lesson.vdocipher_video_id ?? '')) return;
     setSaving(true);
     await onSave({ vdocipher_video_id: vid.trim() || null });
     setSaving(false);
+  }
+
+  async function togglePublished(v: boolean) {
+    if (togglingPub) return;
+    setTogglingPub(true);
+    try {
+      await onSave({ is_published: v });
+    } finally {
+      setTogglingPub(false);
+    }
   }
 
   return (
@@ -86,7 +101,9 @@ function LessonRow({ lesson, onSave }: { lesson: Lesson; onSave: (patch: Partial
         </div>
       </td>
       <td className="px-4 py-3">
-        <Switch checked={lesson.is_published} onChange={(v) => onSave({ is_published: v })} />
+        <div className={togglingPub ? 'animate-pulse' : ''}>
+          <Switch checked={lesson.is_published} disabled={togglingPub} onChange={togglePublished} />
+        </div>
       </td>
     </tr>
   );

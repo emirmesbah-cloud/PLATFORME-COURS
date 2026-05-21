@@ -6,6 +6,9 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatDuration(minutes: number): string {
+  // SHERLOCK R14 — L1 : guard valeurs négatives / NaN. Sans ça, un seed
+  // foireux avec duration_minutes=-5 affichait "-5 min" dans le UI dashboard.
+  if (!Number.isFinite(minutes) || minutes < 0) return '—';
   if (minutes < 60) return `${minutes} min`;
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;

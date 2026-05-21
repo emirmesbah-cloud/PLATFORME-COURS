@@ -8,6 +8,22 @@
 
 declare const __BUILD_VERSION__: string;
 
+// SHERLOCK R14 — H6 : flag global anti double-reload. Avant : si version-check
+// et PWAUpdatePrompt ramassaient le même nouveau bundle dans la même fenêtre
+// (rare mais possible quand le SW retombe en mode fallback), les deux
+// firaient location.reload() back-to-back → loop infinie sur 1s avant que
+// le browser ne short-circuit. Maintenant on flip un flag window-level
+// avant tout reload. Exporté pour que PWAUpdatePrompt utilise le même.
+declare global {
+  interface Window { __aurelReloading?: boolean }
+}
+export function reloadOnce(): void {
+  if (typeof window === 'undefined') return;
+  if (window.__aurelReloading) return;
+  window.__aurelReloading = true;
+  window.location.reload();
+}
+
 // SHERLOCK R13 — B14: when the Service Worker is alive, PWAUpdatePrompt
 // already polls /sw.js every 60s and auto-reloads on a new bundle. Polling
 // /version.json on top of that doubles the network chatter AND races the SW
@@ -51,7 +67,9 @@ async function checkAndReload(): Promise<void> {
       previousServer: lastKnownServerVersion,
       newServer: server,
     });
-    setTimeout(() => location.reload(), 200);
+    // SHERLOCK R14 — H6 : reloadOnce gate evite la double-reload race avec
+    // PWAUpdatePrompt.
+    setTimeout(reloadOnce, 200);
   }
 }
 

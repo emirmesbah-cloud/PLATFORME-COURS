@@ -11,12 +11,34 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   );
 }
 
+// SHERLOCK R14 — M8 : storage wrapper qui fallback en mémoire quand
+// localStorage throw (Safari Private Browsing pre-15.4 throws QuotaExceeded
+// on ANY setItem call ; certains corporate Firefox bloquent aussi). Sans ce
+// fallback, supabase-js peut hang sur persistSession + crash au boot →
+// l'app est cassée pour ces users sans aucun feedback. Avec le fallback,
+// la session vit pour la durée du tab (perdue au refresh, accepté).
+const memMap = new Map<string, string>();
+const safeStorage = {
+  getItem(k: string): string | null {
+    try { return window.localStorage.getItem(k); }
+    catch { return memMap.get(k) ?? null; }
+  },
+  setItem(k: string, v: string): void {
+    try { window.localStorage.setItem(k, v); }
+    catch { memMap.set(k, v); }
+  },
+  removeItem(k: string): void {
+    try { window.localStorage.removeItem(k); } catch {}
+    memMap.delete(k);
+  },
+};
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storage: window.localStorage,
+    storage: safeStorage,
     storageKey: 'aurel-academy-auth',
   },
 });

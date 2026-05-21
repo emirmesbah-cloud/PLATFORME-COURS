@@ -64,6 +64,11 @@ export function PWAUpdatePrompt() {
   useEffect(() => {
     if (needRefresh) {
       setTimeout(() => {
+        // SHERLOCK R14 — H6 : skip si version-check (lib/version-check.ts)
+        // a déjà flippé le flag global → un reload est déjà en cours, on
+        // évite que updateServiceWorker fire un 2e reload back-to-back.
+        if (typeof window !== 'undefined' && window.__aurelReloading) return;
+        if (typeof window !== 'undefined') window.__aurelReloading = true;
         updateServiceWorker(true);
       }, 200);
     }

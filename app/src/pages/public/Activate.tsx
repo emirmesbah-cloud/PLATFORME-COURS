@@ -11,7 +11,15 @@ import { AurelLogo } from '@/components/features/AurelLogo';
 import { ACTIVATION_CODE_REGEX, WHATSAPP_REGEX, normalizeWhatsapp } from '@/lib/utils';
 
 const schema = z.object({
-  code: z.string().regex(ACTIVATION_CODE_REGEX, 'Format attendu : AU-XXXXXX ou AC-XXXXXX (6 caractères)'),
+  // SHERLOCK R14 — H2 : transform uppercase AVANT le regex check. L'input
+  // a déjà `autoCapitalize="characters"` + `className="...uppercase..."`
+  // côté visuel, mais un copier-coller de WhatsApp ("au-x3k7m9") échappait
+  // au CSS uppercase (qui ne change pas la value du DOM, seulement le
+  // rendering) et le regex `^(AU|AC)-...$` rejetait silencieusement.
+  // Transform + pipe garantit que le state contient toujours UPPERCASE.
+  code: z.string().trim().transform((s) => s.toUpperCase()).pipe(
+    z.string().regex(ACTIVATION_CODE_REGEX, 'Format attendu : AU-XXXXXX ou AC-XXXXXX (6 caractères)')
+  ),
   email: z.string().email('Email invalide'),
   password: z.string().min(8, 'Au moins 8 caractères'),
   confirm_password: z.string().min(8),
@@ -322,6 +330,15 @@ export function ActivatePage() {
               <button type="submit" disabled={submitting || !watch('accept_terms')} className="btn-primary btn-lg btn-block">
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />} Activer mon compte
               </button>
+              {/* SHERLOCK R14 — L6 : sub-text rassurant pendant le submit. Sur
+                  ISP DZ lent, l'activate-account peut prendre 5-15s — sans
+                  feedback, l'user croit que c'est freezé et refresh la page
+                  (qui interrompt et leur fait perdre le compte activé). */}
+              {submitting && (
+                <p className="text-xs text-slate-500 mt-2 text-center">
+                  Activation en cours, ne ferme pas la page…
+                </p>
+              )}
             </div>
           </form>
 
