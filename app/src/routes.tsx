@@ -100,15 +100,21 @@ export const routes: RouteObject[] = [
     path: '/',
     element: (
       <AuthGuard>
-        <DisclaimerGuard>
-          <StudentLayout />
-        </DisclaimerGuard>
+        <StudentLayout />
       </AuthGuard>
     ),
     children: [
+      // Dashboard / Profile / Bonus / Certificate / Feedback + /lecons list :
+      // accessible to all authenticated users, even before disclaimer ack.
+      // Per the UX design (modal-popup gate scoped to lesson watching) the
+      // student can browse + manage their account freely ; only the act of
+      // OPENING a specific lesson triggers the disclaimer wall.
       { path: 'dashboard',           element: <StudentDashboard /> },
       { path: 'lecons',              element: <StudentLessons /> },
-      { path: 'lecons/:lessonNumber',element: <StudentLessonDetail /> },
+      // Lesson detail — gated by DisclaimerGuard. When blocked, renders an
+      // explanatory locked card (still inside StudentLayout so nav stays
+      // visible) with CTA → /disclaimer.
+      { path: 'lecons/:lessonNumber',element: <DisclaimerGuard><StudentLessonDetail /></DisclaimerGuard> },
       { path: 'bonus',               element: <StudentBonus /> },
       { path: 'certificat',          element: <StudentCertificate /> },
       { path: 'feedback',            element: <StudentFeedback /> },
