@@ -120,6 +120,33 @@ export async function rpcUpdateLessonProgress(args: {
   return data;
 }
 
+// ── Disclaimer gate (migration 20260520000027) ──────────────────
+// 2 RPCs : start_disclaimer (stamps started_at) + acknowledge_disclaimer
+// (validates wall-clock timer + explicit consent, marks ack'd).
+// See migration file for the full anti-bypass rationale.
+export interface StartDisclaimerResponse {
+  ok: true;
+  min_duration_seconds: number;
+}
+export async function rpcStartDisclaimer(): Promise<StartDisclaimerResponse> {
+  const { data, error } = await supabase.rpc('start_disclaimer');
+  if (error) throw error;
+  return data as StartDisclaimerResponse;
+}
+
+export type AcknowledgeDisclaimerResponse =
+  | { ok: true; already_acknowledged?: boolean }
+  | { ok: false; error: 'NOT_AUTHENTICATED' | 'CONSENT_REQUIRED' | 'NEVER_STARTED' | 'TOO_FAST';
+      elapsed_seconds?: number; min_seconds?: number; remaining_seconds?: number };
+export async function rpcAcknowledgeDisclaimer(consentGiven: boolean)
+: Promise<AcknowledgeDisclaimerResponse> {
+  const { data, error } = await supabase.rpc('acknowledge_disclaimer', {
+    p_consent_given: consentGiven,
+  });
+  if (error) throw error;
+  return data as AcknowledgeDisclaimerResponse;
+}
+
 // ── Bonus download (signed URL + log) ──────────────────────────
 export async function getBonusSignedUrl(bonus: BonusResource): Promise<string | null> {
   if (!bonus.file_url) return null; // pas encore uploadé
