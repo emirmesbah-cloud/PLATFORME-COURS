@@ -112,7 +112,7 @@ export function welcomeEmail(vars: TemplateVars): { subject: string; html: strin
     <h1 style="margin:0 0 12px;font-size:24px;color:${INK};">Bienvenue ${esc(name)} !</h1>
     <p style="margin:0 0 16px;">Ton accès à la formation <strong>Deutsch für Pflegekräfte</strong> est activé. Tu peux dès maintenant attaquer tes 18 leçons et débloquer tes 7 ressources premium :</p>
     <ul style="padding-left:20px;color:#475569;font-size:14px;">
-      <li>📚 18 leçons vidéo (~4h30)</li>
+      <li>📚 18 leçons vidéo</li>
       <li>📖 Glossaire 150 termes médicaux trilingue</li>
       <li>📄 4 templates CV + lettres de motivation Allemagne</li>
       <li>🎯 Guide Anerkennung + Méthode prospection 30 chaînes</li>
