@@ -597,6 +597,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // double claim/subscribe si Supabase JS fire SIGNED_IN au restore.
     let lastHandledUserId: string | null = null;
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      // SHERLOCK R15 — CRITICAL BUG FIX of R12.
+      //
+      // R12 was supposed to ignore spurious SIGNED_OUT events but had a
+      // FATAL ordering bug : `setSession(newSession)` ran UNCONDITIONALLY
+      // at the top of the handler, BEFORE the SIGNED_OUT check.
+      // So when supabase-js fired SIGNED_OUT with newSession=null (token
+      // refresh hiccup on slow ISP, transient 401, etc.), this line
+      // immediately cleared the session → AuthGuard saw session=null →
+      // redirect to /login. The "ignore" return below was too late : damage done.
+      //
+      // FIX : early-return BEFORE any state mutation if the event is a
+      // spurious SIGNED_OUT (no intentionalSignOutRef set). Now the React
+      // session state survives spurious SIGNED_OUT events. The JWT in
+      // supabase-js storage may briefly become invalid ; supabase-js's own
+      // auto-refresh re-issues a fresh token on next API call. User stays
+      // logged in. This is what R12 was supposed to do.
+      if (event === 'SIGNED_OUT' && !intentionalSignOutRef.current) {
+        console.warn('[Aurel] Ignoring spurious SIGNED_OUT — session preserved (R15 = R12 fixed)');
+        return;
+      }
+
       setSession(newSession);
 
       // CRITICAL FIX (port from Naim) : INITIAL_SESSION fire au boot quand
