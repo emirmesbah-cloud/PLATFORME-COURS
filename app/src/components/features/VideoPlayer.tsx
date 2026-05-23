@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { Lock, AlertTriangle } from 'lucide-react';
 import { rpcUpdateLessonProgress, fetchVdocipherOtp } from '@/lib/queries';
+import { useAuth } from '@/hooks/useAuth';
 import type { Lesson } from '@/lib/types';
 import { Spinner } from '@/components/ui/Spinner';
 
@@ -34,9 +36,20 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
   lesson: Lesson;
   initialPosition?: number;
 }) {
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
   const watchedSecRef = useRef<number>(0);
   const positionSecRef = useRef<number>(initialPosition);
   const startTsRef = useRef<number>(0);
+
+  // Triggered when the OTP fetch returns NOT_AUTHENTICATED even after
+  // refreshSession() retry. The student's local session is unrecoverable
+  // (typically : JWT signed with rotated keys, refresh_token also dead).
+  // One-click signOut + redirect to /login gives them a clean restart.
+  async function handleForceReauth() {
+    await signOut();
+    navigate('/login', { replace: true, state: { sessionExpired: true } });
+  }
 
   // OTP fetch — re-fetches when the lesson changes. staleTime 4 min so we
   // re-use the OTP if the user closes the lesson page and re-opens within
@@ -124,24 +137,43 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
 
   if (otpQ.isError || !otpQ.data) {
     const errMsg = otpQ.error instanceof Error ? otpQ.error.message : 'Erreur inconnue';
+    const isAuthError = errMsg.includes('NOT_AUTHENTICATED') || errMsg.includes('401');
     return (
       <div className="flex aspect-video w-full items-center justify-center rounded-xl bg-aurel-dark text-white">
         <div className="flex flex-col items-center gap-3 p-6 text-center">
           <AlertTriangle className="h-10 w-10 text-amber-400" />
-          <div className="font-semibold">Le player n'a pas pu charger</div>
+          <div className="font-semibold">
+            {isAuthError ? 'Session expirée' : 'Le player n\'a pas pu charger'}
+          </div>
           <p className="max-w-sm text-sm text-slate-400">
-            {errMsg.includes('INVALID_VIDEO') ? 'Cette leçon n\'est pas encore disponible.' : 'Réessaie dans un instant.'}
+            {isAuthError
+              ? 'Ta connexion a été invalidée (mise à jour serveur). Reconnecte-toi pour reprendre la vidéo.'
+              : errMsg.includes('INVALID_VIDEO')
+              ? 'Cette leçon n\'est pas encore disponible.'
+              : 'Réessaie dans un instant.'}
           </p>
-          {/* Show raw error for diagnosis — small text, copyable. */}
-          <code className="mt-1 max-w-md break-all rounded bg-black/30 px-2 py-1 text-[10px] text-amber-200">
-            {errMsg}
-          </code>
-          <button
-            onClick={() => otpQ.refetch()}
-            className="mt-2 rounded-md bg-aurel-orange px-4 py-2 text-sm font-semibold text-white hover:bg-aurel-orange-dark"
-          >
-            Réessayer
-          </button>
+          {!isAuthError && (
+            <code className="mt-1 max-w-md break-all rounded bg-black/30 px-2 py-1 text-[10px] text-amber-200">
+              {errMsg}
+            </code>
+          )}
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+            {isAuthError ? (
+              <button
+                onClick={handleForceReauth}
+                className="rounded-md bg-aurel-orange px-4 py-2 text-sm font-semibold text-white hover:bg-aurel-orange-dark"
+              >
+                Se reconnecter
+              </button>
+            ) : (
+              <button
+                onClick={() => otpQ.refetch()}
+                className="rounded-md bg-aurel-orange px-4 py-2 text-sm font-semibold text-white hover:bg-aurel-orange-dark"
+              >
+                Réessayer
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );

@@ -58,12 +58,26 @@ export function LoginPage() {
     navigate(fromPath || '/', { replace: true });
   }
 
+  // Banner shown when redirected from VideoPlayer / AuthGuard after session
+  // expired (typically post-JWKS rotation, or unrecoverable refresh failure).
+  const navState = location.state as
+    | { sessionExpired?: boolean; profileLoadFailed?: boolean }
+    | null;
+  const showSessionExpiredBanner = !!navState?.sessionExpired;
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
       <div className="w-full max-w-md">
         <div className="mb-8 flex justify-center"><AurelLogo size="lg" /></div>
 
         <div className="card-padded">
+          {showSessionExpiredBanner && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="font-semibold">Reconnexion nécessaire</p>
+              <p className="mt-1 text-xs">Ta session a expiré suite à une mise à jour serveur. Reconnecte-toi pour reprendre.</p>
+            </div>
+          )}
+
           <h1 className="mb-1 text-2xl font-bold text-aurel-ink">Connexion</h1>
           <p className="mb-6 text-sm text-slate-600">Bienvenue sur ton espace étudiant.</p>
 
