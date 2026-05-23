@@ -93,10 +93,9 @@ export function CertificatePDF({ certificate, programName = 'Deutsch für Pflege
         <Text style={styles.description}>
           Pour avoir complété avec succès la formation{' '}
           <Text style={styles.highlight}>{programName}</Text>
-          {' '}comprenant{' '}
-          <Text style={styles.highlight}>18 leçons vidéo</Text> et{' '}
-          <Text style={styles.highlight}>7 ressources premium</Text>{' '}
-          (glossaire 150 termes, templates CV, lettres de motivation, guide Anerkennung, méthode prospection),
+          {' '}— allemand médical, vocabulaire Pflege, simulations d'entretien et{' '}
+          <Text style={styles.highlight}>ressources premium</Text>{' '}
+          (glossaire trilingue, templates CV, lettres de motivation, guide Anerkennung, méthode prospection),
           en date du {dateStr}.
         </Text>
 

@@ -1,18 +1,56 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Users, Activity, KeyRound, TrendingUp } from 'lucide-react';
+import { Users, Activity, KeyRound, TrendingUp, Award, Loader2 } from 'lucide-react';
 import { fetchAdminStats, queryKeys } from '@/lib/queries';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/components/ui/Toast';
 
 export function AdminDashboard() {
   const statsQ = useQuery({ queryKey: queryKeys.adminStats, queryFn: fetchAdminStats });
+  const { profile } = useAuth();
+  const toast = useToast();
 
-  // SHERLOCK : on ne bloque PLUS le render avec un spinner full-page.
-  // Avant : `if (statsQ.isLoading) return <Spinner />` masquait tout le
-  // dashboard pendant 5-15s sur ISP lent. Maintenant : le shell + les
-  // 4 stat cards s'affichent immédiatement (avec — en placeholder), et
-  // les vrais chiffres remplacent dès que le RPC répond.
   const data = statsQ.data;
   const ph = (val: string | number | null | undefined) =>
     statsQ.isLoading && val === undefined ? '—' : (val ?? '—');
+
+  // ── Certificate preview ───────────────────────────────────────────────
+  // Generates a mock PDF certificate using the current admin's name + a fake
+  // completion date (today). Opens it in a new tab so admins can review the
+  // visual design before students start completing the course.
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  async function handleCertificatePreview() {
+    if (!profile) return;
+    setPreviewLoading(true);
+    try {
+      const { pdf } = await import('@react-pdf/renderer');
+      const { CertificatePDF } = await import('@/components/features/CertificatePDF');
+      const todayIso = new Date().toISOString();
+      const mockCert = {
+        id: 'preview',
+        user_id: profile.id,
+        certificate_number: 'AUREL-2026-PREVIEW',
+        issued_at: todayIso,
+        pdf_url: null,
+        full_name_on_certificate: `${profile.first_name} ${profile.last_name}`,
+        course_completion_date: todayIso,
+      };
+      const blob = await pdf(<CertificatePDF certificate={mockCert} />).toBlob();
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      const url = URL.createObjectURL(blob);
+      setPreviewUrl(url);
+      // Open in new tab so admin can see + zoom + download if they want.
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('certificate preview failed', e);
+      toast.error('Impossible de générer l\'aperçu. Réessaie.', 'Erreur');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -54,6 +92,29 @@ export function AdminDashboard() {
           Les stats n'ont pas pu charger (réseau lent). Recharge la page pour réessayer.
         </div>
       )}
+
+      {/* Outils admin */}
+      <section className="card-padded">
+        <div className="mb-4 flex items-center gap-2">
+          <Award className="h-5 w-5 text-aurel-orange" />
+          <h2 className="text-lg font-bold text-aurel-ink">Outils admin</h2>
+        </div>
+        <p className="mb-4 text-sm text-slate-600">
+          Aperçu du certificat qui sera délivré aux étudiants lorsqu'ils complètent la formation.
+        </p>
+        <button
+          onClick={handleCertificatePreview}
+          disabled={previewLoading || !profile}
+          className="btn-outline"
+        >
+          {previewLoading
+            ? <><Loader2 className="h-4 w-4 animate-spin" /> Génération…</>
+            : <><Award className="h-4 w-4" /> Voir un exemple de certificat</>}
+        </button>
+        <p className="mt-2 text-xs text-slate-500">
+          Le PDF s'ouvrira dans un nouvel onglet avec ton nom comme exemple.
+        </p>
+      </section>
     </div>
   );
 }
