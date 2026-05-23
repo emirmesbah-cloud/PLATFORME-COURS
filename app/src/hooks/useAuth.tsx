@@ -39,6 +39,7 @@ import type { Session, User, RealtimeChannel } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase, intentionalRemoval } from '@/lib/supabase';
 import { decodeJwtPayload } from '@/lib/jwt';
+import { writeSessionBackup, clearSessionBackup, readSessionBackup } from '@/lib/session-backup';
 import { setSentryUser } from '@/lib/sentry';
 import type { Profile } from '@/lib/types';
 
@@ -332,6 +333,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // clear the auth key during this intentional logout. The flag is
       // re-asserted to false in the finally block below.
       intentionalRemoval.current = true;
+      // R17 : also clear our independent session backup — otherwise next page
+      // load would restore the dead session from backup.
+      clearSessionBackup();
       try {
         writeLocalSessionId(null);
         if (realtimeChannelRef.current) {
@@ -499,36 +503,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Étape 1 : lecture synchrone du state local de supabase-js (instant).
       // supabase-js HYDRATE la session depuis localStorage de manière
       // synchrone à la construction du client, donc storage est déjà rempli.
+      // R17 : if the main key didn't have a session for some reason, fall back
+      // to our independent backup (restoreMainFromBackupIfMissing already ran
+      // before supabase-js init, but defensive double-check here too).
       let localSession: Session | null = null;
       try {
         const localSessionStr = localStorage.getItem('aurel-academy-auth');
         if (localSessionStr) {
           try {
             const parsed = JSON.parse(localSessionStr);
-            localSession = parsed?.currentSession ?? parsed?.session ?? null;
-            if (localSession?.user && mounted) {
-              setSession(localSession);
-
-              // CRITICAL : si on a un cache profile pour ce user → use it.
-              // Sinon → construire un profile STUB depuis le JWT pour que
-              // AuthGuard passe immédiatement vers /dashboard sans attendre
-              // la query DB. Cas typique : user en première activation sur
-              // ISP ULTRA lent, OU user qui se connecte sur un nouveau device.
-              const cached = readCachedProfile(localSession.user.id);
-              if (cached) {
-                setProfile(cached);
-                setProfileSource('cache');
-                setSentryUser({ id: cached.id, email: cached.email, tier: cached.tier, is_admin: cached.is_admin });
-              } else {
-                const stub = profileFromJwt(localSession);
-                if (stub) {
-                  setProfile(stub);
-                  setProfileSource('jwt');
-                  setSentryUser({ id: stub.id, email: stub.email, tier: stub.tier, is_admin: stub.is_admin });
-                }
-              }
+            localSession = parsed?.currentSession ?? parsed?.session ?? parsed ?? null;
+            // Validate it actually looks like a Session (has access_token).
+            if (localSession && !(localSession as Session)?.access_token) {
+              localSession = null;
             }
           } catch {}
+        }
+        // R17 : if main storage didn't yield a session, try the independent
+        // backup. This catches any case where supabase-js's own storage was
+        // wiped (failed token refresh, edge race, ServiceWorker shenanigans).
+        if (!localSession) {
+          const backup = readSessionBackup();
+          if (backup?.access_token && backup?.user) {
+            localSession = backup;
+            // Re-write the main key so supabase-js sees it on its own hydration.
+            try {
+              localStorage.setItem('aurel-academy-auth', JSON.stringify({
+                ...backup,
+                currentSession: backup,
+                expiresAt: backup.expires_at,
+              }));
+              // eslint-disable-next-line no-console
+              console.info('[Aurel R17] Bootstrap restored session from backup');
+            } catch {}
+          }
+        }
+        if (localSession?.user && mounted) {
+          setSession(localSession);
+
+          // CRITICAL : si on a un cache profile pour ce user → use it.
+          // Sinon → construire un profile STUB depuis le JWT pour que
+          // AuthGuard passe immédiatement vers /dashboard sans attendre
+          // la query DB. Cas typique : user en première activation sur
+          // ISP ULTRA lent, OU user qui se connecte sur un nouveau device.
+          const cached = readCachedProfile(localSession.user.id);
+          if (cached) {
+            setProfile(cached);
+            setProfileSource('cache');
+            setSentryUser({ id: cached.id, email: cached.email, tier: cached.tier, is_admin: cached.is_admin });
+          } else {
+            const stub = profileFromJwt(localSession);
+            if (stub) {
+              setProfile(stub);
+              setProfileSource('jwt');
+              setSentryUser({ id: stub.id, email: stub.email, tier: stub.tier, is_admin: stub.is_admin });
+            }
+          }
         }
       } catch {}
 
@@ -737,6 +767,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // SHERLOCK R17 : write to independent session backup whenever the session
+  // changes. The backup survives even if supabase-js wipes its own storage on
+  // a failed token refresh. On next page load, supabase.ts's
+  // restoreMainFromBackupIfMissing() rehydrates the main storage from this
+  // backup BEFORE supabase-js initializes → no F5 logout possible.
+  useEffect(() => {
+    if (session) {
+      writeSessionBackup(session);
+    }
+    // Note : do NOT call clearSessionBackup() when session becomes null here.
+    // That happens both for intentional logouts AND for transient state in
+    // useAuth during re-renders. Backup clearing is done explicitly inside
+    // signOut() and forceSignOut() to keep it tied to user intent.
+  }, [session]);
+
   // SHERLOCK R12 (BULLETPROOF) — removed the periodic verifyLocalSession poll.
   //
   // Why : the poll was supposed to be a safety net if Realtime is down for
@@ -817,6 +862,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Re-locked in the finally block so future spurious SIGNED_OUT events
     // cannot wipe storage during the next session.
     intentionalRemoval.current = true;
+    // R17 : also clear our independent session backup.
+    clearSessionBackup();
 
     // SHERLOCK R7 fix : OPTIMISTIC clear FIRST so the UI flips to logged-out
     // state immediately, regardless of network. Avant : signOut awaited

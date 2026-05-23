@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { restoreMainFromBackupIfMissing } from './session-backup';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -37,6 +38,12 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 //     the wrapper allows removeItem normally.
 
 const AUTH_KEY = 'aurel-academy-auth';
+
+// R17 : restore main storage from backup BEFORE supabase-js initializes.
+// This way, supabase-js's synchronous hydration from localStorage already
+// sees the restored session. Fixes F5 logout when the main key was wiped
+// by a previous failed token refresh that R16 didn't catch in time.
+restoreMainFromBackupIfMissing(AUTH_KEY);
 
 // Mutable flag shared with useAuth via the export below. Toggled true ONLY
 // inside forceSignOut() / explicit signOut handlers — never reset to true
