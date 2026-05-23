@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import { Award, Download, Lock, Loader2, ArrowRight } from 'lucide-react';
 import { fetchUserCertificate, fetchProgressSummary, queryKeys, rpcCheckAndIssueCertificate } from '@/lib/queries';
 import { useAuth } from '@/hooks/useAuth';
-import { Spinner } from '@/components/ui/Spinner';
 import { ProgressBar } from '@/components/ui/Progress';
 import { useToast } from '@/components/ui/Toast';
 import { formatDate } from '@/lib/utils';
@@ -118,10 +117,30 @@ export function StudentCertificate() {
     a.remove();
   }
 
-  if (certQ.isLoading || summaryQ.isLoading) return <Spinner label="Chargement..." />;
-
+  // SHERLOCK : ne JAMAIS bloquer le render avec un spinner full-page.
+  // Si les queries sont encore en vol, on render une vue "loading" légère
+  // qui montre quand même le header. Sur ISP lent, le user voit la page
+  // chargée immédiatement au lieu d'un blanc + spinner pendant 10s.
   const cert = certQ.data;
   const summary = summaryQ.data;
+  const isInitialLoad = (certQ.isLoading && !cert) || (summaryQ.isLoading && !summary);
+
+  if (isInitialLoad) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-8">
+        <header className="text-center">
+          <div className="mx-auto mb-4 h-20 w-20 animate-pulse rounded-full bg-slate-200" />
+          <div className="mx-auto h-7 w-3/4 animate-pulse rounded bg-slate-200" />
+          <div className="mx-auto mt-3 h-4 w-full animate-pulse rounded bg-slate-100" />
+        </header>
+        <section className="card-padded space-y-3">
+          <div className="h-4 w-1/3 animate-pulse rounded bg-slate-100" />
+          <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
+          <div className="h-4 w-2/3 animate-pulse rounded bg-slate-100" />
+        </section>
+      </div>
+    );
+  }
 
   // Si pas encore de certificat
   if (!cert) {
