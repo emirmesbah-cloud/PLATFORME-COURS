@@ -56,24 +56,38 @@ export function ResetPasswordPage() {
       }
     });
 
-    // Safety net : check getSession après un court délai. Si le user a une
-    // session AVEC amr=recovery → valid. Sinon, on refuse, MÊME si une
-    // session normale existe (l'ancien comportement laissait passer
-    // n'importe quelle session active = vulnérable).
+    // SHERLOCK : HARD TIMEOUT. Avant, on attendait que supabase.auth.getSession()
+    // résolve avant de setReady(true). Sur ISP lent, ce call peut hang plusieurs
+    // dizaines de secondes — l'user voyait un spinner infini sans pouvoir
+    // demander un nouveau lien. Maintenant : on FORCE setReady(true) après 3s
+    // quoi qu'il arrive. Si linkValid n'a pas été défini d'ici-là, on affiche
+    // "Lien invalide" + bouton "Demander un nouveau lien".
+    const hardTimeout = setTimeout(() => {
+      if (!mounted) return;
+      if (!recoveryEventSeen) {
+        // eslint-disable-next-line no-console
+        console.warn('[Aurel] reset-password : 3s elapsed without PASSWORD_RECOVERY event — assuming invalid link');
+      }
+      setReady(true);
+    }, 3000);
+
+    // Best-effort getSession check : if it does resolve quickly AND has a
+    // recovery JWT, mark the link valid. If it hangs, the hardTimeout above
+    // will still let the UI render.
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!mounted) return;
-      // Petite grace period au cas où PASSWORD_RECOVERY arrive juste après.
-      setTimeout(() => {
-        if (!mounted) return;
-        if (recoveryEventSeen) return; // déjà géré
-        if (session && jwtIsRecoverySession(session.access_token)) {
-          setLinkValid(true);
-        }
+      if (recoveryEventSeen) return;
+      if (session && jwtIsRecoverySession(session.access_token)) {
+        setLinkValid(true);
         setReady(true);
-      }, 500);
-    });
+      }
+    }).catch(() => { /* hardTimeout handles it */ });
 
-    return () => { mounted = false; sub.subscription.unsubscribe(); };
+    return () => {
+      mounted = false;
+      clearTimeout(hardTimeout);
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
