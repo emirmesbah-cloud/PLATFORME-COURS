@@ -26,7 +26,7 @@ export function StudentLessons() {
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="text-3xl font-bold text-aurel-ink md:text-4xl">Mes 18 leçons</h1>
+        <h1 className="text-3xl font-bold text-aurel-ink md:text-4xl">Mes {lessons.length} leçons</h1>
         <p className="mt-1 text-slate-600">Programme complet Deutsch für Pflegekräfte.</p>
       </header>
 

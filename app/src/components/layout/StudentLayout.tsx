@@ -133,14 +133,30 @@ export function StudentLayout() {
             sidebar disparus). Maintenant l'header reste affiché, le user
             peut naviguer hors de la page cassée. */}
         <SentryErrorBoundary
-          fallback={
+          fallback={({ error, resetError, eventId }) => (
             <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
               <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-red-500" />
               <h2 className="mb-2 text-lg font-semibold text-aurel-ink">Une erreur est survenue sur cette page</h2>
               <p className="mb-4 text-sm text-slate-600">L'erreur a été signalée. Reviens à ton dashboard ou réessaie.</p>
-              <Link to="/dashboard" className="btn-primary">Retour au dashboard</Link>
+              {/* Show actual error message for debugging — Sentry collects it too,
+                  but having it visible immediately helps users + me when reporting
+                  bugs. Wrapped in a details so it's not too in-your-face. */}
+              <details className="mb-4 text-left">
+                <summary className="cursor-pointer text-xs font-mono text-red-700 hover:underline">
+                  Détails techniques
+                </summary>
+                <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all rounded bg-white p-3 text-left text-xs text-red-900 ring-1 ring-red-200">
+                  {(error as Error | undefined)?.message || String(error)}
+                  {(error as Error | undefined)?.stack ? '\n\n' + (error as Error).stack : ''}
+                  {eventId ? '\n\nSentry event: ' + eventId : ''}
+                </pre>
+              </details>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button onClick={resetError} className="btn-outline">Réessayer</button>
+                <Link to="/dashboard" className="btn-primary">Retour au dashboard</Link>
+              </div>
             </div>
-          }
+          )}
         >
           <Outlet />
         </SentryErrorBoundary>
