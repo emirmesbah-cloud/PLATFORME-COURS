@@ -37,7 +37,7 @@ import {
 } from 'react';
 import type { Session, User, RealtimeChannel } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
+import { supabase, intentionalRemoval } from '@/lib/supabase';
 import { decodeJwtPayload } from '@/lib/jwt';
 import { setSentryUser } from '@/lib/sentry';
 import type { Profile } from '@/lib/types';
@@ -328,6 +328,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // R12 : mark this signOut as intentional so the SIGNED_OUT handler
       // actually executes cleanup (vs ignoring spurious supabase-js firings)
       intentionalSignOutRef.current = true;
+      // R16 : unlock the localStorage suppression so supabase-js can actually
+      // clear the auth key during this intentional logout. The flag is
+      // re-asserted to false in the finally block below.
+      intentionalRemoval.current = true;
       try {
         writeLocalSessionId(null);
         if (realtimeChannelRef.current) {
@@ -360,6 +364,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } finally {
         isSigningOutRef.current = false;
+        // R16 : re-lock the storage suppression so future spurious SIGNED_OUT
+        // events (from token refresh failures) cannot clear localStorage.
+        intentionalRemoval.current = false;
       }
     },
     [queryClient]
@@ -805,6 +812,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // its cleanup branch. Without this flag, my R12 fix would treat the
     // event as spurious and refuse to clear state.
     intentionalSignOutRef.current = true;
+    // R16 : unlock the localStorage suppression so supabase.auth.signOut()
+    // can clear the auth key for real (user clicked logout, we want it gone).
+    // Re-locked in the finally block so future spurious SIGNED_OUT events
+    // cannot wipe storage during the next session.
+    intentionalRemoval.current = true;
 
     // SHERLOCK R7 fix : OPTIMISTIC clear FIRST so the UI flips to logged-out
     // state immediately, regardless of network. Avant : signOut awaited
@@ -838,6 +850,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn('[Aurel] server signOut failed/slow (local state already cleared):', (e as Error)?.message ?? e);
+    } finally {
+      // R16 : re-lock so subsequent spurious SIGNED_OUT events can't wipe storage.
+      intentionalRemoval.current = false;
     }
   }, [queryClient]);
 
