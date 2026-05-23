@@ -14,11 +14,6 @@ export interface Profile {
   created_at: string;
   last_login_at: string | null;
   is_admin: boolean;
-  // Disclaimer gate (migration 20260520000027) — both NULL until user opens
-  // /disclaimer (started_at) and completes the wall-clock + consent flow
-  // (acknowledged_at). Admins auto-acked at migration time.
-  disclaimer_started_at: string | null;
-  disclaimer_acknowledged_at: string | null;
 }
 
 export interface Lesson {

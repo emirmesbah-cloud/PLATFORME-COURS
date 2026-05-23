@@ -2,7 +2,6 @@ import { lazy, Suspense, type ComponentType } from 'react';
 import { Navigate, type RouteObject } from 'react-router-dom';
 import { AuthGuard } from '@/components/guards/AuthGuard';
 import { AdminGuard } from '@/components/guards/AdminGuard';
-import { DisclaimerGuard } from '@/components/guards/DisclaimerGuard';
 import { ChunkErrorBoundary } from '@/components/guards/ChunkErrorBoundary';
 import { StudentLayout } from '@/components/layout/StudentLayout';
 import { AdminLayout } from '@/components/layout/AdminLayout';
@@ -24,7 +23,6 @@ import { StudentBonus }        from '@/pages/student/Bonus';
 import { StudentProfile }      from '@/pages/student/Profile';
 import { StudentCertificate }  from '@/pages/student/Certificate';
 import { StudentFeedback }     from '@/pages/student/Feedback';
-import { DisclaimerPage }      from '@/pages/student/Disclaimer';
 
 import { RootRedirect } from '@/components/guards/RootRedirect';
 
@@ -82,20 +80,6 @@ export const routes: RouteObject[] = [
   { path: '/reset-password',    element: <ResetPasswordPage /> },
   { path: '/unsubscribe',       element: <L><UnsubscribePage /></L> },
 
-  // Disclaimer page : sits between AuthGuard and DisclaimerGuard so it's
-  // accessible to authenticated users who haven't yet acknowledged. The
-  // page itself doesn't use StudentLayout (no nav/menu) so we render it
-  // standalone. Re-watch mode (/disclaimer?rewatch=1) is for users who
-  // already acked and want to view it again from their profile.
-  {
-    path: '/disclaimer',
-    element: (
-      <AuthGuard>
-        <DisclaimerPage />
-      </AuthGuard>
-    ),
-  },
-
   {
     path: '/',
     element: (
@@ -104,17 +88,9 @@ export const routes: RouteObject[] = [
       </AuthGuard>
     ),
     children: [
-      // Dashboard / Profile / Bonus / Certificate / Feedback + /lecons list :
-      // accessible to all authenticated users, even before disclaimer ack.
-      // Per the UX design (modal-popup gate scoped to lesson watching) the
-      // student can browse + manage their account freely ; only the act of
-      // OPENING a specific lesson triggers the disclaimer wall.
       { path: 'dashboard',           element: <StudentDashboard /> },
       { path: 'lecons',              element: <StudentLessons /> },
-      // Lesson detail — gated by DisclaimerGuard. When blocked, renders an
-      // explanatory locked card (still inside StudentLayout so nav stays
-      // visible) with CTA → /disclaimer.
-      { path: 'lecons/:lessonNumber',element: <DisclaimerGuard><StudentLessonDetail /></DisclaimerGuard> },
+      { path: 'lecons/:lessonNumber',element: <StudentLessonDetail /> },
       { path: 'bonus',               element: <StudentBonus /> },
       { path: 'certificat',          element: <StudentCertificate /> },
       { path: 'feedback',            element: <StudentFeedback /> },

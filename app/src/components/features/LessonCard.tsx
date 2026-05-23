@@ -31,14 +31,26 @@ export function LessonCard({ lesson, progress }: {
   const inProgress = !completed && watchedSec > 0;
   const locked = !lesson.is_published || !lesson.vdocipher_video_id;
 
+  // SHERLOCK : "Commencer ici" badge sur la leçon 1 (= disclaimer obligatoire).
+  // Le disclaimer a été reclassé en leçon 1 plutôt qu'un gate séparé (KISS).
+  // Le badge attire l'attention pour que les nouveaux students attaquent par
+  // le bon endroit. Sur les leçons 2-19 = badge phase normal.
+  const isFirstLesson = lesson.lesson_number === 1;
+
   return (
     <Link
       to={`/lecons/${lesson.lesson_number}`}
       className={cn(
-        'group block card transition hover:border-aurel-orange hover:shadow-md',
+        'group relative block card transition hover:border-aurel-orange hover:shadow-md',
+        isFirstLesson && 'border-aurel-orange ring-1 ring-aurel-orange/30',
         locked && 'opacity-70'
       )}
     >
+      {isFirstLesson && (
+        <span className="absolute -top-2 left-3 rounded-full bg-aurel-orange px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-md">
+          ⭐ Commencer ici
+        </span>
+      )}
       <div className="flex items-center justify-between p-4">
         <span className={cn('badge', PHASE_COLOR[lesson.phase] ?? 'badge-slate')}>
           {lesson.phase}

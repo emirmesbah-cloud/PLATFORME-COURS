@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Loader2, LogOut, Mail, Calendar, Award, FileVideo } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Loader2, LogOut, Mail, Calendar, Award } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/ui/Toast';
@@ -135,22 +135,6 @@ export function StudentProfile() {
           </button>
         </form>
       </section>
-
-      {/* Documents — re-watch disclaimer */}
-      {profile.disclaimer_acknowledged_at && (
-        <section className="card-padded">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Documents</h2>
-          <Link
-            to="/disclaimer?rewatch=1"
-            className="btn-outline w-full md:w-auto"
-          >
-            <FileVideo className="h-4 w-4" /> Revoir le disclaimer
-          </Link>
-          <p className="mt-2 text-xs text-slate-500">
-            Tu peux revoir la vidéo de disclaimer à tout moment. Acceptée le {formatDate(profile.disclaimer_acknowledged_at)}.
-          </p>
-        </section>
-      )}
 
       {/* Actions sensibles */}
       <section className="card-padded">
