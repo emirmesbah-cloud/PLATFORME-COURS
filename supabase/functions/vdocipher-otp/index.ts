@@ -123,7 +123,8 @@ Deno.serve(async (req) => {
             type: "rtext",
             text: watermarkText,
             alpha: "0.60",
-            color: "0xFFFFFFFF",
+            // FIX : VDOCipher rejects "0xFFFFFFFF" (RGBA). Only "0xFFFFFF" (RGB) is accepted.
+            color: "0xFFFFFF",
             size: "15",
             interval: "5000",
           },
