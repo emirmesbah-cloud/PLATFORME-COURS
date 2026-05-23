@@ -22,11 +22,19 @@ export function AdminDashboard() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   async function handleCertificatePreview() {
-    if (!profile) return;
+    if (!profile) {
+      toast.error('Profile pas encore chargé. Patiente une seconde.', 'Erreur');
+      return;
+    }
     setPreviewLoading(true);
     try {
-      const { pdf } = await import('@react-pdf/renderer');
-      const { CertificatePDF } = await import('@/components/features/CertificatePDF');
+      // Dynamic imports — heavy modules (~1.4MB total). Loaded on demand.
+      const pdfMod = await import('@react-pdf/renderer').catch((e) => {
+        throw new Error(`Chargement du moteur PDF échoué : ${e?.message || e}`);
+      });
+      const certMod = await import('@/components/features/CertificatePDF').catch((e) => {
+        throw new Error(`Chargement du template échoué : ${e?.message || e}`);
+      });
       const todayIso = new Date().toISOString();
       const mockCert = {
         id: 'preview',
@@ -37,16 +45,26 @@ export function AdminDashboard() {
         full_name_on_certificate: `${profile.first_name} ${profile.last_name}`,
         course_completion_date: todayIso,
       };
-      const blob = await pdf(<CertificatePDF certificate={mockCert} />).toBlob();
+      const blob = await pdfMod.pdf(<certMod.CertificatePDF certificate={mockCert} />).toBlob();
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       const url = URL.createObjectURL(blob);
       setPreviewUrl(url);
-      // Open in new tab so admin can see + zoom + download if they want.
-      window.open(url, '_blank', 'noopener,noreferrer');
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        // Pop-up blocked → fall back to direct download.
+        toast.info('Pop-up bloqué — téléchargement direct…', 'Info');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'apercu-certificat-aurel-academy.pdf';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
     } catch (e) {
+      const msg = (e as Error)?.message || String(e);
       // eslint-disable-next-line no-console
-      console.error('certificate preview failed', e);
-      toast.error('Impossible de générer l\'aperçu. Réessaie.', 'Erreur');
+      console.error('[certificate-preview]', e);
+      toast.error(msg.slice(0, 120), 'Erreur génération PDF');
     } finally {
       setPreviewLoading(false);
     }
