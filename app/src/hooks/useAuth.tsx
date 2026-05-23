@@ -962,7 +962,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profile,
     profileSource,
     isLoading,
-    isAdmin: !!profile?.is_admin && profileSource === 'db',
+    // SHERLOCK R20 : also trust 'cache' source for isAdmin. Cache is only ever
+    // written AFTER a successful DB read, so cache.is_admin=true means it
+    // really was true in DB within the last 24h (TTL). The 'jwt' stub source
+    // is still rejected because JWT doesn't carry the is_admin claim by
+    // default (profileFromJwt hardcodes false).
+    //
+    // Trade-off : if an admin's privileges are revoked between cache write
+    // and now, they'd still see the admin nav for up to 24h. But all admin
+    // actions go through server-side RLS which rejects non-admins anyway —
+    // so the worst case is they see a useless nav with permission errors.
+    // Better that than legitimate admins NOT seeing admin nav on slow ISP
+    // where loadProfile timed out and only cache+stub are available.
+    isAdmin: !!profile?.is_admin && (profileSource === 'db' || profileSource === 'cache'),
     refreshProfile,
     signOut,
   }), [session, profile, profileSource, isLoading, refreshProfile, signOut]);
