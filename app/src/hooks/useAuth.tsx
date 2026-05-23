@@ -383,6 +383,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Narrow filter (port from Naim) : on compare new vs old côté client puis
    * ignore si current_session_id n'a pas changé. Évite de kicker l'user à
    * chaque update cosmétique de son profile (typo dans first_name, etc.).
+   *
+   * SHERLOCK R18 — GRACE PERIOD ON SUBSCRIPTION : ignore any kick events for
+   * the first 5 seconds after subscribing. Fixes a false-positive kick on
+   * F5 where the Realtime channel replays or catches up an event from
+   * before subscription (e.g. a touch_last_login UPDATE from the bootstrap
+   * itself, OR our own claim_session UPDATE that arrives slightly out of
+   * order due to network latency). Without this grace period, the user gets
+   * "Session expirée" on every refresh on slow networks.
+   *
+   * A real cross-device kick will fire AFTER this 5-second window, so
+   * legitimate single-active-session enforcement still works.
    */
   const subscribeToProfile = useCallback(
     (userId: string) => {
@@ -390,6 +401,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         supabase.removeChannel(realtimeChannelRef.current);
         realtimeChannelRef.current = null;
       }
+
+      const subscribedAt = Date.now();
+      const GRACE_PERIOD_MS = 5000;
 
       const channel = supabase
         .channel(`profile-session:${userId}`)
@@ -411,6 +425,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (!newSid) return;
             const localSid = readLocalSessionId();
             if (localSid && newSid !== localSid) {
+              // R18 : grace period to absorb F5 race conditions.
+              if (Date.now() - subscribedAt < GRACE_PERIOD_MS) {
+                // eslint-disable-next-line no-console
+                console.warn('[Aurel R18] Ignoring kick event within grace period — session preserved');
+                return;
+              }
               forceSignOut('kicked');
             }
           }
