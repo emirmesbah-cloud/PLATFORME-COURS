@@ -59,17 +59,17 @@ export function ResetPasswordPage() {
     // SHERLOCK : HARD TIMEOUT. Avant, on attendait que supabase.auth.getSession()
     // résolve avant de setReady(true). Sur ISP lent, ce call peut hang plusieurs
     // dizaines de secondes — l'user voyait un spinner infini sans pouvoir
-    // demander un nouveau lien. Maintenant : on FORCE setReady(true) après 3s
-    // quoi qu'il arrive. Si linkValid n'a pas été défini d'ici-là, on affiche
-    // "Lien invalide" + bouton "Demander un nouveau lien".
+    // demander un nouveau lien. Maintenant : on FORCE setReady(true) après 5s
+    // (R22 : bumped from 3s for in-app webview wrappers like Gmail iOS where
+    // the PASSWORD_RECOVERY event can arrive slightly later than usual).
     const hardTimeout = setTimeout(() => {
       if (!mounted) return;
       if (!recoveryEventSeen) {
         // eslint-disable-next-line no-console
-        console.warn('[Aurel] reset-password : 3s elapsed without PASSWORD_RECOVERY event — assuming invalid link');
+        console.warn('[Aurel] reset-password : 5s elapsed without PASSWORD_RECOVERY event — assuming invalid link');
       }
       setReady(true);
-    }, 3000);
+    }, 5000);
 
     // Best-effort getSession check : if it does resolve quickly AND has a
     // recovery JWT, mark the link valid. If it hangs, the hardTimeout above

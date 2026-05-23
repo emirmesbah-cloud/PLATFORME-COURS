@@ -128,7 +128,12 @@ export function ActivatePage() {
           return;
         }
         const msg = ERR_MSG[data.error] || 'Erreur inconnue. Contacte Aurel.';
+        // R22 : on EMAIL_ALREADY_EXISTS with auto-login failure, redirect
+        // to /login after toast so the user knows where to go.
         toast.error(msg, 'Activation impossible');
+        if (data.error === 'EMAIL_ALREADY_EXISTS') {
+          setTimeout(() => navigate('/login', { state: { from: { pathname: '/dashboard' } } }), 1500);
+        }
         return;
       }
 

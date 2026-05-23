@@ -284,6 +284,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!error) {
         if (data) {
+          // R22 : if cached profile said is_admin=true but DB says false,
+          // the admin was demoted. Cached UI (admin nav) is now stale.
+          // Clear the queryClient cache so admin queries don't keep showing
+          // data they shouldn't see anymore. RLS prevents data leak, but
+          // the UI nav cleanup is cosmetic + helpful.
+          const cached = readCachedProfile(userId);
+          if (cached && cached.is_admin === true && data.is_admin !== true) {
+            // eslint-disable-next-line no-console
+            console.info('[Aurel R22] admin privileges revoked detected — clearing query cache');
+            queryClient.clear();
+          }
           setProfile(data);
           setProfileSource('db');
           writeCachedProfile(userId, data);

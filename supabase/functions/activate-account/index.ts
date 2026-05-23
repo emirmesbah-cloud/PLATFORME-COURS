@@ -78,6 +78,13 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST')    return errorResponse('METHOD_NOT_ALLOWED', 405);
 
+  // R22 : hard payload size cap. Largest legit payload is ~500 bytes
+  // (6 fields + JSON overhead). Anything over 8kB is malicious.
+  const contentLengthHeader = req.headers.get('content-length');
+  if (contentLengthHeader && Number(contentLengthHeader) > 8192) {
+    return errorResponse('PAYLOAD_TOO_LARGE', 413);
+  }
+
   let payload: any;
   try {
     payload = await req.json();
@@ -96,7 +103,15 @@ serve(async (req) => {
     return errorResponse('MISSING_FIELDS');
   }
   if (!isValidEmail(email))  return errorResponse('EMAIL_INVALID');
+  if (email.length > 254)    return errorResponse('EMAIL_INVALID');
   if (password.length < 8)   return errorResponse('WEAK_PASSWORD');
+  // R22 : password max length 128. Argon hashing of arbitrary-size input is
+  // a DoS vector ; legitimate passwords are well under this.
+  if (password.length > 128) return errorResponse('WEAK_PASSWORD');
+  // R22 : reject implausibly long name/whatsapp fields.
+  if (first_name.length > 50 || last_name.length > 50 || whatsapp.length > 20) {
+    return errorResponse('MISSING_FIELDS');
+  }
 
   // Client admin (service_role) pour valider le code et créer le user.
   const admin: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
