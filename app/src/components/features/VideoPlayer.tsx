@@ -126,6 +126,10 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
           <p className="max-w-sm text-sm text-slate-400">
             {errMsg.includes('INVALID_VIDEO') ? 'Cette leçon n\'est pas encore disponible.' : 'Réessaie dans un instant.'}
           </p>
+          {/* Show raw error for diagnosis — small text, copyable. */}
+          <code className="mt-1 max-w-md break-all rounded bg-black/30 px-2 py-1 text-[10px] text-amber-200">
+            {errMsg}
+          </code>
           <button
             onClick={() => otpQ.refetch()}
             className="mt-2 rounded-md bg-aurel-orange px-4 py-2 text-sm font-semibold text-white hover:bg-aurel-orange-dark"
