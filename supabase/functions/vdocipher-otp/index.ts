@@ -109,6 +109,12 @@ Deno.serve(async (req) => {
     const watermarkText = `${profile.first_name ?? ""} ${profile.last_name ?? ""} · ${profile.email ?? ""}`.trim();
 
     // Call VDOCipher to mint OTP. Docs : https://www.vdocipher.com/blog/dynamic-watermarking
+    //
+    // ttl=300 : 5-min validity. After that the iframe needs a new OTP.
+    // annotate : runtime watermark (anti-piracy forensics).
+    // We don't set whitelisthref because that locks playback to a SINGLE
+    // hardcoded URL ; cleaner to manage the whitelist at the account level
+    // via the VDOCipher dashboard (multiple subdomains, PWA, etc.).
     const vdoResp = await fetch(`https://dev.vdocipher.com/api/videos/${encodeURIComponent(videoId)}/otp`, {
       method: "POST",
       headers: {

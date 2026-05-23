@@ -156,6 +156,17 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
     `&playbackInfo=${encodeURIComponent(playbackInfo)}` +
     `&primaryColor=F97316`;
 
+  // Detect Chrome DevTools mobile emulation. Real mobile devices have
+  // their native DRM (Widevine on Android, FairPlay on iOS). DevTools
+  // emulation sends a mobile UA but uses the underlying desktop browser's
+  // DRM (Widevine only on desktop Chrome). When VDOCipher detects iOS UA
+  // it tries FairPlay → Chrome can't supply it → Error 2112.
+  const isLikelyEmulation =
+    typeof navigator !== 'undefined' &&
+    /iPhone|iPad|iPod/i.test(navigator.userAgent) &&
+    // Real iOS = touch device. DevTools emulation = no touch.
+    !('ontouchend' in document);
+
   return (
     <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
       <iframe
@@ -166,6 +177,12 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
         className="h-full w-full border-0"
         title={lesson.title}
       />
+      {isLikelyEmulation && (
+        <div className="bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+          ⚠️ <strong>Mode émulation détecté.</strong> Si la vidéo ne joue pas (Error 2112), c'est une limitation de Chrome DevTools — pas un bug de l'app.
+          Teste sur un vrai téléphone : ça fonctionnera.
+        </div>
+      )}
     </div>
   );
 }
