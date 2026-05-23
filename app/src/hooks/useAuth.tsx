@@ -725,12 +725,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // RACE FIX : on N'attache PAS subscribeToProfile avant que claim_session
-        // ait écrit le nouveau session_id en localStorage. Sinon : RPC écrit
-        // current_session_id en DB → realtime broadcast notre propre UPDATE →
-        // handler compare new_sid vs OLD localSid → mismatch →
-        // forceSignOut('kicked') de l'utilisateur légitime.
-        await claimSession();
+        // SHERLOCK R19 : only call claim_session if we DON'T already have a
+        // local session_id for this user. On F5 with R17 backup restore,
+        // supabase-js fires SIGNED_IN (not INITIAL_SESSION) because it sees a
+        // "new" session in storage. But we already have a session_id from the
+        // original login. Re-claiming would :
+        //   1. Issue a NEW UUID server-side that races with our existing one.
+        //   2. If claim_session times out CLIENT-side but SUCCEEDS server-side
+        //      (common on slow ISP), the DB now has the new UUID but
+        //      localStorage still has the old one. The next Realtime UPDATE
+        //      event then fires a false kick because new_sid != local_sid.
+        //
+        // Skipping the re-claim when we already have a session_id keeps the
+        // existing one valid and avoids the race. Legitimate kicks (login
+        // on another device) still work because on that OTHER device the
+        // SIGNED_IN fires WITHOUT a pre-existing localSid → claim runs →
+        // new UUID broadcasted → this device gets kicked.
+        //
+        // RACE FIX (existing) : on N'attache PAS subscribeToProfile avant
+        // que claim_session ait écrit le nouveau session_id en localStorage.
+        const existingSid = readLocalSessionId();
+        if (!existingSid) {
+          await claimSession();
+        } else {
+          // eslint-disable-next-line no-console
+          console.info('[Aurel R19] SIGNED_IN with existing sid — skipping claim_session');
+        }
 
         // Subscribe APRÈS que la nouvelle session_id soit en localStorage.
         subscribeToProfile(newSession.user.id);
