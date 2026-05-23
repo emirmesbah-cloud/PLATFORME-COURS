@@ -1,13 +1,62 @@
 import { useQuery } from '@tanstack/react-query';
-import { Users, Activity, KeyRound, TrendingUp } from 'lucide-react';
-import { fetchAdminStats, queryKeys } from '@/lib/queries';
+import { Users, Activity, KeyRound, TrendingUp, CheckCircle2, Circle } from 'lucide-react';
+import { fetchAdminStats, fetchLessons, fetchBonus, queryKeys } from '@/lib/queries';
 import { Spinner } from '@/components/ui/Spinner';
 
 export function AdminDashboard() {
-  const { data, isLoading } = useQuery({ queryKey: queryKeys.adminStats, queryFn: fetchAdminStats });
+  const statsQ   = useQuery({ queryKey: queryKeys.adminStats, queryFn: fetchAdminStats });
+  const lessonsQ = useQuery({ queryKey: queryKeys.lessons,    queryFn: fetchLessons });
+  const bonusQ   = useQuery({ queryKey: queryKeys.bonus,      queryFn: fetchBonus });
 
-  if (isLoading) return <Spinner label="Chargement des stats..." />;
-  if (!data) return <div className="card-padded">Stats indisponibles.</div>;
+  if (statsQ.isLoading) return <Spinner label="Chargement des stats..." />;
+  if (!statsQ.data) return <div className="card-padded">Stats indisponibles.</div>;
+  const data = statsQ.data;
+
+  // Compute checklist state dynamically. Each step is "done" when the
+  // corresponding data exists in the DB. The whole section auto-hides once
+  // all 4 steps are complete.
+  const lessons = lessonsQ.data ?? [];
+  const bonus   = bonusQ.data ?? [];
+
+  const lessonsWithVideo  = lessons.filter((l) => !!l.vdocipher_video_id).length;
+  const lessonsTotal      = lessons.length;
+  const bonusWithFile     = bonus.filter((b) => !!b.file_url).length;
+  const bonusTotal        = bonus.length;
+  const hasCodes          = data.codes_total > 0;
+  const hasStudents       = data.total_students > 0;
+
+  const steps = [
+    {
+      done: hasCodes,
+      label: hasCodes
+        ? <>Codes générés ({data.codes_total}) — continue à en créer dans <span className="font-semibold">/admin/codes</span> pour tes nouveaux clients.</>
+        : <>Génère des codes dans <span className="font-semibold">/admin/codes</span> et envoie-les par WhatsApp à tes nouveaux clients.</>,
+    },
+    {
+      done: lessonsTotal > 0 && lessonsWithVideo === lessonsTotal,
+      label: lessonsTotal === 0
+        ? <>Aucune leçon dans la DB.</>
+        : lessonsWithVideo === lessonsTotal
+        ? <>Toutes les vidéos VDOCipher sont liées ({lessonsWithVideo}/{lessonsTotal}).</>
+        : <>{lessonsWithVideo}/{lessonsTotal} leçons ont une vidéo VDOCipher. Complète les autres dans <span className="font-semibold">/admin/lessons</span>.</>,
+    },
+    {
+      done: bonusTotal > 0 && bonusWithFile === bonusTotal,
+      label: bonusTotal === 0
+        ? <>Aucun bonus dans la DB.</>
+        : bonusWithFile === bonusTotal
+        ? <>Tous les bonus DOCX sont uploadés ({bonusWithFile}/{bonusTotal}).</>
+        : <>{bonusWithFile}/{bonusTotal} bonus uploadés. Upload les restants dans <span className="font-semibold">/admin/bonus</span>.</>,
+    },
+    {
+      done: hasStudents,
+      label: hasStudents
+        ? <>Tu as déjà des étudiants inscrits ({data.total_students}). Suis leur activité dans <span className="font-semibold">/admin/students</span>.</>
+        : <>Aucun étudiant inscrit. Une fois que des codes seront utilisés, ils apparaîtront dans <span className="font-semibold">/admin/students</span>.</>,
+    },
+  ];
+
+  const allDone = steps.every((s) => s.done);
 
   return (
     <div className="space-y-6">
@@ -34,15 +83,33 @@ export function AdminDashboard() {
         />
       </div>
 
-      <div className="card-padded">
-        <h2 className="mb-3 text-lg font-bold text-aurel-ink">Prochaines étapes</h2>
-        <ul className="ml-5 list-disc space-y-1 text-sm text-slate-600">
-          <li>Génère des codes dans <span className="font-semibold">/admin/codes</span> et envoie-les par WhatsApp à tes nouveaux clients.</li>
-          <li>Renseigne les <span className="font-semibold">vdocipher_video_id</span> dans <span className="font-semibold">/admin/lessons</span> au fur et à mesure que tu enregistres.</li>
-          <li>Upload les fichiers DOCX bonus dans <span className="font-semibold">/admin/bonus</span> pour qu'ils soient téléchargeables par les étudiants.</li>
-          <li>Suis ton activité : étudiants connectés, leçons en cours, codes utilisés.</li>
-        </ul>
-      </div>
+      {/* Dynamic checklist : hides entirely when all 4 steps are done. */}
+      {!allDone && (
+        <div className="card-padded">
+          <h2 className="mb-3 text-lg font-bold text-aurel-ink">Prochaines étapes</h2>
+          <ul className="space-y-2 text-sm">
+            {steps.map((step, i) => (
+              <li key={i} className="flex items-start gap-2">
+                {step.done ? (
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+                ) : (
+                  <Circle className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" />
+                )}
+                <span className={step.done ? 'text-slate-400 line-through' : 'text-slate-700'}>
+                  {step.label}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {allDone && (
+        <div className="card-padded flex items-center gap-3 border-green-200 bg-green-50 text-sm text-green-800">
+          <CheckCircle2 className="h-5 w-5 text-green-600" />
+          <span>Plateforme entièrement configurée. Tu peux maintenant te concentrer sur l'acquisition et le suivi des étudiants.</span>
+        </div>
+      )}
     </div>
   );
 }

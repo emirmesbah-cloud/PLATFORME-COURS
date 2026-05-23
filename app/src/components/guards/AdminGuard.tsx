@@ -11,42 +11,48 @@ export function AdminGuard({ children }: { children: ReactNode }) {
 
   // Same race-fix tolerance as AuthGuard : pendant ~1-2 sec post-login,
   // session existe mais profile=null. Sur ISP lent ça peut durer plus
-  // longtemps. 30s timeout puis fallback /login (jamais /activate, le
-  // user est déjà inscrit).
+  // longtemps. 60s timeout (was 30s) puis fallback /login.
   const [profileLoadingExpired, setProfileLoadingExpired] = useState(false);
   useEffect(() => {
     if (session && !profile) {
       setProfileLoadingExpired(false);
-      const t = setTimeout(() => setProfileLoadingExpired(true), 30000);
+      const t = setTimeout(() => setProfileLoadingExpired(true), 60000);
       return () => clearTimeout(t);
     }
     setProfileLoadingExpired(false);
   }, [session?.user?.id, profile?.id]);
 
-  // SHERLOCK round 2 fix : on attend explicitement la confirmation DB du
-  // profile avant de décider admin/non-admin. Avant, le profile était
-  // matérialisé immédiatement depuis JWT-stub (`is_admin: false`) ou cache
-  // (potentiellement poisoned), ce qui causait :
-  //   1. Faux toast "Accès refusé" pour les vrais admins pendant le délai
-  //      stub→DB.
-  //   2. Cache poisoned (devtools edit localStorage avec is_admin:true)
-  //      faisait render l'admin UI pendant 30s avant que la DB ne corrige.
-  // Maintenant : on spinner jusqu'à `profileSource === 'db'` (max 30s),
-  // puis on tranche sur l'isAdmin confirmé. `isAdmin` du context est
-  // déjà DB-gated (voir useAuth → isAdmin = is_admin && profileSource==='db').
-  const [dbConfirmExpired, setDbConfirmExpired] = useState(false);
+  // SHERLOCK R20 + R21 : trust cache for admin access.
+  // Before, AdminGuard waited up to 30s for profileSource === 'db' before
+  // rendering admin UI. On slow Algerian ISP, this meant admins saw the
+  // "Vérification des droits d'accès..." spinner for 30 seconds every time
+  // they navigated to /admin. Same root cause as R20 (useAuth.isAdmin).
+  //
+  // Fix : if profile is loaded from cache AND is_admin=true, render the
+  // admin UI immediately. Cache is only written after a successful DB
+  // read, so its is_admin field is authoritative. Server-side RLS still
+  // rejects any admin action from a non-admin, so even if the cache is
+  // stale (admin privileges revoked between cache write and now), the
+  // worst case is the user sees admin nav and gets permission errors —
+  // never an unauthorized action.
+  //
+  // We keep a SHORT (5s) wait for jwt/stub source to upgrade to cache/db
+  // — this covers the brief moment between bootstrap and the first cache
+  // hit. After 5s of stub, fall back to /dashboard.
+  const [stubExpired, setStubExpired] = useState(false);
   useEffect(() => {
-    if (session && profile && profileSource !== 'db') {
-      setDbConfirmExpired(false);
-      const t = setTimeout(() => setDbConfirmExpired(true), 30000);
+    if (session && profile && profileSource === 'jwt') {
+      setStubExpired(false);
+      const t = setTimeout(() => setStubExpired(true), 5000);
       return () => clearTimeout(t);
     }
-    setDbConfirmExpired(false);
+    setStubExpired(false);
   }, [session?.user?.id, profile?.id, profileSource]);
 
   useEffect(() => {
-    // Fire la toast UNIQUEMENT après la confirmation DB — sinon les vrais
-    // admins voient un faux "Accès refusé" pendant la transition stub→DB.
+    // Fire the "not admin" toast only when we have DB confirmation that
+    // user is NOT admin. Otherwise we'd show a false-positive toast during
+    // stub→cache transition for legitimate admins.
     if (!isLoading && session && profile && profileSource === 'db' && !isAdmin) {
       toast.error('Accès refusé. Cet espace est réservé aux administrateurs.', 'Accès refusé');
     }
@@ -61,18 +67,18 @@ export function AdminGuard({ children }: { children: ReactNode }) {
     return <Navigate to="/login" state={{ profileLoadFailed: true, from: location }} replace />;
   }
 
-  // Profile présent mais pas encore DB-confirmé → spinner jusqu'à 30s.
-  // Sur ISP lent, on évite à la fois le faux toast ET l'admin UI flash.
-  if (profileSource !== 'db') {
-    if (!dbConfirmExpired) {
+  // If only JWT-stub is available (no cache, no DB yet), wait briefly for
+  // an upgrade. JWT stub hardcodes is_admin=false, so we can't trust it.
+  if (profileSource === 'jwt') {
+    if (!stubExpired) {
       return <FullPageSpinner label="Vérification des droits d'accès…" />;
     }
-    // 30s sans confirmation DB → on assume que la query échoue durablement.
-    // Fallback /dashboard (sécurité = on n'autorise PAS l'admin UI sans
-    // confirmation, on dégrade gracieusement vers l'espace student).
+    // 5s with only stub = something is really wrong. Fall back to dashboard.
     return <Navigate to="/dashboard" replace />;
   }
 
+  // From here, profile is from 'cache' or 'db'. isAdmin already trusts both
+  // (R20). If admin → render. If not admin → redirect to dashboard.
   if (!isAdmin) return <Navigate to="/dashboard" replace />;
 
   return <>{children}</>;
