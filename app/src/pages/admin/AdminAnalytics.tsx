@@ -5,7 +5,6 @@ import {
 } from 'recharts';
 import { TrendingUp, Users, Clock, CheckCircle2, Star, Activity } from 'lucide-react';
 import { fetchAdvancedAnalytics, queryKeys } from '@/lib/queries';
-import { Spinner } from '@/components/ui/Spinner';
 import { initials, formatSeconds, tierLabel } from '@/lib/utils';
 
 const ORANGE = '#F97316';
@@ -19,8 +18,33 @@ export function AdminAnalytics() {
     queryFn: fetchAdvancedAnalytics,
   });
 
-  if (isLoading) return <Spinner label="Calcul des analytics..." />;
-  if (error || !data) return <div className="card-padded">Stats indisponibles.</div>;
+  // SHERLOCK R22 : non-blocking render. Page chrome + skeleton KPIs visible
+  // immediately, real data fades in when the (heavy) RPC returns.
+  if (!data) {
+    return (
+      <div className="space-y-8">
+        <header>
+          <h1 className="text-3xl font-bold text-aurel-ink">Analytics avancées</h1>
+          <p className="mt-1 text-slate-600">Vue détaillée de l'engagement, du funnel et de la satisfaction.</p>
+        </header>
+        {error && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            Stats indisponibles. Recharge la page pour réessayer.
+          </div>
+        )}
+        {!error && isLoading && (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="card-padded animate-pulse">
+                <div className="mb-3 h-3 w-2/3 rounded bg-slate-200" />
+                <div className="h-7 w-1/2 rounded bg-slate-200" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // Aggregate acquisition by day across tiers for line chart
   const acquisitionByDay = aggByDay(data.acquisition ?? []);

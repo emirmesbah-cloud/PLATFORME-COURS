@@ -66,7 +66,14 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
     staleTime: 4 * 60_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    retry: 3,
+    // R22 : skip retries on NOT_AUTHENTICATED. Retrying 3× burns 7s before
+    // showing the "Se reconnecter" UI, but auth errors won't fix themselves
+    // — they need a fresh login. Other errors (network blips) get 3 retries.
+    retry: (n, err) => {
+      const msg = (err as Error)?.message || '';
+      if (msg.includes('NOT_AUTHENTICATED') || msg.includes('401')) return false;
+      return n < 3;
+    },
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 8000),
   });
 

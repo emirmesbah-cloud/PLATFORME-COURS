@@ -21,8 +21,8 @@ const schema = z.object({
     z.string().regex(ACTIVATION_CODE_REGEX, 'Format attendu : AU-XXXXXX ou AC-XXXXXX (6 caractères)')
   ),
   email: z.string().email('Email invalide'),
-  password: z.string().min(8, 'Au moins 8 caractères'),
-  confirm_password: z.string().min(8),
+  password: z.string().min(8, 'Au moins 8 caractères').max(128, 'Maximum 128 caractères'),
+  confirm_password: z.string().min(8).max(128),
   first_name: z.string().min(1, 'Prénom requis').max(50),
   last_name: z.string().min(1, 'Nom requis').max(50),
   whatsapp: z.string().regex(WHATSAPP_REGEX, 'Format : 0555290826 (numéro algérien)'),

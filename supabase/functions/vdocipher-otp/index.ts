@@ -24,35 +24,50 @@ const VDOCIPHER_API_KEY = Deno.env.get("VDOCIPHER_API_KEY") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// SHERLOCK R22 : strict CORS — match the pattern used by admin-purge-user
+// and other sensitive functions. Was '*' previously which let any origin
+// proxy OTP requests with a stolen JWT.
+const ALLOWED_ORIGINS = new Set<string>([
+  "https://app.aurel-academy.com",
+  "https://aurel-academy.com",
+  "http://localhost:5173",
+  "http://localhost:4173",
+]);
 
-function json(body: unknown, status = 200) {
+function buildCors(origin: string | null): Record<string, string> {
+  const allowOrigin = origin && ALLOWED_ORIGINS.has(origin) ? origin : "https://app.aurel-academy.com";
+  return {
+    "Access-Control-Allow-Origin":  allowOrigin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Vary":                         "Origin",
+  };
+}
+
+function json(body: unknown, status = 200, origin: string | null = null) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    headers: { ...buildCors(origin), "Content-Type": "application/json" },
   });
 }
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get("Origin");
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: CORS_HEADERS });
+    return new Response("ok", { headers: buildCors(origin) });
   }
   if (req.method !== "POST") {
-    return json({ error: "METHOD_NOT_ALLOWED" }, 405);
+    return json({ error: "METHOD_NOT_ALLOWED" }, 405, origin);
   }
   if (!VDOCIPHER_API_KEY) {
     console.error("[vdocipher-otp] VDOCIPHER_API_KEY env var missing");
-    return json({ error: "SERVER_MISCONFIG" }, 500);
+    return json({ error: "SERVER_MISCONFIG" }, 500, origin);
   }
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return json({ error: "NOT_AUTHENTICATED" }, 401);
+      return json({ error: "NOT_AUTHENTICATED" }, 401, origin);
     }
 
     // Service-role client with caller's JWT for auth verification + RLS-aware reads.
@@ -63,20 +78,24 @@ Deno.serve(async (req) => {
 
     const { data: userData, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userData?.user) {
-      return json({ error: "NOT_AUTHENTICATED" }, 401);
+      return json({ error: "NOT_AUTHENTICATED" }, 401, origin);
     }
     const userId = userData.user.id;
 
-    // Parse request body.
+    // Parse request body. Hard cap : reject bodies > 4kB (video_id is ~32 chars).
+    const contentLengthHeader = req.headers.get("Content-Length");
+    if (contentLengthHeader && Number(contentLengthHeader) > 4096) {
+      return json({ error: "PAYLOAD_TOO_LARGE" }, 413, origin);
+    }
     let body: { video_id?: string };
     try {
       body = await req.json();
     } catch {
-      return json({ error: "INVALID_JSON" }, 400);
+      return json({ error: "INVALID_JSON" }, 400, origin);
     }
     const videoId = body?.video_id?.trim();
     if (!videoId || typeof videoId !== "string" || videoId.length < 10 || videoId.length > 64) {
-      return json({ error: "INVALID_VIDEO_ID" }, 400);
+      return json({ error: "INVALID_VIDEO_ID" }, 400, origin);
     }
 
     // ANTI-OTP-FISHING : verify the video ID belongs to a real published lesson.
@@ -90,7 +109,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (lessonErr || !lesson) {
       console.warn("[vdocipher-otp] invalid video request", { userId, videoId, err: lessonErr });
-      return json({ error: "INVALID_VIDEO" }, 403);
+      return json({ error: "INVALID_VIDEO" }, 403, origin);
     }
 
     // Profile lookup — used for revoked-account check + future forensic
@@ -101,10 +120,10 @@ Deno.serve(async (req) => {
       .eq("id", userId)
       .maybeSingle();
     if (!profile) {
-      return json({ error: "NO_PROFILE" }, 403);
+      return json({ error: "NO_PROFILE" }, 403, origin);
     }
     if (profile.revoked_at) {
-      return json({ error: "ACCOUNT_REVOKED" }, 403);
+      return json({ error: "ACCOUNT_REVOKED" }, 403, origin);
     }
 
     // Branded watermark — user-requested change : no personal info shown
@@ -146,20 +165,15 @@ Deno.serve(async (req) => {
     if (!vdoResp.ok) {
       const errText = await vdoResp.text().catch(() => "");
       console.error("[vdocipher-otp] VDOCipher API error", vdoResp.status, errText.slice(0, 400));
-      // Expose the real upstream error message to the client so we can debug
-      // without server log access. Safe : it's our OWN VDOCipher errors, no
-      // PII or secrets in the body.
-      return json({
-        error: "VDOCIPHER_FAILED",
-        status: vdoResp.status,
-        upstream: errText.slice(0, 200),
-      }, 502);
+      // R22 : don't leak upstream error body (could include hints / signed URLs).
+      // Log server-side, return generic code to client.
+      return json({ error: "VDOCIPHER_FAILED", status: vdoResp.status }, 502, origin);
     }
 
     const data = await vdoResp.json();
     if (!data?.otp || !data?.playbackInfo) {
       console.error("[vdocipher-otp] VDOCipher returned malformed payload", data);
-      return json({ error: "VDOCIPHER_MALFORMED" }, 502);
+      return json({ error: "VDOCIPHER_MALFORMED" }, 502, origin);
     }
 
     return json({
@@ -168,9 +182,9 @@ Deno.serve(async (req) => {
       playbackInfo: data.playbackInfo,
       // Useful for debugging which lesson was requested.
       lesson_number: lesson.lesson_number,
-    });
+    }, 200, origin);
   } catch (e) {
     console.error("[vdocipher-otp] unhandled", e);
-    return json({ error: "INTERNAL" }, 500);
+    return json({ error: "INTERNAL" }, 500, origin);
   }
 });

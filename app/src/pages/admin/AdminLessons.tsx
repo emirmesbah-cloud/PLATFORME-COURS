@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { fetchLessons, adminUpdateLesson, queryKeys } from '@/lib/queries';
 import { Switch } from '@/components/ui/Switch';
-import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDuration } from '@/lib/utils';
 import type { Lesson } from '@/lib/types';
@@ -12,8 +11,6 @@ export function AdminLessons() {
   const qc = useQueryClient();
   const toast = useToast();
   const { data, isLoading } = useQuery({ queryKey: queryKeys.lessons, queryFn: fetchLessons });
-
-  if (isLoading) return <Spinner label="Chargement..." />;
   const lessons = data ?? [];
 
   return (
@@ -35,18 +32,28 @@ export function AdminLessons() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {lessons.map((l) => (
-              <LessonRow
-                key={l.id}
-                lesson={l}
-                onSave={(patch) => {
-                  return adminUpdateLesson(l.id, patch).then(() => {
-                    qc.invalidateQueries({ queryKey: queryKeys.lessons });
-                    toast.success('Leçon mise à jour.');
-                  }).catch(() => toast.error('Erreur. Réessaie.'));
-                }}
-              />
-            ))}
+            {isLoading && lessons.length === 0
+              ? Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-4 py-3"><div className="h-3 w-6 rounded bg-slate-200" /></td>
+                    <td className="px-4 py-3"><div className="h-4 w-2/3 rounded bg-slate-200" /></td>
+                    <td className="px-4 py-3"><div className="h-3 w-12 rounded bg-slate-100" /></td>
+                    <td className="px-4 py-3"><div className="h-8 w-full rounded bg-slate-100" /></td>
+                    <td className="px-4 py-3"><div className="h-5 w-10 rounded bg-slate-200" /></td>
+                  </tr>
+                ))
+              : lessons.map((l) => (
+                  <LessonRow
+                    key={l.id}
+                    lesson={l}
+                    onSave={(patch) => {
+                      return adminUpdateLesson(l.id, patch).then(() => {
+                        qc.invalidateQueries({ queryKey: queryKeys.lessons });
+                        toast.success('Leçon mise à jour.');
+                      }).catch(() => toast.error('Erreur. Réessaie.'));
+                    }}
+                  />
+                ))}
           </tbody>
         </table>
       </div>

@@ -10,8 +10,8 @@ import { PasswordInput } from '@/components/ui/PasswordInput';
 import { AurelLogo } from '@/components/features/AurelLogo';
 
 const schema = z.object({
-  email: z.string().email('Email invalide'),
-  password: z.string().min(8, 'Au moins 8 caractères'),
+  email: z.string().email('Email invalide').max(254),
+  password: z.string().min(8, 'Au moins 8 caractères').max(128),
 });
 type FormValues = z.infer<typeof schema>;
 

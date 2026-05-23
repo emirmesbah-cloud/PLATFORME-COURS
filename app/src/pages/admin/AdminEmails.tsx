@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Mail, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { fetchEmailLogs, queryKeys } from '@/lib/queries';
-import { Spinner } from '@/components/ui/Spinner';
 import { formatDateTime, cn } from '@/lib/utils';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -18,7 +17,6 @@ export function AdminEmails() {
     queryFn:  () => fetchEmailLogs({ limit: 200 }),
   });
 
-  if (isLoading) return <Spinner label="Chargement..." />;
   const logs = data ?? [];
 
   const sent   = logs.filter((l) => l.status === 'sent').length;

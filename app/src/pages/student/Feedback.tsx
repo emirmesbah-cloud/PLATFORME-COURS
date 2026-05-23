@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Star, Loader2, Heart, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchOwnFeedback, submitFeedback, queryKeys } from '@/lib/queries';
-import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 
@@ -32,7 +31,13 @@ export function StudentFeedback() {
     enabled: !!uid,
   });
 
-  if (isLoading) return <Spinner label="Chargement..." />;
+  // SHERLOCK R22 : don't block render while checking for existing feedback.
+  // If the user has already submitted, the form is replaced once data arrives.
+  // Otherwise they see the form right away.
+  if (isLoading && !existing) {
+    // optimistic : render the empty form immediately. If existing arrives,
+    // React re-renders to the "merci" view below.
+  }
 
   if (existing) {
     return (

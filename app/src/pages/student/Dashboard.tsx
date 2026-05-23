@@ -85,9 +85,9 @@ export function StudentDashboard() {
         </div>
         <ProgressBar value={summary?.percentage_complete ?? 0} color="orange" className="h-3" />
         <div className="mt-4 grid grid-cols-1 gap-4 text-sm md:grid-cols-3">
-          <Stat icon={BookOpen} label="Leçons terminées" value={`${summary?.completed_lessons ?? 0} / ${summary?.total_lessons ?? 18}`} />
+          <Stat icon={BookOpen} label="Leçons terminées" value={`${summary?.completed_lessons ?? 0} / ${summary?.total_lessons ?? lessons.length}`} />
           <Stat icon={Clock}    label="Temps de cours visionné" value={formatSeconds(summary?.total_watched_seconds ?? 0)} />
-          <Stat icon={TrendingUp} label="Bonus disponibles" value={`${bonus.filter(b => b.is_published).length} / 7`} />
+          <Stat icon={TrendingUp} label="Bonus disponibles" value={`${bonus.filter(b => b.is_published).length} / ${bonus.length || 7}`} />
         </div>
       </section>
 

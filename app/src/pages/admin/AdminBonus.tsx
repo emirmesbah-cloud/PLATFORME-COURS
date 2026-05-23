@@ -4,7 +4,6 @@ import { Upload, Download, Loader2, FileText } from 'lucide-react';
 import { fetchBonus, adminUpdateBonus, queryKeys, getBonusSignedUrl } from '@/lib/queries';
 import { supabase } from '@/lib/supabase';
 import { Switch } from '@/components/ui/Switch';
-import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import type { BonusResource } from '@/lib/types';
 
@@ -12,8 +11,6 @@ export function AdminBonus() {
   const qc = useQueryClient();
   const toast = useToast();
   const { data, isLoading } = useQuery({ queryKey: queryKeys.bonus, queryFn: fetchBonus });
-
-  if (isLoading) return <Spinner label="Chargement..." />;
   const bonus = data ?? [];
 
   return (
@@ -24,20 +21,28 @@ export function AdminBonus() {
       </header>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {bonus.map((b) => (
-          <BonusRow
-            key={b.id}
-            bonus={b}
-            onTogglePublished={(v) => adminUpdateBonus(b.id, { is_published: v })
-              .then(() => { qc.invalidateQueries({ queryKey: queryKeys.bonus }); toast.success('Mis à jour.'); })
-              .catch(() => toast.error('Erreur.'))
-            }
-            onUploaded={(path) => adminUpdateBonus(b.id, { file_url: path })
-              .then(() => { qc.invalidateQueries({ queryKey: queryKeys.bonus }); toast.success('Fichier lié.'); })
-              .catch(() => toast.error('Erreur.'))
-            }
-          />
-        ))}
+        {isLoading && bonus.length === 0
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="card-padded animate-pulse">
+                <div className="mb-3 h-12 w-12 rounded-lg bg-slate-200" />
+                <div className="mb-2 h-4 w-2/3 rounded bg-slate-200" />
+                <div className="h-3 w-full rounded bg-slate-100" />
+              </div>
+            ))
+          : bonus.map((b) => (
+              <BonusRow
+                key={b.id}
+                bonus={b}
+                onTogglePublished={(v) => adminUpdateBonus(b.id, { is_published: v })
+                  .then(() => { qc.invalidateQueries({ queryKey: queryKeys.bonus }); toast.success('Mis à jour.'); })
+                  .catch(() => toast.error('Erreur.'))
+                }
+                onUploaded={(path) => adminUpdateBonus(b.id, { file_url: path })
+                  .then(() => { qc.invalidateQueries({ queryKey: queryKeys.bonus }); toast.success('Fichier lié.'); })
+                  .catch(() => toast.error('Erreur.'))
+                }
+              />
+            ))}
       </div>
     </div>
   );

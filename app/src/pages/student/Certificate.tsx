@@ -145,7 +145,10 @@ export function StudentCertificate() {
   // Si pas encore de certificat
   if (!cert) {
     const pct = summary?.percentage_complete ?? 0;
-    const remaining = (summary?.total_lessons ?? 18) - (summary?.completed_lessons ?? 0);
+    // R22 : DB now has 19 lessons (incl. disclaimer). Use server total if
+    // available, fallback to 19 — not the old hardcoded 18.
+    const totalLessons = summary?.total_lessons ?? 19;
+    const remaining = totalLessons - (summary?.completed_lessons ?? 0);
     return (
       <div className="max-w-2xl mx-auto space-y-8">
         <header className="text-center">
@@ -154,7 +157,7 @@ export function StudentCertificate() {
           </div>
           <h1 className="text-3xl font-bold text-aurel-ink">Ton certificat n'est pas encore débloqué</h1>
           <p className="mt-2 text-slate-600">
-            Termine les <strong>{summary?.total_lessons ?? 18} leçons</strong> pour recevoir ton certificat
+            Termine les <strong>{totalLessons} leçons</strong> pour recevoir ton certificat
             officiel <span className="font-serif italic">Deutsch für Pflegekräfte</span>.
           </p>
         </header>
@@ -166,7 +169,7 @@ export function StudentCertificate() {
           </div>
           <ProgressBar value={pct} color="orange" className="h-3" />
           <p className="mt-3 text-sm text-slate-500">
-            {summary?.completed_lessons ?? 0} / {summary?.total_lessons ?? 18} leçons complétées —
+            {summary?.completed_lessons ?? 0} / {totalLessons} leçons complétées —
             il te reste <strong>{remaining}</strong> leçon{remaining > 1 ? 's' : ''}.
           </p>
         </section>

@@ -64,16 +64,25 @@ export function StudentProfile() {
     toast.success('Profil mis à jour.');
   }
 
+  // R22 : double-submit guard. Resend charges per email — without this,
+  // double-tap would fire two reset emails.
+  const [sendingReset, setSendingReset] = useState(false);
   async function handlePasswordReset() {
     if (!profile?.email) return;
-    const { error } = await supabase.auth.resetPasswordForEmail(profile.email, {
-      redirectTo: window.location.origin + '/reset-password',
-    });
-    if (error) {
-      toast.error('Impossible d\'envoyer l\'email.', 'Erreur');
-      return;
+    if (sendingReset) return;
+    setSendingReset(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(profile.email, {
+        redirectTo: window.location.origin + '/reset-password',
+      });
+      if (error) {
+        toast.error('Impossible d\'envoyer l\'email.', 'Erreur');
+        return;
+      }
+      toast.success(`Lien envoyé à ${profile.email}.`, 'Email envoyé');
+    } finally {
+      setSendingReset(false);
     }
-    toast.success(`Lien envoyé à ${profile.email}.`, 'Email envoyé');
   }
 
   async function handleSignOut() {
@@ -85,7 +94,18 @@ export function StudentProfile() {
     navigate('/login', { replace: true });
   }
 
-  if (!profile) return null;
+  // R22 : show small skeleton instead of blank screen if profile briefly null.
+  if (!profile) {
+    return (
+      <div className="max-w-2xl space-y-6">
+        <header><div className="h-9 w-48 animate-pulse rounded bg-slate-200" /></header>
+        <section className="card-padded animate-pulse space-y-3">
+          <div className="h-4 w-1/3 rounded bg-slate-100" />
+          <div className="h-4 w-2/3 rounded bg-slate-100" />
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -140,8 +160,8 @@ export function StudentProfile() {
       <section className="card-padded">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Sécurité</h2>
         <div className="flex flex-col gap-3">
-          <button onClick={handlePasswordReset} className="btn-outline w-full md:w-auto">
-            Changer le mot de passe (lien par email)
+          <button onClick={handlePasswordReset} disabled={sendingReset} className="btn-outline w-full md:w-auto">
+            {sendingReset ? 'Envoi en cours…' : 'Changer le mot de passe (lien par email)'}
           </button>
           <button onClick={handleSignOut} className="btn-danger w-full md:w-auto">
             <LogOut className="h-4 w-4" /> Se déconnecter

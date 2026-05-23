@@ -6,7 +6,6 @@ import { fetchLessons, fetchLessonByNumber, fetchUserProgress, queryKeys } from 
 import { useAuth } from '@/hooks/useAuth';
 import { VideoPlayer } from '@/components/features/VideoPlayer';
 import { LessonNotes } from '@/components/features/LessonNotes';
-import { Spinner } from '@/components/ui/Spinner';
 import { formatDuration, cn } from '@/lib/utils';
 
 const TABS = ['Objectifs', 'Contenu', 'Notes'] as const;
@@ -29,9 +28,35 @@ export function StudentLessonDetail() {
   // SHERLOCK R13 — B4: out-of-range / non-integer lesson number → /lecons.
   if (!lessonValid) return <Navigate to="/lecons" replace />;
 
-  if (lessonQ.isLoading || lessonsQ.isLoading) return <Spinner label="Chargement..." />;
   const lesson = lessonQ.data;
-  if (!lesson) return <div className="card-padded">Leçon introuvable.</div>;
+
+  // SHERLOCK R22 : non-blocking render. Show back link + skeleton header
+  // while the lesson loads. If genuinely missing (404), show "Leçon introuvable".
+  if (!lesson) {
+    if (lessonQ.isLoading) {
+      return (
+        <div>
+          <Link to="/lecons" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-aurel-ink">
+            <ArrowLeft className="h-4 w-4" /> Toutes les leçons
+          </Link>
+          <div className="animate-pulse space-y-3">
+            <div className="h-5 w-24 rounded bg-slate-200" />
+            <div className="h-9 w-2/3 rounded bg-slate-200" />
+            <div className="h-4 w-1/2 rounded bg-slate-100" />
+            <div className="mt-6 aspect-video w-full max-w-3xl rounded-xl bg-slate-200" />
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div>
+        <Link to="/lecons" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-aurel-ink">
+          <ArrowLeft className="h-4 w-4" /> Toutes les leçons
+        </Link>
+        <div className="card-padded">Leçon introuvable.</div>
+      </div>
+    );
+  }
 
   const lessons = lessonsQ.data ?? [];
   const progress = (progQ.data ?? []).find((p) => p.lesson_id === lesson.id);
