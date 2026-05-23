@@ -135,26 +135,59 @@ export interface VdocipherOtpResponse {
   lesson_number?: number;
 }
 export async function fetchVdocipherOtp(videoId: string): Promise<VdocipherOtpResponse> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData.session?.access_token;
-  if (!accessToken) throw new Error('NOT_AUTHENTICATED');
   const env = (import.meta as { env: Record<string, string> }).env;
   const url = `${env.VITE_SUPABASE_URL}/functions/v1/vdocipher-otp`;
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
-      'apikey': env.VITE_SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify({ video_id: videoId }),
-  });
-  const body = await r.json().catch(() => ({}));
-  if (!r.ok || !body?.ok) {
-    const err = body?.error || `HTTP ${r.status}`;
+
+  // Helper to do the actual fetch with whatever access token is current.
+  const doFetch = async (accessToken: string) => {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'apikey': env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ video_id: videoId }),
+    });
+    const body = await r.json().catch(() => ({}));
+    return { status: r.status, ok: r.ok, body };
+  };
+
+  // 1. Grab the current access token.
+  let { data: sessionData } = await supabase.auth.getSession();
+  let accessToken = sessionData.session?.access_token;
+
+  // 2. If we have no session OR the call returns NOT_AUTHENTICATED, try to
+  // refresh the session once before giving up. This covers the case where
+  // the stored JWT is expired but the refresh token is still valid — common
+  // on phones that haven't been opened in a few hours.
+  if (!accessToken) {
+    try {
+      const refreshed = await supabase.auth.refreshSession();
+      accessToken = refreshed.data.session?.access_token;
+    } catch { /* fall through */ }
+  }
+  if (!accessToken) throw new Error('NOT_AUTHENTICATED');
+
+  let resp = await doFetch(accessToken);
+
+  // 3. If the Edge Function says NOT_AUTHENTICATED (e.g. our JWT is fresh
+  // locally but server-side it's dead), force a refresh + retry once more.
+  if (!resp.ok && (resp.status === 401 || resp.body?.error === 'NOT_AUTHENTICATED')) {
+    try {
+      const refreshed = await supabase.auth.refreshSession();
+      const newToken = refreshed.data.session?.access_token;
+      if (newToken) {
+        resp = await doFetch(newToken);
+      }
+    } catch { /* keep the original error */ }
+  }
+
+  if (!resp.ok || !resp.body?.ok) {
+    const err = resp.body?.error || `HTTP ${resp.status}`;
     throw new Error(`vdocipher-otp: ${err}`);
   }
-  return body as VdocipherOtpResponse;
+  return resp.body as VdocipherOtpResponse;
 }
 
 
