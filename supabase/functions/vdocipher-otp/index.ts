@@ -93,7 +93,8 @@ Deno.serve(async (req) => {
       return json({ error: "INVALID_VIDEO" }, 403);
     }
 
-    // Profile for watermark (anti-piracy forensics).
+    // Profile lookup — used for revoked-account check + future forensic
+    // watermarking when we want to re-enable per-user identification.
     const { data: profile } = await supabase
       .from("profiles")
       .select("first_name, last_name, email, revoked_at")
@@ -106,7 +107,11 @@ Deno.serve(async (req) => {
       return json({ error: "ACCOUNT_REVOKED" }, 403);
     }
 
-    const watermarkText = `${profile.first_name ?? ""} ${profile.last_name ?? ""} · ${profile.email ?? ""}`.trim();
+    // Branded watermark — user-requested change : no personal info shown
+    // over the video player. Keeps the brand visible on any leaked screen
+    // recording without exposing student name/email. If we want per-user
+    // forensics back later, switch to `${first_name} ${last_name}`.
+    const watermarkText = "© Aurel Academy · Tous droits réservés";
 
     // Call VDOCipher to mint OTP. Docs : https://www.vdocipher.com/blog/dynamic-watermarking
     //

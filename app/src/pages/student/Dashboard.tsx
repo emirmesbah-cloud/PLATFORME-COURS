@@ -8,7 +8,6 @@ import {
 import { LessonCard } from '@/components/features/LessonCard';
 import { BonusCard } from '@/components/features/BonusCard';
 import { ProgressBar } from '@/components/ui/Progress';
-import { Spinner } from '@/components/ui/Spinner';
 import { tierLabel, formatSeconds, formatDuration } from '@/lib/utils';
 
 export function StudentDashboard() {
@@ -24,12 +23,12 @@ export function StudentDashboard() {
   // Si fetchLessons OU fetchBonus erreur (timeout 10s), on render quand même
   // avec un état vide + un message de retry. Avant : spinner infini "Chargement
   // de ton espace..." sur ISP lent → user croit que l'app est cassée.
-  const lessonsLoading = lessonsQ.isLoading && !lessonsQ.isError;
-  const bonusLoading   = bonusQ.isLoading   && !bonusQ.isError;
-  const hasError       = lessonsQ.isError || bonusQ.isError;
-  const showSpinner    = (lessonsLoading || bonusLoading) && !hasError;
-
-  if (showSpinner) return <Spinner label="Chargement de ton espace..." />;
+  // SHERLOCK : on ne bloque PLUS le render avec un spinner full-page.
+  // Avant : "Chargement de ton espace..." prenait la page entière pour 5-15s
+  // sur ISP lent, le user pensait que l'app était cassée. Maintenant : le
+  // dashboard render immédiatement avec ses sections, chaque section gère
+  // son propre état loading via la donnée vide.
+  const hasError = lessonsQ.isError || bonusQ.isError;
 
   const lessons = lessonsQ.data ?? [];
   const bonus   = bonusQ.data ?? [];
