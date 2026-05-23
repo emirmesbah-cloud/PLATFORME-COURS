@@ -1,9 +1,0 @@
-# SHERLOCK R13 — B5: deny access to bundler sourcemaps in production.
-# Sourcemaps can be useful for Sentry, but should not be public on the CDN.
-# SHERLOCK R14 — M14: target /404.html (now exists in public/) instead of
-# /404 which had no actual destination → Cloudflare Pages was serving the
-# SPA fallback instead of a real 404.
-/assets/*.map  /404.html  404
-
-# SPA fallback — last rule, lowest priority.
-/*  /index.html  200
