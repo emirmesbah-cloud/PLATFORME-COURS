@@ -120,6 +120,43 @@ export async function rpcUpdateLessonProgress(args: {
   return data;
 }
 
+// ── VDOCipher OTP signing (edge function) ───────────────────────
+// Fetches a one-time-use OTP + playbackInfo from our vdocipher-otp Edge
+// Function. The function verifies the user is authenticated, the video
+// belongs to a published lesson (anti-OTP-fishing), then mints an OTP
+// with a 5-min TTL and per-user watermark via VDOCipher's secret API key.
+//
+// Response shape : { ok, otp, playbackInfo, lesson_number }
+// On any error : throws with the upstream error message for the UI to display.
+export interface VdocipherOtpResponse {
+  ok: true;
+  otp: string;
+  playbackInfo: string;
+  lesson_number?: number;
+}
+export async function fetchVdocipherOtp(videoId: string): Promise<VdocipherOtpResponse> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) throw new Error('NOT_AUTHENTICATED');
+  const env = (import.meta as { env: Record<string, string> }).env;
+  const url = `${env.VITE_SUPABASE_URL}/functions/v1/vdocipher-otp`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+      'apikey': env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ video_id: videoId }),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok || !body?.ok) {
+    const err = body?.error || `HTTP ${r.status}`;
+    throw new Error(`vdocipher-otp: ${err}`);
+  }
+  return body as VdocipherOtpResponse;
+}
+
 
 // ── Bonus download (signed URL + log) ──────────────────────────
 export async function getBonusSignedUrl(bonus: BonusResource): Promise<string | null> {

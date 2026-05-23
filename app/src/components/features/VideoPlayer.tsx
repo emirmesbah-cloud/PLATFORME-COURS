@@ -1,48 +1,55 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Lock } from 'lucide-react';
-import { rpcUpdateLessonProgress } from '@/lib/queries';
-import { useAuth } from '@/hooks/useAuth';
+import { useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Lock, AlertTriangle } from 'lucide-react';
+import { rpcUpdateLessonProgress, fetchVdocipherOtp } from '@/lib/queries';
 import type { Lesson } from '@/lib/types';
+import { Spinner } from '@/components/ui/Spinner';
 
 /**
- * VideoPlayer — wrapper VDOCipher.
+ * VideoPlayer — VDOCipher iframe with server-side OTP signing.
  *
- * Si lesson.vdocipher_video_id est null/vide → affiche un placeholder "Bientôt".
- * Sinon → embed VDOCipher iframe avec watermark email + nom.
+ * Flow :
+ *   1. If lesson has no vdocipher_video_id → show "Bientôt" placeholder.
+ *   2. Call the vdocipher-otp Edge Function with video_id → get otp + playbackInfo.
+ *      The Edge Function checks auth + that the video belongs to a published
+ *      lesson + adds a per-user watermark via VDOCipher's API.
+ *   3. Render iframe with otp + playbackInfo as query params.
+ *   4. Track watched-seconds approximately (1s tick when visible) and POST
+ *      to update_lesson_progress every 10s.
  *
- * Tracking auto :
- *   - Toutes les 10s : update_lesson_progress(watchedSeconds, positionSeconds)
- *   - Au unmount : flush final
+ * Why server-side OTP :
+ *   VDOCipher videos are DRM-protected by default. The public embed URL
+ *   (?video=ID) returns "Error: 400 Missing parameters" for DRM videos.
+ *   Mint OTPs server-side from our Edge Function so the secret API key
+ *   never reaches the browser.
  *
- * BUG FIX (Sentry 267a672ca813...) — was crashing the whole /lecons/:n page
- * with "Failed to execute 'removeChild' on 'Node'". Root cause :
- *   - Old code did `containerRef.current.innerHTML = ''` then appendChild(iframe)
- *     inside a useEffect. This imperatively wiped DOM nodes that React thought
- *     it owned (the !ready placeholder rendered as JSX in the same container).
- *   - When React later tried to reconcile/unmount, it called removeChild on
- *     nodes that no longer existed → NotFoundError → ErrorBoundary catches it
- *     → "Une erreur est survenue sur cette page" everywhere.
- * Fix : render the iframe as a JSX element with a stable `key` so React owns
- * the entire subtree. No more imperative DOM manipulation.
+ * Bug history :
+ *   - Sentry 267a672ca8134e3b9... was caused by old code that did
+ *     containerRef.innerHTML='' inside useEffect. React's reconciler
+ *     then tried to removeChild on stripped nodes → NotFoundError →
+ *     entire /lecons/:n crashed. Fixed by switching to JSX-only iframe
+ *     with a stable `key`. No more imperative DOM manipulation.
  */
 export function VideoPlayer({ lesson, initialPosition = 0 }: {
   lesson: Lesson;
   initialPosition?: number;
 }) {
-  const { profile } = useAuth();
   const watchedSecRef = useRef<number>(0);
   const positionSecRef = useRef<number>(initialPosition);
   const startTsRef = useRef<number>(0);
 
-  // SHERLOCK FIX : on memoize le watermark via les CHAMPS du profile au lieu
-  // de la référence d'objet. Avant, l'effet dépendait directement de
-  // `profile`, donc chaque mutation (stub JWT → cache → DB) re-créait l'objet
-  // → l'effet re-tournait → reset du tracking watchedSeconds. Sur ISP lent
-  // qui hydrate le profile en 2-3 étapes, on perdait des secondes regardées.
-  const watermark = useMemo(() => {
-    if (!profile) return '';
-    return `${profile.first_name} ${profile.last_name} · ${profile.email}`;
-  }, [profile?.first_name, profile?.last_name, profile?.email]);
+  // OTP fetch — re-fetches when the lesson changes. staleTime 4 min so we
+  // re-use the OTP if the user closes the lesson page and re-opens within
+  // the 5-min TTL window (saves an Edge Function call).
+  const otpQ = useQuery({
+    queryKey: ['vdocipher-otp', lesson.id, lesson.vdocipher_video_id],
+    queryFn: () => fetchVdocipherOtp(lesson.vdocipher_video_id!),
+    enabled: !!lesson.vdocipher_video_id,
+    staleTime: 4 * 60_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
 
   // Save progress every 10s + final flush at unmount.
   useEffect(() => {
@@ -88,10 +95,11 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
     return () => clearInterval(interval);
   }, [lesson.vdocipher_video_id, initialPosition]);
 
+  // ── Render states ────────────────────────────────────────────────────────
   if (!lesson.vdocipher_video_id) {
     return (
       <div className="flex aspect-video w-full items-center justify-center rounded-xl bg-aurel-dark text-white">
-        <div className="flex flex-col items-center gap-3 text-center">
+        <div className="flex flex-col items-center gap-3 p-6 text-center">
           <Lock className="h-10 w-10 text-aurel-orange" />
           <div className="font-semibold">Cette leçon arrive très bientôt</div>
           <p className="max-w-sm text-sm text-slate-400">Aurel finalise l'enregistrement. Reviens dans quelques jours.</p>
@@ -100,23 +108,48 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
     );
   }
 
+  if (otpQ.isLoading) {
+    return (
+      <div className="flex aspect-video w-full items-center justify-center rounded-xl bg-aurel-dark text-white">
+        <Spinner label="Préparation du player..." />
+      </div>
+    );
+  }
+
+  if (otpQ.isError || !otpQ.data) {
+    const errMsg = otpQ.error instanceof Error ? otpQ.error.message : 'Erreur inconnue';
+    return (
+      <div className="flex aspect-video w-full items-center justify-center rounded-xl bg-aurel-dark text-white">
+        <div className="flex flex-col items-center gap-3 p-6 text-center">
+          <AlertTriangle className="h-10 w-10 text-amber-400" />
+          <div className="font-semibold">Le player n'a pas pu charger</div>
+          <p className="max-w-sm text-sm text-slate-400">
+            {errMsg.includes('INVALID_VIDEO') ? 'Cette leçon n\'est pas encore disponible.' : 'Réessaie dans un instant.'}
+          </p>
+          <button
+            onClick={() => otpQ.refetch()}
+            className="mt-2 rounded-md bg-aurel-orange px-4 py-2 text-sm font-semibold text-white hover:bg-aurel-orange-dark"
+          >
+            Réessayer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // SHERLOCK R6 fix : iOS Safari needs explicit autoplay/fullscreen/PiP
   // perms to enter fullscreen on tap. Was just 'encrypted-media' →
   // tap-to-fullscreen silently failed on iPhone PWA standalone.
-  //
-  // Key : the iframe's `key` includes the video ID + watermark so React
-  // does a clean remount when either changes (lesson navigation or profile
-  // hydration completing). Without the key, React might try to reuse the
-  // same iframe element and the watermark wouldn't update.
-  const iframeKey = `${lesson.vdocipher_video_id}-${watermark}`;
+  const { otp, playbackInfo } = otpQ.data;
   const iframeSrc =
-    `https://player.vdocipher.com/v2/?video=${encodeURIComponent(lesson.vdocipher_video_id)}` +
-    `&primaryColor=F97316&watermark=${encodeURIComponent(watermark)}`;
+    `https://player.vdocipher.com/v2/?otp=${encodeURIComponent(otp)}` +
+    `&playbackInfo=${encodeURIComponent(playbackInfo)}` +
+    `&primaryColor=F97316`;
 
   return (
     <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
       <iframe
-        key={iframeKey}
+        key={otp}
         src={iframeSrc}
         allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
         allowFullScreen
