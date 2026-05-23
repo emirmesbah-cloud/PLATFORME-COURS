@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Gift } from 'lucide-react';
 import { fetchBonus, queryKeys } from '@/lib/queries';
@@ -8,6 +9,14 @@ export function StudentBonus() {
   const bonus = bonusQ.data ?? [];
   const isLoading = bonusQ.isLoading && bonus.length === 0;
   const hasError = bonusQ.isError && bonus.length === 0;
+
+  // Auto-escape : if loading >8s, show retry banner instead of infinite skeleton.
+  const [slowNetwork, setSlowNetwork] = useState(false);
+  useEffect(() => {
+    if (bonus.length > 0) { setSlowNetwork(false); return; }
+    const t = setTimeout(() => setSlowNetwork(true), 8000);
+    return () => clearTimeout(t);
+  }, [bonus.length]);
 
   return (
     <div className="space-y-6">
@@ -23,21 +32,19 @@ export function StudentBonus() {
         </p>
       </header>
 
-      {hasError && (
+      {(hasError || (slowNetwork && isLoading)) && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-semibold">Connexion lente détectée</p>
-          <p className="mt-1">Les bonus n'ont pas pu charger. Recharge la page pour réessayer.</p>
-          <button
-            onClick={() => bonusQ.refetch()}
-            className="mt-3 rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700"
-          >
-            Réessayer
-          </button>
+          <p className="mt-1">Les bonus mettent du temps à charger. Réessaie ou recharge la page complètement (Ctrl+Shift+R).</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button onClick={() => bonusQ.refetch()} className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700">Réessayer</button>
+            <button onClick={() => window.location.reload()} className="rounded-lg border border-amber-600 px-4 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-100">Recharger la page</button>
+          </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-2">
-        {isLoading
+        {isLoading && !slowNetwork
           ? Array.from({ length: 4 }).map((_, i) => <BonusSkeletonCard key={i} />)
           : bonus.map((b) => <BonusCard key={b.id} bonus={b} />)}
       </div>

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchLessons, fetchUserProgress, queryKeys } from '@/lib/queries';
@@ -9,6 +10,19 @@ export function StudentLessons() {
 
   const lessonsQ = useQuery({ queryKey: queryKeys.lessons,         queryFn: fetchLessons });
   const progQ    = useQuery({ queryKey: queryKeys.progress(uid),   queryFn: () => fetchUserProgress(uid), enabled: !!uid });
+
+  // SHERLOCK : auto-escape if skeletons hang. After 8s without data, show a
+  // visible "réseau lent" message + manual retry button. Beats the infinite
+  // skeleton state when SW cache / network blip stalls the query.
+  const [slowNetwork, setSlowNetwork] = useState(false);
+  useEffect(() => {
+    if (lessonsQ.data && lessonsQ.data.length > 0) {
+      setSlowNetwork(false);
+      return;
+    }
+    const t = setTimeout(() => setSlowNetwork(true), 8000);
+    return () => clearTimeout(t);
+  }, [lessonsQ.data]);
 
   // SHERLOCK : on ne bloque PLUS le render avec un spinner full-page.
   // Avant : `if (lessonsQ.isLoading) return <Spinner />` masquait toute la
@@ -38,20 +52,31 @@ export function StudentLessons() {
         <p className="mt-1 text-slate-600">Programme complet Deutsch für Pflegekräfte.</p>
       </header>
 
-      {hasError && (
+      {(hasError || (slowNetwork && isLoading)) && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-semibold">Connexion lente détectée</p>
-          <p className="mt-1">Les leçons n'ont pas pu charger. Recharge la page pour réessayer.</p>
-          <button
-            onClick={() => lessonsQ.refetch()}
-            className="mt-3 rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700"
-          >
-            Réessayer
-          </button>
+          <p className="mt-1">
+            Les leçons mettent du temps à charger.
+            Réessaie, ou recharge la page complètement (Ctrl+Shift+R).
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={() => lessonsQ.refetch()}
+              className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+            >
+              Réessayer
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="rounded-lg border border-amber-600 px-4 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+            >
+              Recharger la page
+            </button>
+          </div>
         </div>
       )}
 
-      {isLoading && (
+      {isLoading && !slowNetwork && (
         <section>
           <h2 className="mb-3 text-xs font-bold uppercase tracking-widest text-aurel-orange">Chargement…</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
