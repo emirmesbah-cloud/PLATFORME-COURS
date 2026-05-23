@@ -22,11 +22,15 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   // ici avec une session). /login propose un bouton "réessayer" et un
   // contexte plus clair que /activate (qui suggérerait au user qu'il doit
   // re-saisir un code, ce qui n'est pas le cas).
+  // SHERLOCK R17 : timeout 60s (was 30s) for ultra-slow Algerian ISPs.
+  // loadProfile internally retries 3× with 12s each = 36s worst case ;
+  // adding a margin for network blips → 60s covers essentially 100% of
+  // real-world cases without flapping students to /login.
   const [profileLoadingExpired, setProfileLoadingExpired] = useState(false);
   useEffect(() => {
     if (session && !profile) {
       setProfileLoadingExpired(false);
-      const t = setTimeout(() => setProfileLoadingExpired(true), 30000);
+      const t = setTimeout(() => setProfileLoadingExpired(true), 60000);
       return () => clearTimeout(t);
     }
     setProfileLoadingExpired(false);

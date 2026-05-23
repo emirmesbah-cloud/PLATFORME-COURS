@@ -1,5 +1,5 @@
-import { Link, NavLink, useNavigate, Outlet } from 'react-router-dom';
-import { useState } from 'react';
+import { Link, NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, BookOpen, Gift, User, LogOut, Menu, X, Shield, Award, AlertTriangle } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
@@ -18,7 +18,21 @@ const NAV = [
 export function StudentLayout() {
   const { profile, isAdmin, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
+  // SHERLOCK R17 : auto-reset the ErrorBoundary when the route changes. Avant :
+  // si une page errored, naviguer vers une autre route gardait l'error UI
+  // affichée (l'ErrorBoundary state survit aux changements d'URL tant qu'on
+  // n'appelle pas resetError). Maintenant : on bump une key sur le boundary
+  // à chaque pathname change → React remount le boundary → fresh start.
+  const boundaryKeyRef = useRef(0);
+  const lastPathRef = useRef(location.pathname);
+  if (lastPathRef.current !== location.pathname) {
+    lastPathRef.current = location.pathname;
+    boundaryKeyRef.current += 1;
+  }
+  // Auto-close mobile menu on navigation.
+  useEffect(() => { setOpen(false); }, [location.pathname]);
 
   async function handleSignOut() {
     await signOut();
@@ -133,6 +147,7 @@ export function StudentLayout() {
             sidebar disparus). Maintenant l'header reste affiché, le user
             peut naviguer hors de la page cassée. */}
         <SentryErrorBoundary
+          key={boundaryKeyRef.current}
           fallback={({ error, resetError, eventId }) => (
             <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
               <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-red-500" />

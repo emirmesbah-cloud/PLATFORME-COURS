@@ -41,6 +41,11 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
   // OTP fetch — re-fetches when the lesson changes. staleTime 4 min so we
   // re-use the OTP if the user closes the lesson page and re-opens within
   // the 5-min TTL window (saves an Edge Function call).
+  //
+  // RETRY STRATEGY :
+  // 3 retries with exponential backoff (1s, 2s, 4s). Covers transient
+  // network blips on slow Algerian ISPs + brief Edge Function cold starts.
+  // After 3 retries the error UI shows with a manual "Réessayer" button.
   const otpQ = useQuery({
     queryKey: ['vdocipher-otp', lesson.id, lesson.vdocipher_video_id],
     queryFn: () => fetchVdocipherOtp(lesson.vdocipher_video_id!),
@@ -48,7 +53,8 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
     staleTime: 4 * 60_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    retry: 1,
+    retry: 3,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 8000),
   });
 
   // Save progress every 10s + final flush at unmount.

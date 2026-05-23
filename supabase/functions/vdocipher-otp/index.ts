@@ -134,8 +134,15 @@ Deno.serve(async (req) => {
 
     if (!vdoResp.ok) {
       const errText = await vdoResp.text().catch(() => "");
-      console.error("[vdocipher-otp] VDOCipher API error", vdoResp.status, errText.slice(0, 200));
-      return json({ error: "VDOCIPHER_FAILED", status: vdoResp.status }, 502);
+      console.error("[vdocipher-otp] VDOCipher API error", vdoResp.status, errText.slice(0, 400));
+      // Expose the real upstream error message to the client so we can debug
+      // without server log access. Safe : it's our OWN VDOCipher errors, no
+      // PII or secrets in the body.
+      return json({
+        error: "VDOCIPHER_FAILED",
+        status: vdoResp.status,
+        upstream: errText.slice(0, 200),
+      }, 502);
     }
 
     const data = await vdoResp.json();
