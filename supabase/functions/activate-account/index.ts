@@ -153,10 +153,24 @@ serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: signInData, error: signInErr } = await anonClient.auth.signInWithPassword({
-    email,
-    password,
-  });
+  // R23 : timeout 20s on signInWithPassword. Without it, a Supabase Auth
+  // brownout would hang this function for the full 150s Deno budget, leaving
+  // the user on "Activation en cours, ne ferme pas la page…" indefinitely
+  // with a created auth.users row but no session token returned. Better to
+  // fail fast and trigger the rollback path.
+  const signInResult = await Promise.race([
+    anonClient.auth.signInWithPassword({ email, password }),
+    new Promise<{ data: null; error: { message: string } }>((resolve) =>
+      setTimeout(
+        () => resolve({ data: null, error: { message: 'signInWithPassword timeout (20s)' } }),
+        20_000,
+      ),
+    ),
+  ]);
+  const { data: signInData, error: signInErr } = signInResult as {
+    data: { session: { access_token: string; refresh_token: string; expires_in: number; expires_at: number; token_type: string } | null } | null;
+    error: { message: string } | null;
+  };
 
   if (signInErr || !signInData.session) {
     // Le user est créé mais on n'arrive pas à se logguer : rollback.

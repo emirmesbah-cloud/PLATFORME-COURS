@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Star, Check, X, Heart } from 'lucide-react';
 import { fetchAdminFeedback, adminToggleFeedbackApproved, queryKeys } from '@/lib/queries';
+import type { Feedback } from '@/lib/types';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDate, cn } from '@/lib/utils';
@@ -78,7 +79,8 @@ export function AdminFeedback() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {filtered.map((f) => {
-            const profile = (f as any).profile;
+            // Feedback rows joined with profiles via fetchAdminFeedback.
+            const profile = (f as Feedback & { profile?: { first_name?: string; last_name?: string; email?: string } }).profile;
             return (
               <div key={f.id} className="card-padded space-y-3">
                 <div className="flex items-start justify-between gap-3">

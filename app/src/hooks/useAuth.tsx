@@ -221,6 +221,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // stub/cache state and is_admin is unreliable.
   const isAdminConfirmedRef = useRef(false);
 
+  // R23 : throttle the spurious-SIGNED_OUT warning to once per minute.
+  // Otherwise on flapping ISP it spams the console + Sentry breadcrumbs.
+  const lastSpuriousSignOutLogAtRef = useRef(0);
+
   // SHERLOCK R12 (BULLETPROOF) — Persist auth forever, until explicit user logout.
   // Tracks WHO triggered the SIGNED_OUT event :
   //   true  = user clicked logout button OR realtime kicked us (legitimate)
@@ -726,7 +730,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // auto-refresh re-issues a fresh token on next API call. User stays
       // logged in. This is what R12 was supposed to do.
       if (event === 'SIGNED_OUT' && !intentionalSignOutRef.current) {
-        console.warn('[Aurel] Ignoring spurious SIGNED_OUT — session preserved (R15 = R12 fixed)');
+        // R23 : throttle the log to once per minute. On flapping ISP this
+        // can fire dozens of times in a row and pollute Sentry breadcrumbs.
+        const now = Date.now();
+        if (now - lastSpuriousSignOutLogAtRef.current > 60_000) {
+          lastSpuriousSignOutLogAtRef.current = now;
+          // eslint-disable-next-line no-console
+          console.warn('[Aurel R15] Ignoring spurious SIGNED_OUT — session preserved (throttled)');
+        }
         return;
       }
 

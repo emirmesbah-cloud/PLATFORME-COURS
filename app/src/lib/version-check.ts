@@ -62,7 +62,7 @@ async function checkAndReload(): Promise<void> {
   if (server !== lastKnownServerVersion) {
     reloading = true;
     // eslint-disable-next-line no-console
-    console.log('[VersionCheck] new version detected, reloading', {
+    console.info('[VersionCheck] new version detected, reloading', {
       build: __BUILD_VERSION__,
       previousServer: lastKnownServerVersion,
       newServer: server,
