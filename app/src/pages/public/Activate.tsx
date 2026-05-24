@@ -9,6 +9,27 @@ import { useToast } from '@/components/ui/Toast';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { AurelLogo } from '@/components/features/AurelLogo';
 import { ACTIVATION_CODE_REGEX, WHATSAPP_REGEX, normalizeWhatsapp } from '@/lib/utils';
+import { trackEvent } from '@/lib/pixel';
+
+/**
+ * Fire the Meta Pixel "Lead" event when a student successfully activates.
+ * Called from each of the 3 success paths (recovery / normal / late-login)
+ * so we count one Lead per real activation, never duplicated. Wrapped to
+ * be a no-op if fbq isn't loaded (ad-blocker, dev).
+ */
+function fireActivationLead(args: { tier: 'autonome' | 'accompagne'; first_name: string }) {
+  trackEvent('Lead', {
+    content_name: 'Activation Aurel Academy',
+    content_category: 'Pflege',
+    tier: args.tier,
+    first_name: args.first_name,
+    // Currency is required for Meta to register monetary value on Lead.
+    // We don't have the real paid amount client-side (paid externally),
+    // so we use the tier's reference price as an indicator.
+    value: args.tier === 'accompagne' ? 90000 : 45000,
+    currency: 'DZD',
+  });
+}
 
 const schema = z.object({
   // SHERLOCK R14 — H2 : transform uppercase AVANT le regex check. L'input
@@ -123,6 +144,10 @@ export function ActivatePage() {
       if (!data.ok) {
         const recoverable = ['CODE_ALREADY_USED', 'EMAIL_ALREADY_EXISTS'].includes(data.error);
         if (recoverable && await tryAutoLogin()) {
+          fireActivationLead({
+            tier: parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome',
+            first_name: parsed.data.first_name.trim(),
+          });
           toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
           window.location.replace('/dashboard');
           return;
@@ -216,6 +241,12 @@ export function ActivatePage() {
         localStorage.setItem('aurel:profile-cache:v1', JSON.stringify(cachedProfile));
       } catch {}
 
+      // Meta Pixel — fire Lead BEFORE navigation. Window.location.replace
+      // does a hard reload, so any synchronous fbq() call must run first.
+      fireActivationLead({
+        tier: (data.user?.tier ?? (parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome')) as 'autonome' | 'accompagne',
+        first_name: parsed.data.first_name.trim(),
+      });
       toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
       // SHERLOCK R11 fix : window.location.replace au lieu de navigate().
       // navigate() est un client-side route change qui ne re-bootstrap PAS useAuth.
@@ -231,6 +262,10 @@ export function ActivatePage() {
     } catch (e) {
       // Network error: try auto-login as last resort
       if (await tryAutoLogin()) {
+        fireActivationLead({
+          tier: parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome',
+          first_name: parsed.data.first_name.trim(),
+        });
         toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
         window.location.replace('/dashboard');
         return;
