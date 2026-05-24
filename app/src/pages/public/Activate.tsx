@@ -12,20 +12,24 @@ import { ACTIVATION_CODE_REGEX, WHATSAPP_REGEX, normalizeWhatsapp } from '@/lib/
 import { trackEvent } from '@/lib/pixel';
 
 /**
- * Fire the Meta Pixel "Lead" event when a student successfully activates.
- * Called from each of the 3 success paths (recovery / normal / late-login)
- * so we count one Lead per real activation, never duplicated. Wrapped to
- * be a no-op if fbq isn't loaded (ad-blocker, dev).
+ * Fire the Meta Pixel "Purchase" event when a student successfully activates.
+ *
+ * Aurel sells cash-on-delivery : the user pays Aurel in person before
+ * receiving an activation code. By the time they're on this page entering
+ * the code, they've ALREADY PAID — so this is a real purchase from Meta's
+ * perspective, not just a lead.
+ *
+ * Fired from each of the 3 success paths (recovery / normal / late-login)
+ * so we count one Purchase per real activation, never duplicated. No-op if
+ * fbq isn't loaded (ad-blocker, dev environment).
  */
-function fireActivationLead(args: { tier: 'autonome' | 'accompagne'; first_name: string }) {
-  trackEvent('Lead', {
+function fireActivationPurchase(args: { tier: 'autonome' | 'accompagne'; first_name: string }) {
+  trackEvent('Purchase', {
     content_name: 'Activation Aurel Academy',
     content_category: 'Pflege',
     tier: args.tier,
     first_name: args.first_name,
     // Prix officiels Aurel (cf. aurel-academy.com/pflege/inscription).
-    // On envoie le montant à Meta pour qu'il optimise les pubs sur la
-    // valeur réelle, pas un proxy.
     value: args.tier === 'accompagne' ? 42800 : 12900,
     currency: 'DZD',
   });
@@ -144,7 +148,7 @@ export function ActivatePage() {
       if (!data.ok) {
         const recoverable = ['CODE_ALREADY_USED', 'EMAIL_ALREADY_EXISTS'].includes(data.error);
         if (recoverable && await tryAutoLogin()) {
-          fireActivationLead({
+          fireActivationPurchase({
             tier: parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome',
             first_name: parsed.data.first_name.trim(),
           });
@@ -241,9 +245,9 @@ export function ActivatePage() {
         localStorage.setItem('aurel:profile-cache:v1', JSON.stringify(cachedProfile));
       } catch {}
 
-      // Meta Pixel — fire Lead BEFORE navigation. Window.location.replace
+      // Meta Pixel — fire Purchase BEFORE navigation. Window.location.replace
       // does a hard reload, so any synchronous fbq() call must run first.
-      fireActivationLead({
+      fireActivationPurchase({
         tier: (data.user?.tier ?? (parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome')) as 'autonome' | 'accompagne',
         first_name: parsed.data.first_name.trim(),
       });
@@ -262,7 +266,7 @@ export function ActivatePage() {
     } catch (e) {
       // Network error: try auto-login as last resort
       if (await tryAutoLogin()) {
-        fireActivationLead({
+        fireActivationPurchase({
           tier: parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome',
           first_name: parsed.data.first_name.trim(),
         });
