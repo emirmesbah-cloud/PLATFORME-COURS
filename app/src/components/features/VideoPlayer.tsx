@@ -40,7 +40,6 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
   const { signOut } = useAuth();
   const watchedSecRef = useRef<number>(0);
   const positionSecRef = useRef<number>(initialPosition);
-  const startTsRef = useRef<number>(0);
 
   // Triggered when the OTP fetch returns NOT_AUTHENTICATED even after
   // refreshSession() retry. The student's local session is unrecoverable
@@ -100,21 +99,52 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
     };
   }, [lesson.id, lesson.vdocipher_video_id]);
 
-  // Approximate watched-seconds : count time the page is visible while the
-  // player is mounted. Real precise tracking requires VDOCipher's player.js
-  // SDK + postMessage events (Phase 3). Note serveur-side :
-  // update_lesson_progress (mig 013) caps watched_seconds à 120% de la durée
-  // + limite l'incrément entre deux calls à wall-clock plausible.
+  // SHERLOCK R23 — anti-fraud watched-seconds tracker.
+  //
+  // BEFORE : tick() incremented `watchedSec = (Date.now - startTs) / 1000`
+  //          every second whenever `document.visibilityState === 'visible'`.
+  //          A student opening lesson 5 (8 min, threshold 432s) and walking
+  //          away with the tab focused would auto-complete in 7.2 min of
+  //          IDLE time. Server-side clamp (120% of duration) doesn't help
+  //          because the wall-clock IS the over-credit source.
+  //
+  // NOW : only tick when ALL of :
+  //   1. document.visibilityState === 'visible' (tab in foreground)
+  //   2. document.hasFocus() (window has OS focus — caught Alt-Tab away)
+  //   3. The VDOCipher iframe is the focused element (means user clicked
+  //      Play and the player has focus — catches "tab open but reading
+  //      another tab's content while music plays elsewhere" cases)
+  //
+  // The 3rd check uses document.activeElement. After user clicks play, the
+  // iframe becomes the active element. If they click outside (notes panel,
+  // navigation, etc.), the count pauses.
+  //
+  // True precise tracking requires VDOCipher player.js postMessage API
+  // (timeupdate / play / pause events). That's Phase 3. For now this stopgap
+  // eliminates the worst over-credit case (AFK tab focused).
   useEffect(() => {
     if (!lesson.vdocipher_video_id) return;
-    startTsRef.current = Date.now();
+    let accumulated = 0;
+    let lastTick = Date.now();
     watchedSecRef.current = 0;
     positionSecRef.current = initialPosition;
     const tick = () => {
-      if (document.visibilityState === 'visible') {
-        const elapsed = (Date.now() - startTsRef.current) / 1000;
-        watchedSecRef.current = elapsed;
-        positionSecRef.current = elapsed;
+      const now = Date.now();
+      const delta = (now - lastTick) / 1000;
+      lastTick = now;
+
+      const visible = document.visibilityState === 'visible';
+      const focused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+      const activeEl = document.activeElement;
+      const iframeActive = activeEl?.tagName === 'IFRAME';
+
+      // Only credit time if the user is genuinely engaged with the player.
+      // Cap the per-tick delta at 2s to handle sleep/freeze gaps (tick was
+      // supposed to fire at 1s but didn't because the tab was throttled).
+      if (visible && focused && iframeActive && delta <= 2) {
+        accumulated += delta;
+        watchedSecRef.current = accumulated;
+        positionSecRef.current = accumulated;
       }
     };
     const interval = setInterval(tick, 1000);

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Award, Download, Lock, Loader2, ArrowRight } from 'lucide-react';
 import { fetchUserCertificate, fetchProgressSummary, queryKeys, rpcCheckAndIssueCertificate } from '@/lib/queries';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { ProgressBar } from '@/components/ui/Progress';
 import { useToast } from '@/components/ui/Toast';
@@ -43,10 +44,40 @@ export function StudentCertificate() {
     if (certQ.data) return;
     if (certQ.isLoading) return; // attendre la query initiale avant de tenter d'issue
     triedRef.current = true;
-    rpcCheckAndIssueCertificate().then((res) => {
+    rpcCheckAndIssueCertificate().then(async (res) => {
       if (res.ok && res.created) {
         certQ.refetch();
         toast.success('Certificat émis avec succès !', '🏆 Félicitations !');
+        // R23 : trigger the certificate_issued email. The DB trigger only
+        // INSERTs the cert row, it doesn't dispatch an email — so we fire it
+        // from the frontend on the success path. Best-effort : don't block
+        // the UX if the email fails ; the student already has the cert.
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken = sessionData.session?.access_token;
+          if (accessToken) {
+            const env = (import.meta as { env: Record<string, string> }).env;
+            await fetch(`${env.VITE_SUPABASE_URL}/functions/v1/send-email`, {
+              method: 'POST',
+              headers: {
+                'Content-Type':  'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+                'apikey':        env.VITE_SUPABASE_ANON_KEY,
+              },
+              body: JSON.stringify({
+                email_type: 'certificate_issued',
+                user_id: uid,
+                vars: {
+                  certificate_number: res.certificate_number,
+                  app_url: 'https://app.aurel-academy.com',
+                },
+              }),
+            });
+          }
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn('[Aurel] cert email dispatch failed (non-blocking):', e);
+        }
       }
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps

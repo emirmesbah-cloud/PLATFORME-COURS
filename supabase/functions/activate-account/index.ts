@@ -243,37 +243,49 @@ serve(async (req) => {
     return errorResponse(rData?.error ?? 'REDEEM_FAILED', 500, { detail: rErr?.message });
   }
 
-  // SHERLOCK R7 fix : trigger welcome email server-to-server. Was MISSING —
-  // students never received the post-activation welcome email. We call
-  // send-email with a service-role bearer (which our R3 hardening accepts).
-  // Fire-and-forget : don't fail activation if email queue hiccups.
-  fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type':  'application/json',
-    },
-    body: JSON.stringify({
-      email_type: 'welcome',
-      to: email,
-      user_id: newUserId,
-      vars: {
-        first_name,
-        app_url: 'https://app.aurel-academy.com',
+  // SHERLOCK R23 — CRITICAL BUG FIX :
+  // Welcome emails NEVER got sent. Audit revealed 0 rows in email_logs despite
+  // 5+ students activated. Root cause : Deno terminates background promises
+  // the moment the HTTP response returns. The previous `fetch(...).catch()`
+  // pattern had no await, so the worker died before the email request fired.
+  //
+  // Fix : wrap in EdgeRuntime.waitUntil() — explicitly keeps the worker alive
+  // until the background promise resolves. Available in Supabase Edge Runtime.
+  // Falls back to a regular promise on older runtimes (still fire-and-forget).
+  const waitUntil = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil
+    ?? ((p: Promise<unknown>) => { p.catch(() => {}); });
+
+  waitUntil(
+    fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type':  'application/json',
       },
+      body: JSON.stringify({
+        email_type: 'welcome',
+        to: email,
+        user_id: newUserId,
+        vars: {
+          first_name,
+          app_url: 'https://app.aurel-academy.com',
+        },
+      }),
+    }).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn('[Aurel] welcome email dispatch failed (non-blocking):', e?.message ?? e);
     }),
-  }).catch((e) => {
-    // Best-effort. Sentry already captures via reportError below if needed.
-    // eslint-disable-next-line no-console
-    console.warn('[Aurel] welcome email dispatch failed (non-blocking):', e?.message ?? e);
-  });
+  );
 
   // Telegram notification : new student inscribed (Aurel admin sees it real-time)
-  notifyTelegram(`Nouvel étudiant inscrit ✅`, {
-    function: 'activate-account',
-    level: 'info',
-    extra: { email, name: `${first_name} ${last_name}`, code, tier: rData.tier },
-  }).catch(() => {});
+  // Same waitUntil pattern so the worker doesn't get killed before this fires.
+  waitUntil(
+    notifyTelegram(`Nouvel étudiant inscrit ✅`, {
+      function: 'activate-account',
+      level: 'info',
+      extra: { email, name: `${first_name} ${last_name}`, code, tier: rData.tier },
+    }).catch(() => {}),
+  );
 
   return jsonResponse({
     ok: true,

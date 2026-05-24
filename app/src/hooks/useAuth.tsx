@@ -209,6 +209,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const realtimeChannelRef = useRef<RealtimeChannel | null>(null);
   const isSigningOutRef = useRef(false);
 
+  // SHERLOCK R23 — ADMIN MULTI-DEVICE :
+  // Single-active-session enforcement is for students only. Admins (Aurel +
+  // team) can be connected on multiple devices simultaneously without
+  // kicking each other. This ref mirrors profile?.is_admin so the Realtime
+  // kick handler can short-circuit when the current user is an admin
+  // (without needing to re-subscribe whenever profile changes).
+  const isAdminRef = useRef(false);
+  // R23 race-guard : true ONLY after profileSource hits 'db' at least once.
+  // Used by the Realtime kick handler to defer kicks while we're still in
+  // stub/cache state and is_admin is unreliable.
+  const isAdminConfirmedRef = useRef(false);
+
   // SHERLOCK R12 (BULLETPROOF) — Persist auth forever, until explicit user logout.
   // Tracks WHO triggered the SIGNED_OUT event :
   //   true  = user clicked logout button OR realtime kicked us (legitimate)
@@ -434,6 +446,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             const newSid = newRow?.current_session_id;
             if (!newSid) return;
+
+            // R23 : ADMIN MULTI-DEVICE. Admins can stay connected on multiple
+            // devices simultaneously without kicking each other. The kick rule
+            // only applies to students (single-active-session). isAdminRef
+            // mirrors profile.is_admin via the effect further below.
+            if (isAdminRef.current) {
+              // eslint-disable-next-line no-console
+              console.info('[Aurel R23] Admin multi-device — skipping kick');
+              return;
+            }
+
+            // R23 race-guard : if the profile is still in stub/cache state
+            // (loadProfile not done yet on slow ISP), don't kick yet. The JWT
+            // stub hardcodes is_admin=false, so an admin in this transient
+            // state would falsely match the "kick this student" branch. Defer
+            // the kick by 3s and re-check ; by then loadProfile should have
+            // returned the real is_admin value.
+            if (!isAdminConfirmedRef.current) {
+              setTimeout(() => {
+                if (isAdminRef.current) {
+                  // eslint-disable-next-line no-console
+                  console.info('[Aurel R23] Admin confirmed during defer — skipping deferred kick');
+                  return;
+                }
+                const lsidLater = readLocalSessionId();
+                if (lsidLater && newSid !== lsidLater) {
+                  forceSignOut('kicked');
+                }
+              }, 3000);
+              return;
+            }
+
             const localSid = readLocalSessionId();
             if (localSid && newSid !== localSid) {
               // R18 : grace period to absorb F5 race conditions.
@@ -818,6 +862,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // SHERLOCK R23 : sync isAdminRef whenever profile changes. Used by the
+  // Realtime kick handler + verify_session poll to skip enforcement for
+  // admins (multi-device allowed). isAdminConfirmedRef flips true ONCE
+  // profileSource hits 'db' so the kick handler knows when the value is
+  // authoritative vs still in stub/cache transition.
+  useEffect(() => {
+    isAdminRef.current = !!profile?.is_admin && (profileSource === 'db' || profileSource === 'cache');
+    if (profileSource === 'db') {
+      isAdminConfirmedRef.current = true;
+    }
+  }, [profile?.is_admin, profileSource]);
+
   // SHERLOCK R17 : write to independent session backup whenever the session
   // changes. The backup survives even if supabase-js wipes its own storage on
   // a failed token refresh. On next page load, supabase.ts's
@@ -864,6 +920,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const tick = async () => {
       if (cancelled) return;
+      // R23 : ADMIN MULTI-DEVICE. Admins are exempt from single-active-session
+      // enforcement, so skip the verify_session poll entirely. Otherwise an
+      // admin logged in on device A would get strikes when they also log into
+      // device B (current_session_id in DB matches B, not A).
+      if (isAdminRef.current) return;
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       const localSid = readLocalSessionId();
       if (!localSid) return;
