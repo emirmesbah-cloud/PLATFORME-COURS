@@ -23,10 +23,10 @@ function fireActivationLead(args: { tier: 'autonome' | 'accompagne'; first_name:
     content_category: 'Pflege',
     tier: args.tier,
     first_name: args.first_name,
-    // Currency is required for Meta to register monetary value on Lead.
-    // We don't have the real paid amount client-side (paid externally),
-    // so we use the tier's reference price as an indicator.
-    value: args.tier === 'accompagne' ? 90000 : 45000,
+    // Prix officiels Aurel (cf. aurel-academy.com/pflege/inscription).
+    // On envoie le montant à Meta pour qu'il optimise les pubs sur la
+    // valeur réelle, pas un proxy.
+    value: args.tier === 'accompagne' ? 42800 : 12900,
     currency: 'DZD',
   });
 }
