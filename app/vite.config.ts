@@ -215,5 +215,25 @@ export default defineConfig({
     // entire TS source — RLS query shapes, edge-function URLs, admin
     // routes — to anyone hitting `/assets/*.map`).
     sourcemap: 'hidden',
+    // SHERLOCK R23 PERF : split heavy vendor chunks. The main bundle was
+    // ~692KB because everything bundled together (React + supabase-js +
+    // recharts + sentry + tanstack + form libs). Splitting these into
+    // separate chunks lets the browser cache them independently — a code
+    // change to OUR code only invalidates index.js, not the vendor chunks.
+    // Also enables HTTP/2 multiplexed download.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react':    ['react', 'react-dom', 'react-router-dom'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-sentry':   ['@sentry/react'],
+          'vendor-forms':    ['react-hook-form', '@hookform/resolvers', 'zod'],
+          'vendor-query':    ['@tanstack/react-query'],
+        },
+      },
+    },
+    // 800KB chunk warning threshold (default 500) ; react-pdf legitimately
+    // exceeds this and is lazy-loaded anyway.
+    chunkSizeWarningLimit: 800,
   },
 });

@@ -28,6 +28,14 @@
     <!-- Android Chrome : mobile web app -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="application-name" content="Aurel Academy" />
+
+    <!-- SHERLOCK R23 PERF : preconnect to backends so the browser starts
+         the TLS handshake in parallel with HTML parsing. Saves ~150-200ms
+         on the first API call vs cold start. -->
+    <link rel="preconnect" href="https://dvrqtqghgaxhhgkoihcj.supabase.co" crossorigin />
+    <link rel="preconnect" href="https://player.vdocipher.com" />
+    <link rel="dns-prefetch" href="https://dvrqtqghgaxhhgkoihcj.supabase.co" />
+    <link rel="dns-prefetch" href="https://player.vdocipher.com" />
   </head>
   <body class="bg-white text-aurel-ink antialiased">
     <noscript>
