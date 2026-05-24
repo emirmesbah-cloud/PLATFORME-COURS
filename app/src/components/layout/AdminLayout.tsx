@@ -1,103 +1,206 @@
 import { NavLink, useNavigate, Outlet, Link } from 'react-router-dom';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, KeyRound, Users, BookOpen, Gift, Menu, X, ArrowLeft, LogOut,
   TrendingUp, Heart, Mail, Shield, AlertTriangle, GraduationCap, Wallet,
 } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
-import { AurelLogo } from '@/components/features/AurelLogo';
+import { fetchAccountingStats, queryKeys } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 
-const NAV = [
-  { to: '/admin',           label: 'Vue globale', icon: LayoutDashboard, end: true },
-  { to: '/admin/codes',     label: 'Codes',       icon: KeyRound },
-  { to: '/admin/students',  label: 'Étudiants',   icon: Users },
-  { to: '/admin/lessons',   label: 'Leçons',      icon: BookOpen },
-  { to: '/admin/quiz',         label: 'Quiz',         icon: GraduationCap },
-  { to: '/admin/bonus',        label: 'Bonus',        icon: Gift },
-  { to: '/admin/comptabilite', label: 'Comptabilité', icon: Wallet },
-  { to: '/admin/analytics',    label: 'Analytics',    icon: TrendingUp },
-  { to: '/admin/feedback',  label: 'Avis',        icon: Heart },
-  { to: '/admin/emails',    label: 'Emails',      icon: Mail },
-  { to: '/admin/audit',     label: 'Audit',       icon: Shield },
+/**
+ * AdminLayout — Linear Tech direction (palette Aurel).
+ *
+ * Sidebar :
+ *   - Sticky 240px wide on desktop, drawer overlay on mobile.
+ *   - Grouped sections : Vue / Contenu / Gestion.
+ *   - Badge alert (orange) on Comptabilité if pending payments > 0.
+ * Top bar : breadcrumb mono + time + sign-out icon.
+ */
+const NAV_GROUPS: { label: string; items: { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean; alertKey?: 'pending' }[] }[] = [
+  {
+    label: 'Vue d\'ensemble',
+    items: [
+      { to: '/admin',           label: 'Tableau de bord', icon: LayoutDashboard, end: true },
+      { to: '/admin/students',  label: 'Étudiants',       icon: Users },
+      { to: '/admin/codes',     label: 'Codes',           icon: KeyRound },
+    ],
+  },
+  {
+    label: 'Contenu',
+    items: [
+      { to: '/admin/lessons',   label: 'Leçons',     icon: BookOpen },
+      { to: '/admin/quiz',      label: 'Quiz',       icon: GraduationCap },
+      { to: '/admin/bonus',     label: 'Bonus',      icon: Gift },
+    ],
+  },
+  {
+    label: 'Gestion',
+    items: [
+      { to: '/admin/comptabilite', label: 'Comptabilité', icon: Wallet, alertKey: 'pending' },
+      { to: '/admin/analytics',    label: 'Analytics',    icon: TrendingUp },
+      { to: '/admin/feedback',     label: 'Avis',         icon: Heart },
+      { to: '/admin/emails',       label: 'Emails',       icon: Mail },
+      { to: '/admin/audit',        label: 'Audit',        icon: Shield },
+    ],
+  },
 ];
 
 export function AdminLayout() {
-  const { signOut } = useAuth();
+  const { signOut, profile } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
+  // Pull accounting stats once for the pending-payments badge in the sidebar.
+  const statsQ = useQuery({
+    queryKey: queryKeys.adminAccountingStats,
+    queryFn:  fetchAccountingStats,
+    staleTime: 60 * 1000,
+  });
+  const pending = statsQ.data?.pending ?? 0;
+
   async function handleSignOut() { await signOut(); navigate('/login', { replace: true }); }
 
+  const initial = profile ? `${profile.first_name?.[0] ?? ''}${profile.last_name?.[0] ?? ''}` : 'A';
+
   return (
-    // SHERLOCK R6 fix : safe-area top + bottom for iOS notch + home-bar.
-    <div className="min-h-screen bg-slate-50 pb-[env(safe-area-inset-bottom)]">
-      <header className="sticky top-0 z-30 border-b border-aurel-teal bg-aurel-dark text-white pt-[env(safe-area-inset-top)]">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Link to="/dashboard" className="flex items-center gap-1 text-xs text-slate-300 hover:text-white">
-              <ArrowLeft className="h-4 w-4" /> Espace étudiant
-            </Link>
-          </div>
-          <div className="flex items-center gap-2">
-            <AurelLogo size="sm" withText={false} />
-            <span className="text-sm font-semibold">Admin Panel</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={handleSignOut} className="hidden md:flex btn-ghost text-white hover:bg-white/10">
-              <LogOut className="h-4 w-4" />
-            </button>
-            {/* SHERLOCK R6 fix : aria-label + aria-expanded + 44px min target. */}
-            <button
-              type="button"
-              aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
-              aria-expanded={open}
-              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-2 hover:bg-white/10 md:hidden"
-              onClick={() => setOpen(!open)}
-            >
-              {open ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
-            </button>
-          </div>
+    <div className="min-h-screen bg-white pb-[env(safe-area-inset-bottom)]">
+
+      {/* MOBILE topbar — drawer trigger */}
+      <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white pt-[env(safe-area-inset-top)] md:hidden">
+        <div className="flex items-center justify-between px-4 py-3">
+          <button
+            type="button"
+            aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
+            aria-expanded={open}
+            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card-sm hover:bg-zinc-100"
+            onClick={() => setOpen(!open)}
+          >
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+          <Link to="/admin" className="flex items-center gap-2">
+            <div className="grid h-7 w-7 place-items-center rounded-card-sm bg-zinc-950 text-white text-[14px] font-bold">A</div>
+            <span className="text-[15px] font-semibold tracking-tight">Aurel <span className="font-mono text-[10px] uppercase tracking-wider text-aurel-orange">admin</span></span>
+          </Link>
+          <button onClick={handleSignOut} aria-label="Déconnexion" className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card-sm hover:bg-zinc-100">
+            <LogOut className="h-4 w-4 text-zinc-600" />
+          </button>
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6 md:py-8">
-        <aside className={cn('w-56 flex-shrink-0', open ? 'block' : 'hidden md:block')}>
-          <nav className="sticky top-20 flex flex-col gap-1">
-            {NAV.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  onClick={() => setOpen(false)}
-                  className={({ isActive }) => cn(
-                    'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition',
-                    isActive ? 'bg-aurel-teal text-white' : 'text-slate-700 hover:bg-slate-100'
-                  )}
-                >
-                  <Icon className="h-4 w-4" /> {item.label}
-                </NavLink>
-              );
-            })}
+      <div className="flex">
+
+        {/* SIDEBAR — sticky 240px on desktop, drawer on mobile */}
+        <aside
+          className={cn(
+            'fixed inset-y-0 left-0 z-40 w-60 bg-zinc-50 border-r border-zinc-200 transition-transform md:translate-x-0 md:sticky md:top-0 md:h-screen flex flex-col py-6 px-4',
+            open ? 'translate-x-0' : '-translate-x-full',
+          )}
+        >
+          {/* Brand */}
+          <Link to="/admin" className="mb-4 flex items-center gap-2.5 px-3 pb-5 border-b border-zinc-200" onClick={() => setOpen(false)}>
+            <div className="grid h-7 w-7 place-items-center rounded-card-sm bg-zinc-950 text-white text-[14px] font-bold">A</div>
+            <div className="leading-tight">
+              <div className="text-[15px] font-semibold tracking-tight">Aurel</div>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-aurel-orange font-medium">admin</div>
+            </div>
+          </Link>
+
+          {/* Nav groups */}
+          <nav className="flex-1 flex flex-col gap-0.5 overflow-y-auto">
+            {NAV_GROUPS.map((group) => (
+              <div key={group.label} className="mt-3 first:mt-0">
+                <div className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-zinc-500 font-medium">
+                  {group.label}
+                </div>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const showAlert = item.alertKey === 'pending' && pending > 0;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.end}
+                      onClick={() => setOpen(false)}
+                      className={({ isActive }) => cn(
+                        'flex items-center gap-2.5 rounded-card-sm px-3 py-2 text-[14px] font-medium transition-colors',
+                        isActive
+                          ? 'bg-zinc-950 text-white'
+                          : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900',
+                      )}
+                    >
+                      <Icon className="h-4 w-4 flex-none" />
+                      <span className="flex-1">{item.label}</span>
+                      {showAlert && (
+                        <span className="rounded-card-sm bg-aurel-orange-soft px-1.5 py-0.5 font-mono text-[10px] font-semibold text-aurel-orange-dark">
+                          {pending}
+                        </span>
+                      )}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
+
+          {/* Bottom : user + actions */}
+          <div className="mt-auto pt-3 border-t border-zinc-200 space-y-1">
+            <Link
+              to="/dashboard"
+              className="flex items-center gap-2 px-3 py-2 rounded-card-sm text-[12px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+              onClick={() => setOpen(false)}
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Espace étudiant
+            </Link>
+            <div className="flex items-center gap-2.5 px-3 py-2 rounded-card-sm">
+              <div
+                className="grid h-7 w-7 place-items-center rounded-full text-white text-[11px] font-semibold flex-none"
+                style={{ background: 'linear-gradient(135deg, #F97316, #0D7377)' }}
+              >
+                {initial}
+              </div>
+              <div className="leading-tight flex-1 min-w-0">
+                <div className="truncate text-[13px] font-medium text-zinc-900">
+                  {profile?.first_name} {profile?.last_name}
+                </div>
+                <div className="font-mono text-[10px] uppercase tracking-wider text-aurel-orange">
+                  admin
+                </div>
+              </div>
+              <button onClick={handleSignOut} className="hidden md:inline-flex h-7 w-7 items-center justify-center rounded-card-sm text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900" aria-label="Déconnexion">
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
         </aside>
-        <main className="min-w-0 flex-1">
+
+        {/* Overlay derrière drawer mobile */}
+        {open && (
+          <button
+            aria-label="Fermer le menu"
+            className="fixed inset-0 z-30 bg-zinc-950/40 md:hidden"
+            onClick={() => setOpen(false)}
+          />
+        )}
+
+        {/* MAIN */}
+        <main className="flex-1 min-w-0 px-6 py-6 md:px-10 md:py-8 max-w-7xl">
           <SentryErrorBoundary
             fallback={
-              <div className="m-6 rounded-lg border border-red-200 bg-red-50 p-6 text-center">
-                <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-red-500" />
-                <h2 className="mb-2 text-lg font-semibold text-aurel-ink">Une erreur est survenue</h2>
-                <p className="mb-4 text-sm text-slate-600">Reviens à la vue globale ou réessaie.</p>
-                <Link to="/admin" className="btn-primary">Vue globale</Link>
+              <div className="rounded-card border border-red-200 bg-red-50 p-6 text-center">
+                <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-red-500" />
+                <h2 className="text-display-sm tracking-tight text-zinc-900">Une erreur est survenue</h2>
+                <p className="mt-2 text-sm text-zinc-600">Reviens à la vue globale ou réessaie.</p>
+                <Link to="/admin" className="btn-primary mt-4 inline-flex">Vue globale</Link>
               </div>
             }
           >
             <Outlet />
           </SentryErrorBoundary>
         </main>
+
       </div>
     </div>
   );

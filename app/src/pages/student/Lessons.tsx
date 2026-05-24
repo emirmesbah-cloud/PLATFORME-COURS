@@ -76,10 +76,23 @@ export function StudentLessons() {
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="text-3xl font-bold text-aurel-ink md:text-4xl">
-          {lessons.length > 0 ? `Mes ${lessons.length} leçons` : 'Mes leçons'}
+        <div className="mb-3 flex items-center justify-between border-b border-zinc-200 pb-4">
+          <div className="font-mono text-[11px] uppercase tracking-[0.15em] text-zinc-500">
+            <span>Aurel Academy</span>
+            <span className="mx-2 text-aurel-orange">/</span>
+            <span>Espace étudiant</span>
+            <span className="mx-2 text-aurel-orange">/</span>
+            <span className="text-zinc-900">Leçons</span>
+          </div>
+        </div>
+        <div className="eyebrow-orange mb-2">Programme · {lessons.length} chapitres</div>
+        <h1 className="text-display tracking-tight">
+          {lessons.length > 0 ? <>Tes <span className="text-aurel-orange">{lessons.length}</span> leçons.</> : 'Mes leçons'}
         </h1>
-        <p className="mt-1 text-slate-600">Programme complet Deutsch für Pflegekräfte.</p>
+        <p className="mt-3 max-w-xl text-[15px] text-zinc-600">
+          Deutsch für Pflegekräfte — vocabulaire médical, simulations d'entretien et procédure d'Anerkennung.
+          Chaque leçon est débloquée par le quiz de la précédente.
+        </p>
       </header>
 
       {(hasError || (slowNetwork && isLoading)) && (

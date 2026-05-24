@@ -3,59 +3,128 @@
 @tailwind utilities;
 
 @layer base {
-  html { -webkit-font-smoothing: antialiased; }
-  body { font-family: 'Calibri', 'Inter', system-ui, sans-serif; }
+  html { -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  body {
+    /* Linear Tech direction : Geist primary. Falls back gracefully if not loaded. */
+    font-family: 'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    color: #18181B;
+    background: #FFFFFF;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  /* Tabular numbers wherever we display data (stats, money, scores). */
+  .tabular { font-variant-numeric: tabular-nums; }
+  /* Keep Georgia italic fallback for places that want a serif accent (legacy). */
   .font-serif-italic { font-family: Georgia, serif; font-style: italic; }
 }
 
 @layer components {
+  /* ── BUTTONS ───────────────────────────────────────────────────
+     Linear Tech defaults : black primary (CTA), orange on hover.
+     Outline buttons use neutral grays + zinc-200 border.
+     ────────────────────────────────────────────────────────────── */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurel-orange focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex items-center justify-center gap-2 rounded-card-sm px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurel-orange focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
   }
   .btn-primary {
-    @apply btn bg-aurel-orange text-white hover:bg-aurel-orange-dark shadow-sm;
+    @apply btn bg-zinc-950 text-white hover:bg-aurel-orange shadow-card;
   }
   .btn-secondary {
-    @apply btn bg-aurel-teal text-white hover:bg-aurel-teal-dark;
+    @apply btn bg-aurel-teal text-white hover:bg-aurel-teal-dark shadow-card;
   }
   .btn-outline {
-    @apply btn border border-slate-300 bg-white text-aurel-ink hover:bg-slate-50;
+    @apply btn border border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50 hover:border-zinc-400;
   }
   .btn-ghost {
-    @apply btn bg-transparent text-aurel-ink hover:bg-slate-100;
+    @apply btn bg-transparent text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900;
   }
   .btn-danger {
     @apply btn bg-red-600 text-white hover:bg-red-700;
   }
-  .btn-lg { @apply px-6 py-3 text-base; }
+  .btn-lg { @apply px-5 py-2.5 text-[15px]; }
   .btn-block { @apply flex w-full; }
 
+  /* ── INPUTS ──────────────────────────────────────────────────── */
   .input {
-    /* SHERLOCK R6 fix : font-size is 16px on mobile (text-base), 14px (text-sm)
-       on >= md screens. iOS Safari auto-zooms inputs whose computed font-size
-       is < 16px on focus — that zoom never restores cleanly without manual
-       pinch-out. text-base on mobile prevents the zoom; we keep text-sm on
-       desktop where the zoom doesn't apply. */
-    @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base md:text-sm text-aurel-ink placeholder-slate-400 shadow-sm focus:border-aurel-orange focus:outline-none focus:ring-2 focus:ring-aurel-orange/20 disabled:bg-slate-50 disabled:opacity-60;
+    /* iOS Safari : 16px on mobile (auto-zoom guard), 14px on desktop. */
+    @apply block w-full rounded-card-sm border border-zinc-200 bg-white px-3 py-2 text-base md:text-sm text-zinc-900 placeholder-zinc-400 shadow-card focus:border-aurel-orange focus:outline-none focus:ring-2 focus:ring-aurel-orange/15 disabled:bg-zinc-50 disabled:opacity-60;
   }
   .label {
-    @apply mb-1.5 block text-sm font-medium text-slate-700;
+    @apply mb-1.5 block text-sm font-medium text-zinc-700;
   }
   .field-error {
     @apply mt-1 text-sm text-red-600;
   }
 
+  /* ── CARDS ───────────────────────────────────────────────────── */
   .card {
-    @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+    @apply rounded-card border border-zinc-200 bg-white shadow-card;
   }
   .card-padded { @apply card p-6; }
-
-  .badge {
-    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  /* Hero card with a subtle warm gradient backdrop — used at top of dashboards. */
+  .card-hero {
+    @apply relative overflow-hidden rounded-card border border-zinc-200 p-8;
+    background: linear-gradient(180deg, #FFEDD5 0%, #FFFFFF 100%);
   }
-  .badge-orange  { @apply badge bg-aurel-orange-soft text-aurel-orange-dark; }
-  .badge-teal    { @apply badge bg-teal-50 text-aurel-teal; }
-  .badge-green   { @apply badge bg-green-50 text-green-700; }
-  .badge-slate   { @apply badge bg-slate-100 text-slate-700; }
-  .badge-red     { @apply badge bg-red-50 text-red-700; }
+  .card-hero::before {
+    content: '';
+    position: absolute;
+    top: -50%; right: -10%;
+    width: 60%; height: 200%;
+    background: radial-gradient(circle, rgba(249, 115, 22, 0.12), transparent 70%);
+    pointer-events: none;
+  }
+  /* Solid dark card with brand gradient — used for highlight stats / quiz results. */
+  .card-dark {
+    @apply relative overflow-hidden rounded-card p-5 text-white;
+    background: linear-gradient(135deg, #09090B 0%, #F97316 100%);
+  }
+
+  /* ── BADGES ─────────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-pill px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide;
+  }
+  .badge-orange { @apply badge bg-aurel-orange-soft text-aurel-orange-dark; }
+  .badge-teal   { @apply badge bg-aurel-teal-soft text-aurel-teal-dark; }
+  .badge-green  { @apply badge bg-green-50 text-green-700; }
+  .badge-slate  { @apply badge bg-zinc-100 text-zinc-700; }
+  .badge-red    { @apply badge bg-red-50 text-red-700; }
+  /* Tiny dot prefix — used on badges to signal status. */
+  .badge .dot { @apply inline-block h-1.5 w-1.5 rounded-full bg-current; }
+
+  /* ── KPI CARD (used across dashboards) ───────────────────── */
+  .kpi {
+    @apply card p-5 transition-colors hover:border-zinc-400;
+  }
+  .kpi-label {
+    @apply mb-2 flex items-center gap-1.5 text-[12px] font-medium text-zinc-600;
+  }
+  .kpi-dot {
+    @apply inline-block h-1.5 w-1.5 rounded-full bg-aurel-orange;
+  }
+  .kpi-value {
+    @apply text-[32px] font-semibold leading-none tracking-tight tabular;
+  }
+  .kpi-sub  { @apply text-zinc-400 text-[0.6em] font-medium; }
+  .kpi-delta { @apply mt-1.5 text-[12px] text-zinc-600; }
+
+  /* ── EYEBROW (small mono label) ──────────────────────────── */
+  .eyebrow {
+    @apply font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500;
+  }
+  .eyebrow-orange { @apply eyebrow text-aurel-orange; }
+  .eyebrow-teal   { @apply eyebrow text-aurel-teal; }
+
+  /* ── SECTION HEADING ──────────────────────────────────────── */
+  .section-title {
+    @apply text-[24px] font-semibold tracking-tight text-zinc-900;
+  }
+}
+
+/* Pulse dot for "live" indicators (used in admin dashboard) */
+.dot-pulse {
+  animation: dot-pulse 2s ease-in-out infinite;
+}
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
 }
