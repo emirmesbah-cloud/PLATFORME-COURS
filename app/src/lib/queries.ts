@@ -23,6 +23,7 @@ import type {
   LessonNote, Certificate, CertificateResult, Feedback, EmailLog,
   AdminAuditLog, AdvancedAnalytics,
   QuizQuestion, QuizSubmissionResult, QuizLessonStatus,
+  Payment, PaymentMethod, PaymentCurrency, AccountingStats,
 } from './types';
 
 // SHERLOCK R14 — H10 : profile shape côté admin inclut revoked_at + reason
@@ -56,6 +57,9 @@ export const queryKeys = {
   quizQuestionsStudent: (lessonId: string) => ['quiz_questions', 'student', lessonId] as const,
   myQuizStatus: (uid: string) => ['quiz_status', uid] as const,
   adminAllQuizQuestions: ['admin', 'quiz_questions'] as const,
+  // Accounting
+  adminPayments: (filters?: unknown) => ['admin', 'payments', filters] as const,
+  adminAccountingStats: ['admin', 'accounting_stats'] as const,
 };
 
 // ── Lessons ────────────────────────────────────────────────────
@@ -572,4 +576,98 @@ export async function adminDeleteQuizQuestion(id: string): Promise<void> {
   const { error } = await supabase.from('quiz_questions').delete().eq('id', id);
   if (error) throw error;
   await logAdminAction('quiz_question_deleted', 'quiz_question', id);
+}
+
+
+// ============================================================================
+// Accounting (mig 20260524000030)
+// ============================================================================
+export interface PaymentFilters {
+  status?: 'pending' | 'recorded' | 'cancelled' | null;
+  tier?: 'autonome' | 'accompagne' | null;
+  method?: PaymentMethod | null;
+  // ISO date strings, inclusive on `from`, exclusive on `to` (so use the
+  // start of the next day for "until end of day X").
+  from?: string | null;
+  to?: string | null;
+  // Free-text search on student name/email
+  search?: string | null;
+}
+
+export async function fetchAdminPayments(filters: PaymentFilters = {}): Promise<Payment[]> {
+  let q = supabase
+    .from('payments')
+    .select('*, profile:profiles(first_name, last_name, email), activation_code:activation_codes(code)')
+    .order('created_at', { ascending: false });
+
+  if (filters.status) q = q.eq('status', filters.status);
+  if (filters.tier)   q = q.eq('tier', filters.tier);
+  if (filters.method) q = q.eq('method', filters.method);
+  if (filters.from)   q = q.gte('created_at', filters.from);
+  if (filters.to)     q = q.lt('created_at', filters.to);
+
+  const { data, error } = await withQueryTimeout(q.limit(2000), 15000, 'fetchAdminPayments');
+  if (error) throw error;
+
+  // Free-text search côté client (jointure profiles n'est pas filtrable via
+  // .ilike côté supabase-js — petite quantité de rows, OK pour le scope).
+  let rows = (data ?? []) as Payment[];
+  if (filters.search && filters.search.trim()) {
+    const needle = filters.search.trim().toLowerCase();
+    rows = rows.filter((p) => {
+      const fn = p.profile?.first_name?.toLowerCase() ?? '';
+      const ln = p.profile?.last_name?.toLowerCase() ?? '';
+      const em = p.profile?.email?.toLowerCase() ?? '';
+      const code = p.activation_code?.code?.toLowerCase() ?? '';
+      return fn.includes(needle) || ln.includes(needle) || em.includes(needle) || code.includes(needle);
+    });
+  }
+  return rows;
+}
+
+export async function fetchAccountingStats(): Promise<AccountingStats | null> {
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('admin_get_accounting_stats'),
+    10000,
+    'fetchAccountingStats',
+  );
+  if (error) throw error;
+  if (!data || (data as { ok: boolean }).ok === false) return null;
+  return data as AccountingStats;
+}
+
+export async function recordPayment(args: {
+  paymentId: string;
+  method: PaymentMethod;
+  amount: number;
+  currency: PaymentCurrency;
+  notes?: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { data, error } = await supabase.rpc('admin_record_payment', {
+    p_payment_id: args.paymentId,
+    p_method:     args.method,
+    p_amount:     args.amount,
+    p_currency:   args.currency,
+    p_notes:      args.notes ?? null,
+  });
+  if (error) throw error;
+  const res = data as { ok: boolean; error?: string };
+  if (res.ok) {
+    await logAdminAction('payment_recorded', 'payment', args.paymentId, {
+      method: args.method, amount: args.amount, currency: args.currency,
+    });
+  }
+  return res;
+}
+
+export async function cancelPayment(paymentId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data, error } = await supabase.rpc('admin_cancel_payment', {
+    p_payment_id: paymentId,
+  });
+  if (error) throw error;
+  const res = data as { ok: boolean; error?: string };
+  if (res.ok) {
+    await logAdminAction('payment_cancelled', 'payment', paymentId);
+  }
+  return res;
 }

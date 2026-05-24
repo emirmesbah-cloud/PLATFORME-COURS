@@ -199,6 +199,43 @@ export interface QuizLessonStatus {
   attempts: number;
 }
 
+// ── Accounting (mig 20260524000030) ──────────────────────────────
+export type PaymentMethod =
+  | 'cash' | 'ccp' | 'baridi' | 'bank_transfer' | 'international_transfer' | 'other';
+export type PaymentStatus = 'pending' | 'recorded' | 'cancelled';
+export type PaymentCurrency = 'DZD' | 'EUR';
+
+export interface Payment {
+  id: string;
+  activation_code_id: string | null;
+  user_id: string;
+  tier: Tier;
+  method: PaymentMethod | null;
+  amount: number | null;
+  currency: PaymentCurrency | null;
+  notes: string | null;
+  status: PaymentStatus;
+  created_at: string;
+  recorded_at: string | null;
+  recorded_by: string | null;
+  updated_at: string;
+  // Enrichi par fetchAdminPayments (jointure profiles)
+  profile?: Pick<Profile, 'first_name' | 'last_name' | 'email'>;
+  // Enrichi par fetchAdminPayments (jointure activation_codes pour le code lui-même)
+  activation_code?: { code: string } | null;
+}
+
+export interface AccountingStats {
+  ok: true;
+  this_month: { dzd: number; eur: number; count: number };
+  last_month: { dzd: number; eur: number; count: number };
+  ytd:        { dzd: number; eur: number; count: number };
+  pending:    number;
+  by_tier:    { tier: string; dzd: number; eur: number; count: number }[];
+  by_method:  { method: string; dzd: number; eur: number; count: number }[];
+  monthly:    { month: string; dzd: number; eur: number; count: number }[];
+}
+
 export interface AdvancedAnalytics {
   ok: true;
   acquisition: { day: string; tier: string; new_students: number }[] | null;
