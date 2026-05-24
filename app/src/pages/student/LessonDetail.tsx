@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, ArrowLeft, Clock, CheckCircle2 } from 'lucide-react';
-import { fetchLessons, fetchLessonByNumber, fetchUserProgress, queryKeys } from '@/lib/queries';
+import { fetchLessons, fetchLessonByNumber, fetchUserProgress, fetchMyQuizStatus, queryKeys } from '@/lib/queries';
 import { useAuth } from '@/hooks/useAuth';
 import { VideoPlayer } from '@/components/features/VideoPlayer';
 import { LessonNotes } from '@/components/features/LessonNotes';
+import { LessonQuiz } from '@/components/features/LessonQuiz';
 import { formatDuration, cn } from '@/lib/utils';
 
 const TABS = ['Objectifs', 'Contenu', 'Notes'] as const;
@@ -24,6 +25,14 @@ export function StudentLessonDetail() {
   const lessonQ  = useQuery({ queryKey: queryKeys.lesson(n),       queryFn: () => fetchLessonByNumber(n), enabled: lessonValid });
   const lessonsQ = useQuery({ queryKey: queryKeys.lessons,         queryFn: fetchLessons });
   const progQ    = useQuery({ queryKey: queryKeys.progress(uid),   queryFn: () => fetchUserProgress(uid), enabled: !!uid });
+  // Quiz status — utilisé pour verrouiller l'accès direct à une leçon
+  // dont le quiz précédent n'a pas été validé (entrée par URL).
+  const quizStatusQ = useQuery({
+    queryKey: queryKeys.myQuizStatus(uid),
+    queryFn: fetchMyQuizStatus,
+    enabled: !!uid,
+    staleTime: 30 * 1000,
+  });
 
   // SHERLOCK R13 — B4: out-of-range / non-integer lesson number → /lecons.
   if (!lessonValid) return <Navigate to="/lecons" replace />;
@@ -65,6 +74,41 @@ export function StudentLessonDetail() {
 
   const prev = lessons.find((l) => l.lesson_number === n - 1);
   const next = lessons.find((l) => l.lesson_number === n + 1);
+
+  // Verrouillage par quiz — si l'étudiant tape /lecons/5 sans avoir validé
+  // le quiz de la leçon 4, on bloque l'accès. On reste permissif tant que
+  // quizStatusQ.data n'est pas chargé pour ne pas freezer la page.
+  const isLocked = (() => {
+    if (n <= 1) return false;
+    if (!quizStatusQ.data || !prev) return false;
+    const prevQuiz = quizStatusQ.data.find((s) => s.lesson_id === prev.id);
+    if (prevQuiz?.has_questions) return !prevQuiz.passed;
+    // Pas de quiz sur la précédente → fallback completion
+    const prevProgress = (progQ.data ?? []).find((p) => p.lesson_id === prev.id);
+    return prevProgress?.completed !== true;
+  })();
+
+  if (isLocked) {
+    return (
+      <div>
+        <Link to="/lecons" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-aurel-ink">
+          <ArrowLeft className="h-4 w-4" /> Toutes les leçons
+        </Link>
+        <div className="card-padded space-y-3 max-w-lg">
+          <h2 className="text-xl font-bold text-aurel-ink">Leçon verrouillée 🔒</h2>
+          <p className="text-sm text-slate-600">
+            Pour accéder à la leçon {n}, tu dois d'abord valider le quiz de la leçon {n - 1}
+            {prev ? ` — « ${prev.title} »` : ''}. Il te faut 3 bonnes réponses sur 5.
+          </p>
+          {prev && (
+            <Link to={`/lecons/${prev.lesson_number}`} className="btn-primary inline-flex">
+              Retour à la leçon {prev.lesson_number}
+            </Link>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -128,6 +172,14 @@ export function StudentLessonDetail() {
           </div>
         </aside>
       </div>
+
+      {/* Quiz — affiché seulement si la leçon a des questions seedées.
+          Lessons 1 (disclaimer) et 2 (Willkommen) n'ont volontairement aucun
+          quiz : le composant renvoie null dans ce cas, donc rien à filtrer
+          ici. Le déverrouillage de la leçon suivante dépend de la réussite. */}
+      <section className="mt-8">
+        <LessonQuiz lessonId={lesson.id} lessonNumber={lesson.lesson_number} />
+      </section>
 
       <nav className="mt-8 flex items-center justify-between gap-3">
         {prev ? (

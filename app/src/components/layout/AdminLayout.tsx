@@ -2,7 +2,7 @@ import { NavLink, useNavigate, Outlet, Link } from 'react-router-dom';
 import { useState } from 'react';
 import {
   LayoutDashboard, KeyRound, Users, BookOpen, Gift, Menu, X, ArrowLeft, LogOut,
-  TrendingUp, Heart, Mail, Shield, AlertTriangle,
+  TrendingUp, Heart, Mail, Shield, AlertTriangle, GraduationCap,
 } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
@@ -14,6 +14,7 @@ const NAV = [
   { to: '/admin/codes',     label: 'Codes',       icon: KeyRound },
   { to: '/admin/students',  label: 'Étudiants',   icon: Users },
   { to: '/admin/lessons',   label: 'Leçons',      icon: BookOpen },
+  { to: '/admin/quiz',      label: 'Quiz',        icon: GraduationCap },
   { to: '/admin/bonus',     label: 'Bonus',       icon: Gift },
   { to: '/admin/analytics', label: 'Analytics',   icon: TrendingUp },
   { to: '/admin/feedback',  label: 'Avis',        icon: Heart },

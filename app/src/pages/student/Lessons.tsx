@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { fetchLessons, fetchUserProgress, queryKeys } from '@/lib/queries';
+import { fetchLessons, fetchUserProgress, fetchMyQuizStatus, queryKeys } from '@/lib/queries';
 import { LessonCard } from '@/components/features/LessonCard';
+import type { QuizLessonStatus } from '@/lib/types';
 
 export function StudentLessons() {
   const { user } = useAuth();
@@ -10,6 +11,15 @@ export function StudentLessons() {
 
   const lessonsQ = useQuery({ queryKey: queryKeys.lessons,         queryFn: fetchLessons });
   const progQ    = useQuery({ queryKey: queryKeys.progress(uid),   queryFn: () => fetchUserProgress(uid), enabled: !!uid });
+  // Quiz status pour le verrouillage progressif. Si la RPC n'a pas encore
+  // répondu, on est permissif (tout déverrouillé) pour ne pas bloquer
+  // l'affichage initial — le verrou se met en place une fois les données là.
+  const quizStatusQ = useQuery({
+    queryKey: queryKeys.myQuizStatus(uid),
+    queryFn: fetchMyQuizStatus,
+    enabled: !!uid,
+    staleTime: 30 * 1000,
+  });
 
   // SHERLOCK : auto-escape if skeletons hang. After 8s without data, show a
   // visible "réseau lent" message + manual retry button. Beats the infinite
@@ -31,6 +41,26 @@ export function StudentLessons() {
   // répond.
   const lessons = lessonsQ.data ?? [];
   const progressByLesson = new Map((progQ.data ?? []).map((p) => [p.lesson_id, p]));
+  const quizByLesson = new Map<string, QuizLessonStatus>(
+    (quizStatusQ.data ?? []).map((s) => [s.lesson_id, s]),
+  );
+  // Helper : la leçon N est-elle débloquée ? Règle :
+  // - leçon_number 1 : toujours (disclaimer)
+  // - leçon_number 2+ : la précédente doit être "validée"
+  //     → si elle a un quiz : passed = true
+  //     → si elle n'a pas de quiz : completed (watch) = true
+  // - Si quiz_status n'est pas encore chargé : on est permissif (tout open)
+  //   pour ne pas freezer l'UX au cold start.
+  function isUnlocked(lessonNumber: number): boolean {
+    if (lessonNumber <= 1) return true;
+    if (!quizStatusQ.data) return true; // pas encore de data → permissif
+    const prev = lessons.find((l) => l.lesson_number === lessonNumber - 1);
+    if (!prev) return true;
+    const prevQuiz = quizByLesson.get(prev.id);
+    if (prevQuiz?.has_questions) return prevQuiz.passed;
+    // Pas de quiz sur la précédente → fallback sur completed.
+    return progressByLesson.get(prev.id)?.completed === true;
+  }
 
   // Group by phase
   const byPhase = new Map<string, typeof lessons>();
@@ -92,7 +122,13 @@ export function StudentLessons() {
           <h2 className="mb-3 text-xs font-bold uppercase tracking-widest text-aurel-orange">{phase}</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((l) => (
-              <LessonCard key={l.id} lesson={l} progress={progressByLesson.get(l.id)} />
+              <LessonCard
+                key={l.id}
+                lesson={l}
+                progress={progressByLesson.get(l.id)}
+                quizStatus={quizByLesson.get(l.id)}
+                locked={!isUnlocked(l.lesson_number)}
+              />
             ))}
           </div>
         </section>

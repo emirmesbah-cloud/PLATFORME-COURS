@@ -147,6 +147,58 @@ export interface AdminAuditLog {
   created_at: string;
 }
 
+// ── Quiz (mig 20260524000028) ─────────────────────────────────────
+// One row per multiple-choice question. correct_index points to A/B/C/D.
+export interface QuizQuestion {
+  id: string;
+  lesson_id: string;
+  position: number;
+  question_text: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  correct_index: 0 | 1 | 2 | 3;
+  explanation: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// One row per attempt. Immutable audit trail.
+export interface QuizAttempt {
+  id: string;
+  user_id: string;
+  lesson_id: string;
+  score: number;
+  total: number;
+  passed: boolean;
+  answers: number[];
+  attempted_at: string;
+}
+
+// Server response shape from RPC submit_quiz_attempt.
+export interface QuizSubmissionResult {
+  ok: boolean;
+  error?: string;
+  attempt_id?: string;
+  score?: number;
+  total?: number;
+  passed?: boolean;
+  threshold?: number;
+  correct?: number[];
+}
+
+// Per-lesson status row from RPC get_my_quiz_status.
+export interface QuizLessonStatus {
+  lesson_id: string;
+  lesson_number: number;
+  has_questions: boolean;
+  best_score: number;
+  total: number;
+  passed: boolean;
+  attempts: number;
+}
+
 export interface AdvancedAnalytics {
   ok: true;
   acquisition: { day: string; tier: string; new_students: number }[] | null;

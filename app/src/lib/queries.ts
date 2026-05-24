@@ -22,6 +22,7 @@ import type {
   Profile, ProgressSummary, AdminStats,
   LessonNote, Certificate, CertificateResult, Feedback, EmailLog,
   AdminAuditLog, AdvancedAnalytics,
+  QuizQuestion, QuizSubmissionResult, QuizLessonStatus,
 } from './types';
 
 // SHERLOCK R14 — H10 : profile shape côté admin inclut revoked_at + reason
@@ -50,6 +51,11 @@ export const queryKeys = {
   adminFeedback: ['admin', 'feedback'] as const,
   adminEmails: ['admin', 'emails'] as const,
   adminAudit: ['admin', 'audit'] as const,
+  // Quiz
+  quizQuestions: (lessonId: string) => ['quiz_questions', lessonId] as const,
+  quizQuestionsStudent: (lessonId: string) => ['quiz_questions', 'student', lessonId] as const,
+  myQuizStatus: (uid: string) => ['quiz_status', uid] as const,
+  adminAllQuizQuestions: ['admin', 'quiz_questions'] as const,
 };
 
 // ── Lessons ────────────────────────────────────────────────────
@@ -455,4 +461,115 @@ export async function logAdminAction(
     // eslint-disable-next-line no-console
     console.warn('[Aurel] logAdminAction failed', error);
   }
+}
+
+// ============================================================================
+// Quiz (mig 20260524000028 / 029)
+// ============================================================================
+
+// ── Student side ───────────────────────────────────────────────
+// Fetch the questions for ONE lesson. We DON'T expose correct_index in the
+// student-facing shape (it's still on the row from DB — we hide it client-side
+// to make accidental UI leaks harder). The real cheat-protection is in the
+// `submit_quiz_attempt` RPC, which recomputes the score server-side.
+export type QuizQuestionForStudent = Omit<QuizQuestion, 'correct_index' | 'explanation'>;
+
+export async function fetchQuizQuestionsForStudent(lessonId: string): Promise<QuizQuestionForStudent[]> {
+  const { data, error } = await withQueryTimeout(
+    supabase
+      .from('quiz_questions')
+      .select('id, lesson_id, position, question_text, option_a, option_b, option_c, option_d, created_at, updated_at')
+      .eq('lesson_id', lessonId)
+      .order('position', { ascending: true }),
+    10000,
+    'fetchQuizQuestionsForStudent',
+  );
+  if (error) throw error;
+  return (data ?? []) as QuizQuestionForStudent[];
+}
+
+// Server scores it. Pass the answers in the same position-order as the
+// questions returned by fetchQuizQuestionsForStudent. Unanswered = -1
+// (server treats null/anything-other-than-correct as wrong).
+export async function submitQuizAttempt(
+  lessonId: string,
+  answers: number[],
+): Promise<QuizSubmissionResult> {
+  const { data, error } = await supabase.rpc('submit_quiz_attempt', {
+    p_lesson_id: lessonId,
+    p_answers: answers,
+  });
+  if (error) throw error;
+  return data as QuizSubmissionResult;
+}
+
+// One round-trip → status of every lesson for the current user.
+// Used by Lessons / LessonCard to know what's locked.
+export async function fetchMyQuizStatus(): Promise<QuizLessonStatus[]> {
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('get_my_quiz_status'),
+    10000,
+    'fetchMyQuizStatus',
+  );
+  if (error) throw error;
+  if (!data || (data as { ok: boolean }).ok === false) return [];
+  return ((data as { lessons: QuizLessonStatus[] }).lessons ?? []);
+}
+
+// ── Admin side ─────────────────────────────────────────────────
+// Full row including correct_index + explanation, for the admin CRUD page.
+export async function adminFetchAllQuizQuestions(): Promise<QuizQuestion[]> {
+  const { data, error } = await withQueryTimeout(
+    supabase
+      .from('quiz_questions')
+      .select('*')
+      .order('lesson_id', { ascending: true })
+      .order('position', { ascending: true }),
+    10000,
+    'adminFetchAllQuizQuestions',
+  );
+  if (error) throw error;
+  return (data ?? []) as QuizQuestion[];
+}
+
+export interface AdminQuestionInput {
+  id?: string;
+  lesson_id: string;
+  position: number;
+  question_text: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  correct_index: 0 | 1 | 2 | 3;
+  explanation: string | null;
+}
+
+export async function adminUpsertQuizQuestion(q: AdminQuestionInput): Promise<QuizQuestion> {
+  const payload = {
+    lesson_id:     q.lesson_id,
+    position:      q.position,
+    question_text: q.question_text,
+    option_a:      q.option_a,
+    option_b:      q.option_b,
+    option_c:      q.option_c,
+    option_d:      q.option_d,
+    correct_index: q.correct_index,
+    explanation:   q.explanation,
+  };
+  const q$ = q.id
+    ? supabase.from('quiz_questions').update(payload).eq('id', q.id).select().single()
+    : supabase.from('quiz_questions').insert(payload).select().single();
+  const { data, error } = await q$;
+  if (error) throw error;
+  await logAdminAction(q.id ? 'quiz_question_updated' : 'quiz_question_created',
+                       'quiz_question', (data as QuizQuestion).id,
+                       { lesson_id: q.lesson_id, position: q.position });
+  return data as QuizQuestion;
+}
+
+export async function adminDeleteQuizQuestion(id: string): Promise<void> {
+  const { error } = await supabase.from('quiz_questions').delete().eq('id', id);
+  if (error) throw error;
+  await logAdminAction('quiz_question_deleted', 'quiz_question', id);
 }
