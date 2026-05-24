@@ -86,7 +86,7 @@ export function StudentLessons() {
           </div>
         </div>
         <div className="eyebrow-orange mb-2">Programme · {lessons.length} chapitres</div>
-        <h1 className="text-display tracking-tight">
+        <h1 className="text-display-sm md:text-display tracking-tight">
           {lessons.length > 0 ? <>Tes <span className="text-aurel-orange">{lessons.length}</span> leçons.</> : 'Mes leçons'}
         </h1>
         <p className="mt-3 max-w-xl text-[15px] text-zinc-600">

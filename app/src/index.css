@@ -60,9 +60,10 @@
     @apply rounded-card border border-zinc-200 bg-white shadow-card;
   }
   .card-padded { @apply card p-6; }
-  /* Hero card with a subtle warm gradient backdrop — used at top of dashboards. */
+  /* Hero card with a subtle warm gradient backdrop — used at top of dashboards.
+     Padding scales down on mobile to avoid wasting screen real-estate. */
   .card-hero {
-    @apply relative overflow-hidden rounded-card border border-zinc-200 p-8;
+    @apply relative overflow-hidden rounded-card border border-zinc-200 p-5 md:p-8;
     background: linear-gradient(180deg, #FFEDD5 0%, #FFFFFF 100%);
   }
   .card-hero::before {

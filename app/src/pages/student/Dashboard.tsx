@@ -108,7 +108,7 @@ export function StudentDashboard() {
               ? `Chapitre ${continueTarget.lesson_number} · En cours`
               : 'Bienvenue'}
           </div>
-          <h1 className="text-display tracking-tight text-zinc-950 max-w-3xl">
+          <h1 className="text-display-sm md:text-display tracking-tight text-zinc-950 max-w-3xl">
             Bon retour, <span className="text-aurel-orange">{profile?.first_name ?? ''}</span>.
             {continueTarget && (
               <> Tu reprends à <span className="italic font-medium">{continueTarget.title}</span>.</>
@@ -174,14 +174,14 @@ export function StudentDashboard() {
 
           {/* Continue card */}
           {continueTarget ? (
-            <section className="card p-7">
+            <section className="card p-5 md:p-7">
               <div className="mb-5 flex items-center justify-between">
                 <div className="eyebrow-orange">◇ Reprendre ici</div>
                 <div className="font-mono text-[11px] text-zinc-500">
                   {formatDuration(continueTarget.duration_minutes)} · 5 questions
                 </div>
               </div>
-              <h2 className="mb-1 text-[28px] font-semibold tracking-tight text-zinc-950 leading-[1.1]">
+              <h2 className="mb-1 text-[22px] md:text-[28px] font-semibold tracking-tight text-zinc-950 leading-[1.15]">
                 {continueTarget.title}
               </h2>
               <p className="mb-5 text-zinc-600">{continueTarget.subtitle}</p>

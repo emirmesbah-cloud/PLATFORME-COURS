@@ -44,12 +44,13 @@ export function StudentLayout() {
   return (
     // SHERLOCK R6 fix : pb-[env(safe-area-inset-bottom)] reserves space for
     // the iOS home-bar so bottom buttons aren't hidden in PWA standalone.
-    <div className="min-h-screen bg-slate-50 pb-[env(safe-area-inset-bottom)]">
+    // Linear Tech direction : bg-white throughout, zinc-200 hairlines.
+    <div className="min-h-screen bg-white pb-[env(safe-area-inset-bottom)]">
       {/* pt-[env(safe-area-inset-top)] keeps header content out of the
           notch / dynamic island when status-bar-style is black-translucent. */}
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white pt-[env(safe-area-inset-top)]">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <Link to="/dashboard"><AurelLogo /></Link>
+      <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 pt-[env(safe-area-inset-top)]">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-6">
+          <Link to="/dashboard" className="flex-none"><AurelLogo /></Link>
 
           <nav className="hidden items-center gap-1 md:flex">
             {NAV.map((item) => {
@@ -59,8 +60,10 @@ export function StudentLayout() {
                   key={item.to}
                   to={item.to}
                   className={({ isActive }) => cn(
-                    'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition',
-                    isActive ? 'bg-aurel-orange-soft text-aurel-orange-dark' : 'text-slate-600 hover:bg-slate-100 hover:text-aurel-ink'
+                    'flex items-center gap-2 rounded-card-sm px-3 py-2 text-[13px] font-medium transition-colors',
+                    isActive
+                      ? 'bg-zinc-950 text-white'
+                      : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900'
                   )}
                 >
                   <Icon className="h-4 w-4" />
@@ -72,8 +75,10 @@ export function StudentLayout() {
               <NavLink
                 to="/admin"
                 className={({ isActive }) => cn(
-                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition',
-                  isActive ? 'bg-aurel-teal text-white' : 'text-aurel-teal hover:bg-teal-50'
+                  'ml-2 flex items-center gap-2 rounded-card-sm px-3 py-2 text-[13px] font-medium transition-colors',
+                  isActive
+                    ? 'bg-aurel-teal text-white'
+                    : 'text-aurel-teal hover:bg-aurel-teal-soft'
                 )}
               >
                 <Shield className="h-4 w-4" />
@@ -84,11 +89,14 @@ export function StudentLayout() {
 
           <div className="flex items-center gap-3">
             <div className="hidden items-center gap-3 md:flex">
-              <div className="text-right text-sm">
-                <div className="font-semibold text-aurel-ink">{profile?.first_name} {profile?.last_name}</div>
-                <div className="text-xs text-slate-500">{profile && tierLabel(profile.tier)}</div>
+              <div className="text-right text-sm leading-tight">
+                <div className="font-semibold text-zinc-900">{profile?.first_name} {profile?.last_name}</div>
+                <div className="font-mono text-[10px] uppercase tracking-wider text-aurel-orange">{profile && tierLabel(profile.tier)}</div>
               </div>
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-aurel-teal text-sm font-bold text-white">
+              <div
+                className="grid h-9 w-9 place-items-center rounded-full text-sm font-bold text-white"
+                style={{ background: 'linear-gradient(135deg, #F97316, #0D7377)' }}
+              >
                 {initials(profile?.first_name, profile?.last_name)}
               </div>
               <button onClick={handleSignOut} className="btn-ghost" aria-label="Déconnexion">
@@ -100,7 +108,7 @@ export function StudentLayout() {
               type="button"
               aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
               aria-expanded={open}
-              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-2 text-slate-600 hover:bg-slate-100 md:hidden"
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card-sm p-2 text-zinc-600 hover:bg-zinc-100 md:hidden"
               onClick={() => setOpen(!open)}
             >
               {open ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
@@ -109,8 +117,23 @@ export function StudentLayout() {
         </div>
 
         {open && (
-          <div className="border-t border-slate-200 bg-white md:hidden">
-            <nav className="flex flex-col p-2">
+          <div className="border-t border-zinc-200 bg-white md:hidden">
+            {/* Profile block on top of mobile drawer */}
+            {profile && (
+              <div className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3">
+                <div
+                  className="grid h-10 w-10 place-items-center rounded-full text-sm font-bold text-white flex-none"
+                  style={{ background: 'linear-gradient(135deg, #F97316, #0D7377)' }}
+                >
+                  {initials(profile.first_name, profile.last_name)}
+                </div>
+                <div className="leading-tight min-w-0 flex-1">
+                  <div className="truncate text-[14px] font-semibold text-zinc-900">{profile.first_name} {profile.last_name}</div>
+                  <div className="font-mono text-[10px] uppercase tracking-wider text-aurel-orange">{tierLabel(profile.tier)}</div>
+                </div>
+              </div>
+            )}
+            <nav className="flex flex-col gap-0.5 p-2">
               {NAV.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -119,8 +142,8 @@ export function StudentLayout() {
                     to={item.to}
                     onClick={() => setOpen(false)}
                     className={({ isActive }) => cn(
-                      'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium',
-                      isActive ? 'bg-aurel-orange-soft text-aurel-orange-dark' : 'text-slate-700 hover:bg-slate-100'
+                      'flex items-center gap-3 rounded-card-sm px-3 py-3 text-[14px] font-medium min-h-[44px]',
+                      isActive ? 'bg-zinc-950 text-white' : 'text-zinc-700 hover:bg-zinc-100'
                     )}
                   >
                     <Icon className="h-4 w-4" /> {item.label}
@@ -129,11 +152,11 @@ export function StudentLayout() {
               })}
               {isAdmin && (
                 <NavLink to="/admin" onClick={() => setOpen(false)}
-                  className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-aurel-teal">
+                  className="flex items-center gap-3 rounded-card-sm px-3 py-3 text-[14px] font-medium text-aurel-teal min-h-[44px]">
                   <Shield className="h-4 w-4" /> Admin
                 </NavLink>
               )}
-              <button onClick={handleSignOut} className="mt-1 flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50">
+              <button onClick={handleSignOut} className="mt-1 flex items-center gap-3 rounded-card-sm px-3 py-3 text-[14px] font-medium text-red-600 hover:bg-red-50 min-h-[44px]">
                 <LogOut className="h-4 w-4" /> Déconnexion
               </button>
             </nav>
@@ -141,7 +164,7 @@ export function StudentLayout() {
         )}
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 md:py-10">
+      <main className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-10">
         {/* SHERLOCK R3 fix : per-layout ErrorBoundary. Avant, une erreur dans
             n'importe quel composant route blank l'app entière (header +
             sidebar disparus). Maintenant l'header reste affiché, le user

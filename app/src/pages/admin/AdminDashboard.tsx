@@ -109,7 +109,7 @@ export function AdminDashboard() {
             <span className="h-1.5 w-1.5 rounded-full bg-aurel-orange dot-pulse" />
             {pending > 0 ? `${pending} paiement${pending > 1 ? 's' : ''} en attente` : 'Tout est à jour'}
           </div>
-          <h1 className="text-display tracking-tight text-zinc-950 max-w-3xl">
+          <h1 className="text-display-sm md:text-display tracking-tight text-zinc-950 max-w-3xl">
             {stats?.total_students ?? 0} étudiant{(stats?.total_students ?? 0) > 1 ? 's' : ''} actif{(stats?.total_students ?? 0) > 1 ? 's' : ''},{' '}
             <span className="text-aurel-orange">
               {pending > 0 ? `${pending} paiement${pending > 1 ? 's' : ''} à compléter` : 'comptabilité à jour'}.
