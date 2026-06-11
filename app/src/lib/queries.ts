@@ -277,6 +277,21 @@ export async function fetchAllStudents(
 // migration 016 (sherlock_r3_backend) + 009 (soft_delete). Retourne
 // { ok, error?, already_revoked? }. Idempotent : 2e appel retourne
 // ALREADY_REVOKED sans rollback.
+// Single-course gating : set which course a student can access.
+export async function rpcAdminSetCourseAccess(userId: string, course: 'pflege' | 'immigration')
+: Promise<{ ok: true; course: string } | { ok: false; error: string }> {
+  const { data, error } = await supabase.rpc('admin_set_course_access', {
+    p_user_id: userId,
+    p_course: course,
+  });
+  if (error) throw error;
+  const res = data as { ok: boolean; course?: string; error?: string };
+  if (res.ok) {
+    await logAdminAction('course_access_set', 'profile', userId, { course });
+  }
+  return res as { ok: true; course: string } | { ok: false; error: string };
+}
+
 export async function rpcAdminRevokeUser(userId: string, reason: string)
 : Promise<{ ok: true } | { ok: false; error: string }> {
   const { data, error } = await supabase.rpc('admin_revoke_user', {

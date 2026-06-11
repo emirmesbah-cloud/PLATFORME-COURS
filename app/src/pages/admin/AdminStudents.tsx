@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, Users, Download, MoreVertical, Ban, Trash2, X } from 'lucide-react';
+import { Search, Users, Download, MoreVertical, Ban, Trash2, X, BookOpen, Plane } from 'lucide-react';
 import {
   fetchAllStudents, queryKeys, logAdminAction,
-  rpcAdminRevokeUser, callAdminPurgeUser,
+  rpcAdminRevokeUser, callAdminPurgeUser, rpcAdminSetCourseAccess,
 } from '@/lib/queries';
 import type { AdminStudentRow } from '@/lib/queries';
 import { Spinner } from '@/components/ui/Spinner';
@@ -65,6 +65,22 @@ export function AdminStudents() {
     URL.revokeObjectURL(url);
     logAdminAction('students_exported_csv', null, null, { count: students.length });
     toast.success(`${students.length} étudiants exportés.`);
+  }
+
+  async function handleSetCourse(s: AdminStudentRow, course: 'pflege' | 'immigration') {
+    setMenuOpenId(null);
+    try {
+      const r = await rpcAdminSetCourseAccess(s.id, course);
+      if (!r.ok) {
+        toast.error(r.error || 'Erreur inconnue.', 'Changement impossible');
+        return;
+      }
+      const label = course === 'immigration' ? 'Immigration' : 'Pflege';
+      toast.success(`${s.first_name} ${s.last_name} → cours ${label}.`);
+      qc.invalidateQueries({ queryKey: queryKeys.adminStudents });
+    } catch (e) {
+      toast.error((e as Error).message ?? 'Erreur réseau.', 'Erreur');
+    }
   }
 
   async function handleRevoke() {
@@ -181,6 +197,7 @@ export function AdminStudents() {
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">WhatsApp</th>
                   <th className="px-4 py-3">Formule</th>
+                  <th className="px-4 py-3">Cours</th>
                   <th className="px-4 py-3">Inscrit</th>
                   <th className="px-4 py-3">Dernière connexion</th>
                   <th className="w-10 px-2 py-3"></th>
@@ -213,6 +230,17 @@ export function AdminStudents() {
                         {tierLabel(s.tier)}
                       </span>
                     </td>
+                    <td className="px-4 py-3">
+                      {s.course_access === 'immigration' ? (
+                        <span className="badge bg-aurel-orange-soft text-aurel-orange-dark inline-flex items-center gap-1">
+                          <Plane className="h-3 w-3" /> Immigration
+                        </span>
+                      ) : (
+                        <span className="badge badge-slate inline-flex items-center gap-1">
+                          <BookOpen className="h-3 w-3" /> Pflege
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-slate-500">{formatDate(s.activated_at)}</td>
                     <td className="px-4 py-3 text-slate-500">{formatDateTime(s.last_login_at)}</td>
                     <td className="px-2 py-3 relative">
@@ -233,7 +261,26 @@ export function AdminStudents() {
                             onClick={() => setMenuOpenId(null)}
                             aria-hidden
                           />
-                          <div className="absolute right-2 top-10 z-20 w-44 rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                          <div className="absolute right-2 top-10 z-20 w-52 rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                            {/* Switch course access (single-course gating) */}
+                            {s.course_access === 'immigration' ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSetCourse(s, 'pflege')}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-50"
+                              >
+                                <BookOpen className="h-4 w-4 text-aurel-teal" /> Passer à Pflege
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleSetCourse(s, 'immigration')}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-50"
+                              >
+                                <Plane className="h-4 w-4 text-aurel-orange" /> Donner accès Immigration
+                              </button>
+                            )}
+                            <div className="my-1 border-t border-slate-100" />
                             {!isRevoked && (
                               <button
                                 type="button"

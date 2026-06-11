@@ -1,4 +1,4 @@
-import { Link, NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate, Outlet, Navigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, BookOpen, Gift, User, LogOut, Menu, X, Shield, Award, AlertTriangle } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
@@ -33,6 +33,12 @@ export function StudentLayout() {
   }
   // Auto-close mobile menu on navigation.
   useEffect(() => { setOpen(false); }, [location.pathname]);
+
+  // Single-course gating : a student who bought Immigration shouldn't land
+  // on the Pflege space. Admins are exempt (they preview everything).
+  if (!isAdmin && profile?.course_access === 'immigration') {
+    return <Navigate to="/immigration" replace />;
+  }
 
   async function handleSignOut() {
     await signOut();

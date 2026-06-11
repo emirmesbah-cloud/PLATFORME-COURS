@@ -44,5 +44,12 @@ export function RootRedirect() {
 
   // Admins atterrissent sur /admin. Ils peuvent basculer sur l'espace étudiant
   // via le lien "Espace étudiant" dans le header admin.
-  return <Navigate to={isAdmin ? '/admin' : '/dashboard'} replace />;
+  if (isAdmin) return <Navigate to="/admin" replace />;
+
+  // Single-course routing : un étudiant Immigration atterrit sur son cours,
+  // un étudiant Pflege (défaut) sur le dashboard Pflege existant.
+  if (profile?.course_access === 'immigration') {
+    return <Navigate to="/immigration" replace />;
+  }
+  return <Navigate to="/dashboard" replace />;
 }

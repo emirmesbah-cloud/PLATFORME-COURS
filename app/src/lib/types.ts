@@ -14,6 +14,8 @@ export interface Profile {
   created_at: string;
   last_login_at: string | null;
   is_admin: boolean;
+  // Single-course gating : which course this student bought. Default 'pflege'.
+  course_access?: 'pflege' | 'immigration';
 }
 
 export interface Lesson {

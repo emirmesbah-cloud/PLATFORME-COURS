@@ -25,6 +25,12 @@ import { StudentCertificate }  from '@/pages/student/Certificate';
 import { StudentFeedback }     from '@/pages/student/Feedback';
 
 import { RootRedirect } from '@/components/guards/RootRedirect';
+import { ImmigrationGuard } from '@/components/guards/ImmigrationGuard';
+import { ImmigrationLayout } from '@/components/layout/ImmigrationLayout';
+
+// Immigration course — lazy (separate course, not the existing Pflege path).
+const ImmigrationOverview     = lazyNamed(() => import('@/pages/student/ImmigrationOverview'),     'ImmigrationOverview');
+const ImmigrationLessonReader = lazyNamed(() => import('@/pages/student/ImmigrationLessonReader'), 'ImmigrationLessonReader');
 
 // SHERLOCK R3 perf : code-split admin routes. Avant, les 9 admin pages +
 // recharts (utilisé uniquement dans AdminAnalytics) étaient bundle dans
@@ -97,6 +103,22 @@ export const routes: RouteObject[] = [
       { path: 'certificat',          element: <StudentCertificate /> },
       { path: 'feedback',            element: <StudentFeedback /> },
       { path: 'profil',              element: <StudentProfile /> },
+    ],
+  },
+
+  {
+    // Immigration course — single-course space, gated by course_access.
+    path: '/immigration',
+    element: (
+      <AuthGuard>
+        <ImmigrationGuard>
+          <ImmigrationLayout />
+        </ImmigrationGuard>
+      </AuthGuard>
+    ),
+    children: [
+      { index: true,                          element: <L><ImmigrationOverview /></L> },
+      { path: ':moduleSlug/:lessonSlug',       element: <L><ImmigrationLessonReader /></L> },
     ],
   },
 
