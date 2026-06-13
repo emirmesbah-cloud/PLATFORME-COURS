@@ -122,6 +122,18 @@ export const routes: RouteObject[] = [
     ],
   },
 
+  // DEV-ONLY preview of the Immigration course WITHOUT auth/guards.
+  // Lets us eyeball the UI on localhost before videos/launch. Stripped from
+  // production builds (import.meta.env.DEV is false there → empty array).
+  ...(import.meta.env.DEV ? [{
+    path: '/preview-immigration',
+    element: <ImmigrationLayout />,
+    children: [
+      { index: true,                    element: <L><ImmigrationOverview /></L> },
+      { path: ':moduleSlug/:lessonSlug', element: <L><ImmigrationLessonReader /></L> },
+    ],
+  } as RouteObject] : []),
+
   {
     path: '/admin',
     element: (

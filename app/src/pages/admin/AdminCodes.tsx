@@ -14,6 +14,7 @@ export function AdminCodes() {
   const toast = useToast();
 
   const [tier, setTier] = useState<Tier>('autonome');
+  const [course, setCourse] = useState<'pflege' | 'immigration'>('pflege');
   const [count, setCount] = useState(1);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -44,7 +45,7 @@ export function AdminCodes() {
     setSubmitting(true);
     try {
       const trimmedNotes = notes.trim() || undefined;
-      const r = await rpcAdminGenerateCodes({ tier, count, notes: trimmedNotes });
+      const r = await rpcAdminGenerateCodes({ tier, count, notes: trimmedNotes, course });
       if (!r.ok) {
         toast.error(r.error, 'Génération impossible');
         return;
@@ -147,6 +148,28 @@ ${codes.map((c) => `• ${c}`).join('\n')}
         </div>
 
         <form onSubmit={handleGenerate} className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="md:col-span-3">
+            <label className="label">Cours</label>
+            <div className="grid grid-cols-2 gap-2 max-w-md">
+              <button type="button" onClick={() => setCourse('pflege')}
+                className={cn(
+                  'rounded-lg border px-3 py-2.5 text-sm font-semibold transition',
+                  course === 'pflege' ? 'border-aurel-orange bg-aurel-orange-soft text-aurel-orange-dark' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                )}
+              >
+                🩺 Pflege<br/><span className="text-xs font-normal">codes AU / AC</span>
+              </button>
+              <button type="button" onClick={() => setCourse('immigration')}
+                className={cn(
+                  'rounded-lg border px-3 py-2.5 text-sm font-semibold transition',
+                  course === 'immigration' ? 'border-aurel-orange bg-aurel-orange-soft text-aurel-orange-dark' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                )}
+              >
+                ✈️ Immigration<br/><span className="text-xs font-normal">codes IU / IC</span>
+              </button>
+            </div>
+          </div>
+
           <div className="md:col-span-1">
             <label className="label">Formule</label>
             <div className="grid grid-cols-2 gap-2">

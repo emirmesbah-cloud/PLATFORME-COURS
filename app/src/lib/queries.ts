@@ -224,11 +224,13 @@ export async function rpcAdminGenerateCodes(args: {
   tier: 'autonome' | 'accompagne';
   count: number;
   notes?: string;
-}): Promise<{ ok: true; codes: string[]; tier: string } | { ok: false; error: string }> {
+  course?: 'pflege' | 'immigration';
+}): Promise<{ ok: true; codes: string[]; tier: string; course: string } | { ok: false; error: string }> {
   const { data, error } = await supabase.rpc('admin_generate_codes', {
     p_tier: args.tier,
     p_count: args.count,
     p_notes: args.notes ?? null,
+    p_course: args.course ?? 'pflege',
   });
   if (error) throw error;
   return data;

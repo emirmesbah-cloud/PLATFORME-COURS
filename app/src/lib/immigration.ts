@@ -17,7 +17,9 @@ const lessonCache = new Map<string, string>();
 
 export async function fetchImmigrationLesson(slug: string): Promise<string> {
   if (lessonCache.has(slug)) return lessonCache.get(slug)!;
-  const res = await fetch(`/content/immigration/${slug}.md`, { cache: 'force-cache' });
+  // No force-cache : the in-memory Map + react-query already cache per session.
+  // force-cache served stale .md after content updates / redeploys.
+  const res = await fetch(`/content/immigration/${slug}.md`);
   if (!res.ok) throw new Error(`Leçon introuvable (${res.status})`);
   const text = await res.text();
   lessonCache.set(slug, text);
