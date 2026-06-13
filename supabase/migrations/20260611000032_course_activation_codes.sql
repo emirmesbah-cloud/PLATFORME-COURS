@@ -60,14 +60,14 @@ BEGIN
     RETURN json_build_object('ok', false, 'error', 'INVALID_COURSE');
   END IF;
 
-  -- Prefix encodes course + tier.
-  --   pflege/autonome     → AU      immigration/autonome     → IU
-  --   pflege/accompagne   → AC      immigration/accompagne   → IC
+  -- Prefix encodes the course (+ tier for Pflege only).
+  --   Pflege has 2 offers  : AU (autonome) / AC (accompagné)
+  --   Immigration has ONE  : IU (autonome only) — no accompagné offer.
+  -- For immigration we force IU regardless of tier (single offer).
   v_prefix := CASE
-    WHEN p_course = 'pflege'      AND p_tier = 'autonome'   THEN 'AU'
-    WHEN p_course = 'pflege'      AND p_tier = 'accompagne' THEN 'AC'
-    WHEN p_course = 'immigration' AND p_tier = 'autonome'   THEN 'IU'
-    WHEN p_course = 'immigration' AND p_tier = 'accompagne' THEN 'IC'
+    WHEN p_course = 'immigration'                          THEN 'IU'
+    WHEN p_course = 'pflege' AND p_tier = 'autonome'        THEN 'AU'
+    WHEN p_course = 'pflege' AND p_tier = 'accompagne'      THEN 'AC'
   END;
   v_max_attempts := p_count * 30;
 
