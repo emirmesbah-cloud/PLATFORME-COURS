@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, KeyRound, Users, BookOpen, Gift, Menu, X, ArrowLeft, LogOut,
-  TrendingUp, Heart, Mail, Shield, AlertTriangle, GraduationCap, Wallet,
+  TrendingUp, Heart, Mail, Shield, AlertTriangle, GraduationCap, Wallet, Plane,
 } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
@@ -31,9 +31,10 @@ const NAV_GROUPS: { label: string; items: { to: string; label: string; icon: typ
   {
     label: 'Contenu',
     items: [
-      { to: '/admin/lessons',   label: 'Leçons',     icon: BookOpen },
-      { to: '/admin/quiz',      label: 'Quiz',       icon: GraduationCap },
-      { to: '/admin/bonus',     label: 'Bonus',      icon: Gift },
+      { to: '/admin/lessons',         label: 'Leçons',         icon: BookOpen },
+      { to: '/admin/quiz',            label: 'Quiz Pflege',    icon: GraduationCap },
+      { to: '/admin/immigration-quiz', label: 'Quiz Immigration', icon: Plane },
+      { to: '/admin/bonus',           label: 'Bonus',          icon: Gift },
     ],
   },
   {

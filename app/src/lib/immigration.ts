@@ -11,6 +11,37 @@ import {
   IMMIGRATION_FLAT_LESSONS,
   type ImmigrationLesson,
 } from '@/data/immigration-structure';
+import { supabase } from '@/lib/supabase';
+
+// ── DB-backed types (mig 20260611000033) ────────────────────────
+export interface ImmigrationLessonStatus {
+  lesson_slug: string;
+  completed: boolean;
+  has_questions: boolean;
+  best_score: number;
+  total: number;
+  passed: boolean;
+  attempts: number;
+}
+export interface ImmigrationQuizQuestionStudent {
+  id: string;
+  lesson_slug: string;
+  position: number;
+  question_text: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+}
+export interface ImmigrationQuizResult {
+  ok: boolean;
+  error?: string;
+  score?: number;
+  total?: number;
+  passed?: boolean;
+  threshold?: number;
+  correct?: number[];
+}
 
 // ── Lesson content fetch ─────────────────────────────────────────
 const lessonCache = new Map<string, string>();
@@ -49,7 +80,117 @@ export function findLessonInModule(moduleSlug: string, lessonSlug: string): Immi
   return null;
 }
 
-// ── Progress (localStorage) ──────────────────────────────────────
+// ── DB-backed status / progress / notes / quiz (mig 033) ────────
+
+/** One round-trip : status of every immigration lesson for the current user. */
+export async function fetchImmigrationStatus(): Promise<ImmigrationLessonStatus[]> {
+  const { data, error } = await supabase.rpc('get_my_immigration_status');
+  if (error) throw error;
+  if (!data || (data as { ok: boolean }).ok === false) return [];
+  return ((data as { lessons: ImmigrationLessonStatus[] }).lessons ?? []);
+}
+
+/** Mark / unmark a lesson completed (persisted in DB, cross-device). */
+export async function setImmigrationCompleted(
+  lessonSlug: string, moduleSlug: string, completed: boolean,
+): Promise<void> {
+  const { error } = await supabase.rpc('set_immigration_lesson_completed', {
+    p_lesson_slug: lessonSlug, p_module_slug: moduleSlug, p_completed: completed,
+  });
+  if (error) throw error;
+}
+
+/** Fetch a lesson's quiz questions (without correct answers — server scores). */
+export async function fetchImmigrationQuiz(lessonSlug: string): Promise<ImmigrationQuizQuestionStudent[]> {
+  const { data, error } = await supabase
+    .from('immigration_quiz_questions')
+    .select('id, lesson_slug, position, question_text, option_a, option_b, option_c, option_d')
+    .eq('lesson_slug', lessonSlug)
+    .order('position', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as ImmigrationQuizQuestionStudent[];
+}
+
+/** Submit answers; server computes the score (anti-cheat). */
+export async function submitImmigrationQuiz(
+  lessonSlug: string, answers: number[],
+): Promise<ImmigrationQuizResult> {
+  const { data, error } = await supabase.rpc('submit_immigration_quiz_attempt', {
+    p_lesson_slug: lessonSlug, p_answers: answers,
+  });
+  if (error) throw error;
+  return data as ImmigrationQuizResult;
+}
+
+/** Fetch the student's personal note for a lesson. */
+export async function fetchImmigrationNote(lessonSlug: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('immigration_notes')
+    .select('content')
+    .eq('lesson_slug', lessonSlug)
+    .maybeSingle();
+  if (error) throw error;
+  return (data?.content as string) ?? '';
+}
+
+/** Save the student's personal note for a lesson. */
+export async function saveImmigrationNote(lessonSlug: string, content: string): Promise<void> {
+  const { error } = await supabase.rpc('upsert_immigration_note', {
+    p_lesson_slug: lessonSlug, p_content: content,
+  });
+  if (error) throw error;
+}
+
+// ── Admin : quiz CRUD (immigration_quiz_questions) ──────────────
+export interface ImmigrationQuizQuestionAdmin extends ImmigrationQuizQuestionStudent {
+  module_slug: string;
+  correct_index: 0 | 1 | 2 | 3;
+  explanation: string | null;
+}
+export interface ImmigrationQuestionInput {
+  id?: string;
+  lesson_slug: string;
+  module_slug: string;
+  position: number;
+  question_text: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  correct_index: 0 | 1 | 2 | 3;
+  explanation: string | null;
+}
+
+export async function adminFetchAllImmigrationQuestions(): Promise<ImmigrationQuizQuestionAdmin[]> {
+  const { data, error } = await supabase
+    .from('immigration_quiz_questions')
+    .select('*')
+    .order('lesson_slug', { ascending: true })
+    .order('position', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as ImmigrationQuizQuestionAdmin[];
+}
+
+export async function adminUpsertImmigrationQuestion(q: ImmigrationQuestionInput): Promise<void> {
+  const payload = {
+    lesson_slug: q.lesson_slug, module_slug: q.module_slug, position: q.position,
+    question_text: q.question_text, option_a: q.option_a, option_b: q.option_b,
+    option_c: q.option_c, option_d: q.option_d, correct_index: q.correct_index,
+    explanation: q.explanation,
+  };
+  const op = q.id
+    ? supabase.from('immigration_quiz_questions').update(payload).eq('id', q.id)
+    : supabase.from('immigration_quiz_questions').insert(payload);
+  const { error } = await op;
+  if (error) throw error;
+}
+
+export async function adminDeleteImmigrationQuestion(id: string): Promise<void> {
+  const { error } = await supabase.from('immigration_quiz_questions').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── Progress (localStorage — legacy fallback, kept until full DB wiring) ──
 const PROGRESS_KEY = 'aurel.immigration.progress.v1';
 
 type ProgressMap = Record<string, { completed: boolean; at: string }>;

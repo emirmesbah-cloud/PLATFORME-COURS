@@ -1,30 +1,28 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ChevronDown, CheckCircle2, Circle, Play, Download, FileText, Layers } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { ArrowRight, ChevronDown, CheckCircle2, Circle, Play, Download, FileText, Layers, Lock } from 'lucide-react';
 import {
-  IMMIGRATION_COURSE,
-  IMMIGRATION_SECTIONS,
-  IMMIGRATION_BONUS,
-  IMMIGRATION_FLAT_LESSONS,
+  IMMIGRATION_COURSE, IMMIGRATION_SECTIONS, IMMIGRATION_BONUS, IMMIGRATION_FLAT_LESSONS,
 } from '@/data/immigration-structure';
-import { isLessonCompleted, getCompletedCount, getModuleProgress } from '@/lib/immigration';
+import { fetchImmigrationStatus, type ImmigrationLessonStatus } from '@/lib/immigration';
 import { cn } from '@/lib/utils';
 
 /**
- * ImmigrationOverview — course home for the Immigration course.
- * Sections → modules (accordion) → lessons. Progress from localStorage.
- * Linear Tech direction, orange Aurel accent.
+ * ImmigrationOverview — course home, DB-backed (immigration_progress + quiz).
+ * Progressive lock on the 11 main modules only (module-0…module-10) :
+ * a module unlocks when the previous one is fully cleared (each lesson either
+ * completed, or — if it has a quiz — passed). Niches + tutos = free access.
  */
 export function ImmigrationOverview() {
-  // Re-render when progress changes (mark complete from a lesson, etc.)
-  const [, force] = useState(0);
-  useEffect(() => {
-    const h = () => force((n) => n + 1);
-    window.addEventListener('immigration-progress-changed', h);
-    return () => window.removeEventListener('immigration-progress-changed', h);
-  }, []);
+  const statusQ = useQuery({
+    queryKey: ['immigration-status'],
+    queryFn: fetchImmigrationStatus,
+    staleTime: 30 * 1000,
+  });
+  const status = statusQ.data ?? [];
+  const bySlug = new Map<string, ImmigrationLessonStatus>(status.map((s) => [s.lesson_slug, s]));
 
-  // Which module accordions are open. Default : first module of first section.
   const [openModules, setOpenModules] = useState<Set<string>>(
     () => new Set([IMMIGRATION_SECTIONS[0]?.modules[0]?.slug].filter(Boolean) as string[]),
   );
@@ -35,24 +33,47 @@ export function ImmigrationOverview() {
       return next;
     });
 
-  const completed = getCompletedCount();
-  const total = IMMIGRATION_COURSE.totalLessons;
-  const percent = total ? Math.round((completed / total) * 100) : 0;
+  // A lesson is "cleared" = completed OR (has quiz AND passed).
+  const isCleared = (slug: string) => {
+    const s = bySlug.get(slug);
+    if (!s) return false;
+    if (s.has_questions) return s.passed;
+    return s.completed;
+  };
+  const isCompleted = (slug: string) => bySlug.get(slug)?.completed === true;
 
-  // Resume target : first non-completed lesson, else first lesson.
-  const resume = useMemo(() => {
-    return IMMIGRATION_FLAT_LESSONS.find((l) => !isLessonCompleted(l.slug)) ?? IMMIGRATION_FLAT_LESSONS[0];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completed]);
+  const completedCount = IMMIGRATION_FLAT_LESSONS.filter((l) => isCompleted(l.slug)).length;
+  const total = IMMIGRATION_COURSE.totalLessons;
+  const percent = total ? Math.round((completedCount / total) * 100) : 0;
+
+  // Per-module cleared state (for the 11 main modules).
+  const MAIN_MODULES = IMMIGRATION_SECTIONS.find((s) => s.slug === 'modules')?.modules ?? [];
+  const moduleCleared = (moduleSlug: string) => {
+    const mod = MAIN_MODULES.find((m) => m.slug === moduleSlug);
+    if (!mod) return false;
+    return mod.lessons.every((l) => isCleared(l.slug));
+  };
+  // module-N locked if previous main module not cleared. Index 0 always open.
+  const isModuleLocked = (sectionSlug: string, moduleSlug: string) => {
+    if (sectionSlug !== 'modules') return false; // niches + tutos free
+    const idx = MAIN_MODULES.findIndex((m) => m.slug === moduleSlug);
+    if (idx <= 0) return false;
+    return !moduleCleared(MAIN_MODULES[idx - 1].slug);
+  };
+
+  // Resume target : first non-cleared lesson in an unlocked module.
+  const resume =
+    IMMIGRATION_FLAT_LESSONS.find((l) => {
+      const sec = IMMIGRATION_SECTIONS.find((s) => s.modules.some((m) => m.slug === l.moduleSlug));
+      if (sec && isModuleLocked(sec.slug, l.moduleSlug)) return false;
+      return !isCleared(l.slug);
+    }) ?? IMMIGRATION_FLAT_LESSONS[0];
 
   return (
     <div className="space-y-6">
-
-      {/* Breadcrumb */}
       <div className="flex items-center justify-between border-b border-zinc-200 pb-4">
         <div className="font-mono text-[11px] uppercase tracking-[0.15em] text-zinc-500">
-          <span>Aurel Academy</span>
-          <span className="mx-2 text-aurel-orange">/</span>
+          <span>Aurel Academy</span><span className="mx-2 text-aurel-orange">/</span>
           <span className="text-zinc-900">Immigration en Allemagne</span>
         </div>
       </div>
@@ -72,10 +93,9 @@ export function ImmigrationOverview() {
             les vraies routes, le dossier qui passe, le visa, et tes premières semaines sur place.
           </p>
 
-          {/* Progress */}
           <div className="mt-6 max-w-md">
             <div className="mb-2 flex items-center justify-between font-mono text-[11px] text-zinc-500">
-              <span><b className="text-zinc-900 tabular">{completed}</b> / {total} leçons</span>
+              <span><b className="text-zinc-900 tabular">{completedCount}</b> / {total} leçons</span>
               <span>{percent}%</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-zinc-200">
@@ -86,10 +106,10 @@ export function ImmigrationOverview() {
           {resume && (
             <div className="mt-6">
               <Link to={`/immigration/${resume.moduleSlug}/${resume.slug}`} className="btn-primary btn-lg">
-                {completed === 0 ? 'Commencer le cours' : 'Reprendre'} <ArrowRight className="h-4 w-4" />
+                {completedCount === 0 ? 'Commencer le cours' : 'Reprendre'} <ArrowRight className="h-4 w-4" />
               </Link>
               <p className="mt-2 font-mono text-[11px] text-zinc-500">
-                {completed === 0 ? 'Première leçon' : 'Prochaine leçon'} : {resume.title}
+                {completedCount === 0 ? 'Première leçon' : 'Prochaine leçon'} : {resume.title}
               </p>
             </div>
           )}
@@ -101,59 +121,59 @@ export function ImmigrationOverview() {
         <section key={section.slug} className="space-y-3">
           <div className="flex items-center gap-2">
             <Layers className="h-4 w-4 text-aurel-orange" />
-            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
-              {section.title}
-            </h2>
+            <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">{section.title}</h2>
+            {section.slug !== 'modules' && (
+              <span className="font-mono text-[10px] text-zinc-400">· accès libre</span>
+            )}
           </div>
 
           {section.modules.map((module) => {
             const isOpen = openModules.has(module.slug);
-            const prog = getModuleProgress(module.slug);
-            const moduleComplete = prog.total > 0 && prog.done === prog.total;
+            const locked = isModuleLocked(section.slug, module.slug);
+            const done = module.lessons.filter((l) => isCompleted(l.slug)).length;
+            const allCleared = module.lessons.every((l) => isCleared(l.slug));
             return (
-              <div key={module.slug} className="card overflow-hidden">
-                {/* Module header (accordion trigger) */}
+              <div key={module.slug} className={cn('card overflow-hidden', locked && 'opacity-70')}>
                 <button
-                  onClick={() => toggle(module.slug)}
-                  className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-zinc-50"
+                  onClick={() => !locked && toggle(module.slug)}
+                  disabled={locked}
+                  className={cn('flex w-full items-center gap-3 px-5 py-4 text-left transition-colors',
+                    locked ? 'cursor-not-allowed' : 'hover:bg-zinc-50')}
                 >
-                  <ChevronDown className={cn('h-4 w-4 flex-none text-zinc-400 transition-transform', isOpen && 'rotate-180')} />
-                  <span className="flex-1 text-[15px] font-semibold tracking-tight text-zinc-900">
+                  {locked
+                    ? <Lock className="h-4 w-4 flex-none text-zinc-400" />
+                    : <ChevronDown className={cn('h-4 w-4 flex-none text-zinc-400 transition-transform', isOpen && 'rotate-180')} />}
+                  <span className={cn('flex-1 text-[15px] font-semibold tracking-tight', locked ? 'text-zinc-500' : 'text-zinc-900')}>
                     {prettyModuleTitle(module.title)}
                   </span>
-                  <span className={cn(
-                    'rounded-pill px-2.5 py-0.5 font-mono text-[10px] font-semibold tabular',
-                    moduleComplete ? 'bg-green-50 text-green-700' : 'bg-zinc-100 text-zinc-500',
-                  )}>
-                    {prog.done}/{prog.total}
+                  <span className={cn('rounded-pill px-2.5 py-0.5 font-mono text-[10px] font-semibold tabular',
+                    allCleared ? 'bg-green-50 text-green-700' : 'bg-zinc-100 text-zinc-500')}>
+                    {done}/{module.lessons.length}
                   </span>
                 </button>
 
-                {/* Lessons */}
-                {isOpen && (
+                {locked && (
+                  <div className="border-t border-zinc-100 px-5 py-3 text-[12px] text-zinc-500">
+                    🔒 Termine le module précédent (valide son quiz) pour débloquer celui-ci.
+                  </div>
+                )}
+
+                {isOpen && !locked && (
                   <div className="border-t border-zinc-100">
                     {module.lessons.map((lesson) => {
-                      const done = isLessonCompleted(lesson.slug);
+                      const cleared = isCleared(lesson.slug);
                       return (
-                        <Link
-                          key={lesson.slug}
-                          to={`/immigration/${module.slug}/${lesson.slug}`}
-                          className="flex items-center gap-3 px-5 py-3 border-b border-zinc-50 last:border-b-0 transition-colors hover:bg-zinc-50 group"
-                        >
-                          {done
+                        <Link key={lesson.slug} to={`/immigration/${module.slug}/${lesson.slug}`}
+                          className="group flex items-center gap-3 border-b border-zinc-50 px-5 py-3 transition-colors last:border-b-0 hover:bg-zinc-50">
+                          {cleared
                             ? <CheckCircle2 className="h-4 w-4 flex-none text-aurel-orange" />
                             : <Circle className="h-4 w-4 flex-none text-zinc-300" />}
-                          <span className="font-mono text-[11px] text-zinc-400 w-8 flex-none">{lesson.id}</span>
-                          <span className={cn(
-                            'flex-1 text-[14px] truncate',
-                            done ? 'text-zinc-500' : 'text-zinc-800',
-                          )}>
+                          <span className="w-8 flex-none font-mono text-[11px] text-zinc-400">{lesson.id}</span>
+                          <span className={cn('flex-1 truncate text-[14px]', cleared ? 'text-zinc-500' : 'text-zinc-800')}>
                             {lesson.title}
                           </span>
                           {lesson.duration && (
-                            <span className="font-mono text-[10px] text-zinc-400 flex-none hidden sm:block">
-                              {lesson.duration}
-                            </span>
+                            <span className="hidden flex-none font-mono text-[10px] text-zinc-400 sm:block">{lesson.duration}</span>
                           )}
                           <Play className="h-3.5 w-3.5 flex-none text-zinc-300 group-hover:text-aurel-orange" />
                         </Link>
@@ -171,43 +191,28 @@ export function ImmigrationOverview() {
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <Download className="h-4 w-4 text-aurel-teal" />
-          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">
-            Ressources bonus
-          </h2>
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">Ressources bonus</h2>
         </div>
         <div className="card divide-y divide-zinc-100">
           {IMMIGRATION_BONUS.map((b) => (
-            <a
-              key={b.slug}
-              href={`/content/immigration/bonus/${b.file}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-zinc-50 group"
-            >
+            <a key={b.slug} href={`/content/immigration/bonus/${b.file}`} target="_blank" rel="noopener noreferrer"
+              className="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-zinc-50">
               <div className="grid h-9 w-9 flex-none place-items-center rounded-card-sm bg-aurel-teal-soft text-aurel-teal">
                 <FileText className="h-4 w-4" />
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[14px] font-medium text-zinc-900 truncate">{b.title}</div>
-                <div className="text-[12px] text-zinc-500 truncate">{b.desc}</div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[14px] font-medium text-zinc-900">{b.title}</div>
+                <div className="truncate text-[12px] text-zinc-500">{b.desc}</div>
               </div>
               <Download className="h-4 w-4 flex-none text-zinc-300 group-hover:text-aurel-teal" />
             </a>
           ))}
         </div>
-        <p className="font-mono text-[10px] text-zinc-400">
-          Les fichiers bonus seront ajoutés au lancement du cours.
-        </p>
       </section>
-
     </div>
   );
 }
 
-// Module titles come ALL CAPS from the source PDF — soften for display.
 function prettyModuleTitle(t: string): string {
-  // "MODULE 0 — LA VÉRITÉ..." → keep "Module 0 —" + Title Case the rest lightly
-  return t
-    .replace(/^MODULE\s+(\d+)\s*[—–-]\s*/i, (_, n) => `Module ${n} — `)
-    .replace(/\bLA\b|\bLE\b|\bLES\b|\bDE\b|\bDU\b|\bEN\b|\bET\b/g, (w) => w.toLowerCase());
+  return t.replace(/^MODULE\s+(\d+)\s*[—–-]\s*/i, (_, n) => `Module ${n} — `);
 }
