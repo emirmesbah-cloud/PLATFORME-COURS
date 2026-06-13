@@ -159,37 +159,44 @@ ${codes.map((c) => `• ${c}`).join('\n')}
               >
                 🩺 Pflege<br/><span className="text-xs font-normal">codes AU / AC</span>
               </button>
-              <button type="button" onClick={() => setCourse('immigration')}
+              <button type="button" onClick={() => { setCourse('immigration'); setTier('autonome'); }}
                 className={cn(
                   'rounded-lg border px-3 py-2.5 text-sm font-semibold transition',
                   course === 'immigration' ? 'border-aurel-orange bg-aurel-orange-soft text-aurel-orange-dark' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
                 )}
               >
-                ✈️ Immigration<br/><span className="text-xs font-normal">codes IU / IC</span>
+                ✈️ Immigration<br/><span className="text-xs font-normal">codes IU</span>
               </button>
             </div>
           </div>
 
           <div className="md:col-span-1">
             <label className="label">Formule</label>
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => setTier('autonome')}
-                className={cn(
-                  'rounded-lg border px-3 py-2.5 text-sm font-semibold transition',
-                  tier === 'autonome' ? 'border-aurel-orange bg-aurel-orange-soft text-aurel-orange-dark' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
-                )}
-              >
-                Autonome<br/><span className="text-xs font-normal">12 900 DA</span>
-              </button>
-              <button type="button" onClick={() => setTier('accompagne')}
-                className={cn(
-                  'rounded-lg border px-3 py-2.5 text-sm font-semibold transition',
-                  tier === 'accompagne' ? 'border-aurel-teal bg-teal-50 text-aurel-teal' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
-                )}
-              >
-                Accompagné<br/><span className="text-xs font-normal">42 800 DA</span>
-              </button>
-            </div>
+            {course === 'immigration' ? (
+              // Immigration : offre unique (Autonome) → un seul préfixe IU.
+              <div className="rounded-lg border border-aurel-orange bg-aurel-orange-soft px-3 py-2.5 text-sm font-semibold text-aurel-orange-dark">
+                Autonome<br/><span className="text-xs font-normal">offre unique Immigration</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setTier('autonome')}
+                  className={cn(
+                    'rounded-lg border px-3 py-2.5 text-sm font-semibold transition',
+                    tier === 'autonome' ? 'border-aurel-orange bg-aurel-orange-soft text-aurel-orange-dark' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                  )}
+                >
+                  Autonome<br/><span className="text-xs font-normal">12 900 DA</span>
+                </button>
+                <button type="button" onClick={() => setTier('accompagne')}
+                  className={cn(
+                    'rounded-lg border px-3 py-2.5 text-sm font-semibold transition',
+                    tier === 'accompagne' ? 'border-aurel-teal bg-teal-50 text-aurel-teal' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                  )}
+                >
+                  Accompagné<br/><span className="text-xs font-normal">42 800 DA</span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div>
