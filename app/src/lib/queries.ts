@@ -136,13 +136,15 @@ export async function rpcUpdateLessonProgress(args: {
 // belongs to a published lesson (anti-OTP-fishing), then mints an OTP
 // with a 5-min TTL and per-user watermark via VDOCipher's secret API key.
 //
-// Response shape : { ok, otp, playbackInfo, lesson_number }
+// Response shape : { ok, otp, playbackInfo, lesson }
+// `lesson` is a debug label only ("pflege-3" / "immigration-<slug>") — the
+// function serves both courses, so it is not a lesson number anymore.
 // On any error : throws with the upstream error message for the UI to display.
 export interface VdocipherOtpResponse {
   ok: true;
   otp: string;
   playbackInfo: string;
-  lesson_number?: number;
+  lesson?: string;
 }
 export async function fetchVdocipherOtp(videoId: string): Promise<VdocipherOtpResponse> {
   const env = (import.meta as { env: Record<string, string> }).env;

@@ -190,6 +190,47 @@ export async function adminDeleteImmigrationQuestion(id: string): Promise<void> 
   if (error) throw error;
 }
 
+// ── Lesson media : VDOCipher video id + publish flag (mig 035) ──────────
+export interface ImmigrationLessonMedia {
+  lesson_slug: string;
+  vdocipher_video_id: string | null;
+  is_published: boolean;
+}
+
+/** Student : video id + publish state for ONE lesson (null row = no video yet). */
+export async function fetchImmigrationLessonMedia(lessonSlug: string): Promise<ImmigrationLessonMedia | null> {
+  const { data, error } = await supabase
+    .from('immigration_lessons')
+    .select('lesson_slug, vdocipher_video_id, is_published')
+    .eq('lesson_slug', lessonSlug)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as ImmigrationLessonMedia) ?? null;
+}
+
+/** Admin : every media row (lessons without a row simply aren't returned). */
+export async function adminFetchAllImmigrationLessons(): Promise<ImmigrationLessonMedia[]> {
+  const { data, error } = await supabase
+    .from('immigration_lessons')
+    .select('lesson_slug, vdocipher_video_id, is_published');
+  if (error) throw error;
+  return (data ?? []) as ImmigrationLessonMedia[];
+}
+
+/** Admin : upsert a lesson's video id + publish flag. */
+export async function adminSetImmigrationLesson(
+  lessonSlug: string, vdocipherVideoId: string | null, isPublished: boolean,
+): Promise<void> {
+  const { data, error } = await supabase.rpc('admin_set_immigration_lesson', {
+    p_lesson_slug: lessonSlug,
+    p_vdocipher_video_id: vdocipherVideoId,
+    p_is_published: isPublished,
+  });
+  if (error) throw error;
+  const res = data as { ok: boolean; error?: string };
+  if (!res?.ok) throw new Error(res?.error || 'Erreur enregistrement.');
+}
+
 // ── Progress (localStorage — legacy fallback, kept until full DB wiring) ──
 const PROGRESS_KEY = 'aurel.immigration.progress.v1';
 

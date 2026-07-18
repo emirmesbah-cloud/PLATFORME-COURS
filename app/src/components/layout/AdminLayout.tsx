@@ -31,10 +31,11 @@ const NAV_GROUPS: { label: string; items: { to: string; label: string; icon: typ
   {
     label: 'Contenu',
     items: [
-      { to: '/admin/lessons',         label: 'Leçons',         icon: BookOpen },
-      { to: '/admin/quiz',            label: 'Quiz Pflege',    icon: GraduationCap },
-      { to: '/admin/immigration-quiz', label: 'Quiz Immigration', icon: Plane },
-      { to: '/admin/bonus',           label: 'Bonus',          icon: Gift },
+      { to: '/admin/lessons',             label: 'Leçons Pflege',      icon: BookOpen },
+      { to: '/admin/immigration-lessons', label: 'Leçons Immigration', icon: Plane },
+      { to: '/admin/quiz',                label: 'Quiz Pflege',        icon: GraduationCap },
+      { to: '/admin/immigration-quiz',    label: 'Quiz Immigration',   icon: Plane },
+      { to: '/admin/bonus',               label: 'Bonus',              icon: Gift },
     ],
   },
   {

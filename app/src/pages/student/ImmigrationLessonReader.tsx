@@ -3,9 +3,10 @@ import { useParams, Link, Navigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ChevronLeft, ChevronRight, Clock, CheckCircle2, Circle, StickyNote, GraduationCap } from 'lucide-react';
 import { VideoPlaceholder } from '@/components/features/VideoPlaceholder';
+import { ImmigrationVideoPlayer } from '@/components/features/ImmigrationVideoPlayer';
 import { ImmigrationQuiz } from '@/components/features/ImmigrationQuiz';
 import { ImmigrationNotes } from '@/components/features/ImmigrationNotes';
-import { findLesson, findLessonInModule, fetchImmigrationStatus, setImmigrationCompleted } from '@/lib/immigration';
+import { findLesson, findLessonInModule, fetchImmigrationStatus, setImmigrationCompleted, fetchImmigrationLessonMedia } from '@/lib/immigration';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 
@@ -32,6 +33,14 @@ export function ImmigrationLessonReader() {
     queryKey: ['immigration-status'],
     queryFn: fetchImmigrationStatus,
     staleTime: 30 * 1000,
+  });
+
+  // Video media : id + publish flag for THIS lesson (mig 035).
+  const mediaQ = useQuery({
+    queryKey: ['immigration-lesson-media', lessonSlug],
+    queryFn: () => fetchImmigrationLessonMedia(lessonSlug!),
+    enabled: !!lessonSlug,
+    staleTime: 60 * 1000,
   });
 
   if (!moduleSlug || !lessonSlug || !lessonMeta || !nav) {
@@ -77,9 +86,13 @@ export function ImmigrationLessonReader() {
         <h1 className="text-display-sm tracking-tight text-zinc-950">{lessonMeta.title}</h1>
       </header>
 
-      {/* Video : placeholder until vdocipherVideoId is set (Phase 6). */}
+      {/* Video : real VDOCipher player once published + id set (admin), else placeholder. */}
       <div className="mb-6">
-        <VideoPlaceholder title={lessonMeta.title} />
+        {mediaQ.data?.is_published && mediaQ.data.vdocipher_video_id ? (
+          <ImmigrationVideoPlayer videoId={mediaQ.data.vdocipher_video_id} title={lessonMeta.title} />
+        ) : (
+          <VideoPlaceholder title={lessonMeta.title} />
+        )}
       </div>
 
       {/* Tabs : Notes / Quiz */}

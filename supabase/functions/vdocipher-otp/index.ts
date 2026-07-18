@@ -101,13 +101,37 @@ Deno.serve(async (req) => {
     // ANTI-OTP-FISHING : verify the video ID belongs to a real published lesson.
     // Otherwise any logged-in student could request OTPs for arbitrary VDOCipher
     // video IDs (leak-by-enumeration).
+    //
+    // Two courses, two tables :
+    //   - Pflege      → public.lessons            (vdocipher_video_id, is_published)
+    //   - Immigration → public.immigration_lessons (vdocipher_video_id, is_published)
+    // A video is allowed if it's published in EITHER. `lessonLabel` is for logs only.
+    let videoAllowed = false;
+    let lessonLabel = "";
+
     const { data: lesson, error: lessonErr } = await supabase
       .from("lessons")
-      .select("id, lesson_number, title, is_published")
+      .select("lesson_number, is_published")
       .eq("vdocipher_video_id", videoId)
       .eq("is_published", true)
       .maybeSingle();
-    if (lessonErr || !lesson) {
+    if (lesson) {
+      videoAllowed = true;
+      lessonLabel = `pflege-${lesson.lesson_number}`;
+    } else {
+      const { data: immLesson } = await supabase
+        .from("immigration_lessons")
+        .select("lesson_slug, is_published")
+        .eq("vdocipher_video_id", videoId)
+        .eq("is_published", true)
+        .maybeSingle();
+      if (immLesson) {
+        videoAllowed = true;
+        lessonLabel = `immigration-${immLesson.lesson_slug}`;
+      }
+    }
+
+    if (!videoAllowed) {
       console.warn("[vdocipher-otp] invalid video request", { userId, videoId, err: lessonErr });
       return json({ error: "INVALID_VIDEO" }, 403, origin);
     }
@@ -180,8 +204,8 @@ Deno.serve(async (req) => {
       ok: true,
       otp: data.otp,
       playbackInfo: data.playbackInfo,
-      // Useful for debugging which lesson was requested.
-      lesson_number: lesson.lesson_number,
+      // Useful for debugging which lesson was requested (pflege-N / immigration-slug).
+      lesson: lessonLabel,
     }, 200, origin);
   } catch (e) {
     console.error("[vdocipher-otp] unhandled", e);

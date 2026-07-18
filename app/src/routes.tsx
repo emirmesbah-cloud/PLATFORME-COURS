@@ -55,6 +55,7 @@ const AdminDashboard = lazyNamed(() => import('@/pages/admin/AdminDashboard'),  
 const AdminCodes     = lazyNamed(() => import('@/pages/admin/AdminCodes'),      'AdminCodes');
 const AdminStudents  = lazyNamed(() => import('@/pages/admin/AdminStudents'),   'AdminStudents');
 const AdminLessons   = lazyNamed(() => import('@/pages/admin/AdminLessons'),    'AdminLessons');
+const AdminImmigrationLessons = lazyNamed(() => import('@/pages/admin/AdminImmigrationLessons'), 'AdminImmigrationLessons');
 const AdminQuiz       = lazyNamed(() => import('@/pages/admin/AdminQuiz'),       'AdminQuiz');
 const AdminImmigrationQuiz = lazyNamed(() => import('@/pages/admin/AdminImmigrationQuiz'), 'AdminImmigrationQuiz');
 const AdminBonus      = lazyNamed(() => import('@/pages/admin/AdminBonus'),      'AdminBonus');
@@ -147,6 +148,7 @@ export const routes: RouteObject[] = [
       { path: 'codes',       element: <L><AdminCodes /></L> },
       { path: 'students',    element: <L><AdminStudents /></L> },
       { path: 'lessons',     element: <L><AdminLessons /></L> },
+      { path: 'immigration-lessons', element: <L><AdminImmigrationLessons /></L> },
       { path: 'quiz',             element: <L><AdminQuiz /></L> },
       { path: 'immigration-quiz', element: <L><AdminImmigrationQuiz /></L> },
       { path: 'bonus',            element: <L><AdminBonus /></L> },

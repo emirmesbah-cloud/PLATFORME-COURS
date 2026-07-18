@@ -42,7 +42,7 @@ export const IMMIGRATION_SECTIONS: ImmigrationSection[] = [
     "modules": [
       {
         "slug": "module-0",
-        "title": "MODULE 0 — LA VÉRITÉ SUR L'IMMIGRATION EN ALLEMAGNE",
+        "title": "Introduction — La vérité sur l'immigration en Allemagne",
         "lessons": [
           {
             "id": "0.1",
