@@ -366,7 +366,7 @@ export const IMMIGRATION_SECTIONS: ImmigrationSection[] = [
             "vdocipherVideoId": null
           },
           {
-            "id": "8.4",
+            "id": "8.5",
             "slug": "8-4-quoi-faire-en-cas-de-refus",
             "title": "Quoi faire en cas de refus",
             "duration": "7-9 min",

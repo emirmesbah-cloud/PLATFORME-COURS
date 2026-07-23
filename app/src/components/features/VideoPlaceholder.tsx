@@ -26,7 +26,7 @@ export function VideoPlaceholder({ title }: { title?: string }) {
         </div>
         <p className="max-w-sm text-[14px] leading-relaxed text-zinc-300">
           {title ? <span className="font-medium text-white">« {title} »</span> : 'Cette leçon'} sera
-          filmée prochainement. En attendant, lis le contenu complet ci-dessous.
+          filmée prochainement. En attendant, tu peux prendre tes notes et passer le quiz ci-dessous.
         </p>
         <div className="mt-4 inline-flex items-center gap-1.5 rounded-pill bg-white/5 px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-zinc-400">
           <Clock className="h-3 w-3" /> Tournage en cours

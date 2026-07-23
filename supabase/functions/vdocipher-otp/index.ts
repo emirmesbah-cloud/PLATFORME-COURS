@@ -112,7 +112,8 @@ Deno.serve(async (req) => {
     // A video is allowed if it's published in EITHER. `lessonLabel` is for logs only.
     let videoAllowed = false;
     let lessonLabel = "";
-    let apiKey = "";   // course-specific VDOCipher secret, chosen by the matched table
+    let apiKey = "";         // course-specific VDOCipher secret, chosen by the matched table
+    let matchedCourse = "";  // 'pflege' | 'immigration' — used for the entitlement gate below
 
     const { data: lesson, error: lessonErr } = await supabase
       .from("lessons")
@@ -124,6 +125,7 @@ Deno.serve(async (req) => {
       videoAllowed = true;
       lessonLabel = `pflege-${lesson.lesson_number}`;
       apiKey = VDOCIPHER_API_KEY;
+      matchedCourse = "pflege";
     } else {
       const { data: immLesson } = await supabase
         .from("immigration_lessons")
@@ -135,6 +137,7 @@ Deno.serve(async (req) => {
         videoAllowed = true;
         lessonLabel = `immigration-${immLesson.lesson_slug}`;
         apiKey = VDOCIPHER_API_KEY_IMMIGRATION;
+        matchedCourse = "immigration";
       }
     }
 
@@ -151,11 +154,11 @@ Deno.serve(async (req) => {
       return json({ error: "SERVER_MISCONFIG" }, 500, origin);
     }
 
-    // Profile lookup — used for revoked-account check + future forensic
-    // watermarking when we want to re-enable per-user identification.
+    // Profile lookup — revoked-account check + course entitlement + future
+    // forensic watermarking when we want to re-enable per-user identification.
     const { data: profile } = await supabase
       .from("profiles")
-      .select("first_name, last_name, email, revoked_at")
+      .select("first_name, last_name, email, revoked_at, course_access, is_admin")
       .eq("id", userId)
       .maybeSingle();
     if (!profile) {
@@ -163,6 +166,16 @@ Deno.serve(async (req) => {
     }
     if (profile.revoked_at) {
       return json({ error: "ACCOUNT_REVOKED" }, 403, origin);
+    }
+
+    // ENTITLEMENT GATE : the caller must actually own the course this video
+    // belongs to (admins bypass). course_access is single-valued
+    // ('pflege' | 'immigration'). Without this, any logged-in student could
+    // stream the OTHER course's paid videos — the video IDs are readable and
+    // the OTP is signed with that course's key regardless of what they bought.
+    if (!profile.is_admin && profile.course_access !== matchedCourse) {
+      console.warn("[vdocipher-otp] course entitlement mismatch", { userId, matchedCourse, has: profile.course_access });
+      return json({ error: "COURSE_FORBIDDEN" }, 403, origin);
     }
 
     // Branded watermark — user-requested change : no personal info shown
