@@ -20,7 +20,12 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// The two courses live in SEPARATE VDOCipher accounts, each with its own API
+// secret. Pflege → VDOCIPHER_API_KEY ; Immigration → VDOCIPHER_API_KEY_IMMIGRATION.
+// A key can only mint OTPs for videos in its own account, so we must pick the
+// right one per requested video (see course routing below).
 const VDOCIPHER_API_KEY = Deno.env.get("VDOCIPHER_API_KEY") ?? "";
+const VDOCIPHER_API_KEY_IMMIGRATION = Deno.env.get("VDOCIPHER_API_KEY_IMMIGRATION") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -59,10 +64,9 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return json({ error: "METHOD_NOT_ALLOWED" }, 405, origin);
   }
-  if (!VDOCIPHER_API_KEY) {
-    console.error("[vdocipher-otp] VDOCIPHER_API_KEY env var missing");
-    return json({ error: "SERVER_MISCONFIG" }, 500, origin);
-  }
+  // Note : we DON'T check key presence up front anymore — the required key
+  // depends on which course the video belongs to (resolved below), so a missing
+  // Immigration key must never break Pflege playback and vice-versa.
 
   try {
     const authHeader = req.headers.get("Authorization");
@@ -108,6 +112,7 @@ Deno.serve(async (req) => {
     // A video is allowed if it's published in EITHER. `lessonLabel` is for logs only.
     let videoAllowed = false;
     let lessonLabel = "";
+    let apiKey = "";   // course-specific VDOCipher secret, chosen by the matched table
 
     const { data: lesson, error: lessonErr } = await supabase
       .from("lessons")
@@ -118,6 +123,7 @@ Deno.serve(async (req) => {
     if (lesson) {
       videoAllowed = true;
       lessonLabel = `pflege-${lesson.lesson_number}`;
+      apiKey = VDOCIPHER_API_KEY;
     } else {
       const { data: immLesson } = await supabase
         .from("immigration_lessons")
@@ -128,12 +134,21 @@ Deno.serve(async (req) => {
       if (immLesson) {
         videoAllowed = true;
         lessonLabel = `immigration-${immLesson.lesson_slug}`;
+        apiKey = VDOCIPHER_API_KEY_IMMIGRATION;
       }
     }
 
     if (!videoAllowed) {
       console.warn("[vdocipher-otp] invalid video request", { userId, videoId, err: lessonErr });
       return json({ error: "INVALID_VIDEO" }, 403, origin);
+    }
+
+    // The video is authorized — now make sure THIS course's key is configured.
+    // Checked here (not at startup) so a missing key for one course can never
+    // take down the other.
+    if (!apiKey) {
+      console.error("[vdocipher-otp] missing VDOCipher API key for", lessonLabel);
+      return json({ error: "SERVER_MISCONFIG" }, 500, origin);
     }
 
     // Profile lookup — used for revoked-account check + future forensic
@@ -166,7 +181,7 @@ Deno.serve(async (req) => {
     const vdoResp = await fetch(`https://dev.vdocipher.com/api/videos/${encodeURIComponent(videoId)}/otp`, {
       method: "POST",
       headers: {
-        "Authorization": `Apisecret ${VDOCIPHER_API_KEY}`,
+        "Authorization": `Apisecret ${apiKey}`,
         "Content-Type": "application/json",
         "Accept": "application/json",
       },
