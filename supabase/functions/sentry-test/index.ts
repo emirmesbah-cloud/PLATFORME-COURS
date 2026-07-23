@@ -12,13 +12,14 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { reportError } from '../_shared/sentry.ts';
+import { timingSafeEqual } from '../_shared/security.ts';
 
 const CRON_SECRET = Deno.env.get('CRON_SECRET') ?? '';
 
 serve(async (req) => {
   const url    = new URL(req.url);
   const secret = req.headers.get('x-cron-secret') ?? url.searchParams.get('secret') ?? '';
-  if (!CRON_SECRET || secret !== CRON_SECRET) {
+  if (!CRON_SECRET || !timingSafeEqual(secret, CRON_SECRET)) {
     return new Response(JSON.stringify({ ok: false, error: 'UNAUTHORIZED' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },

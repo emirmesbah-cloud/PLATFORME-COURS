@@ -86,3 +86,8 @@ verify_jwt = false  # webhook externe (UptimeRobot ne peut pas signer un JWT) â€
 # en plus is_admin(auth.uid()) â€” defense en profondeur.
 verify_jwt = true
 
+[functions.vdocipher-otp]
+# JWT-required at the gateway; the function ALSO re-verifies via getUser and
+# checks course entitlement (course_access) + revoked_at server-side.
+verify_jwt = true
+
