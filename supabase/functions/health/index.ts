@@ -30,9 +30,6 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const HEALTH_SECRET = Deno.env.get('HEALTH_SECRET') ?? '';
 
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
   'Cache-Control':                'no-cache, no-store, must-revalidate',
 };
 
@@ -53,7 +50,7 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ ok: boolean; latency_ms
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS });
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
 
   // SHERLOCK R14 — M1 : gate par secret. Accept header (x-health-secret)
   // OR query (?secret=...) — UptimeRobot free tier ne supporte pas les
@@ -109,10 +106,13 @@ serve(async (req) => {
     status,
     timestamp: new Date().toISOString(),
     latency_ms: Date.now() - t_total_start,
-    checks,
+    checks: Object.fromEntries(
+      Object.entries(checks).map(([name, check]) => [
+        name,
+        { ok: check.ok, latency_ms: check.latency_ms },
+      ]),
+    ),
     // Méta pour monitoring tools
-    service: 'aurel-academy-platform',
-    version: '1.0.0',
   };
 
   return new Response(JSON.stringify(body, null, 2), {

@@ -97,6 +97,7 @@ export function AdminFeedback() {
                       : <span className="badge badge-orange">En attente</span>
                     }
                     {f.is_public && <span className="badge badge-teal">Public OK</span>}
+                    {!f.is_public && f.publish_consent && <span className="badge badge-teal">Consentement public</span>}
                   </div>
                 </div>
 

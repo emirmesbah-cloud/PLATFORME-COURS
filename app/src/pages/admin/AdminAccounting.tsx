@@ -569,6 +569,7 @@ function buildCsv(rows: Payment[]): string {
 }
 
 function csvEscape(v: string): string {
+  if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
   // Échappe les guillemets, et enrobe la valeur de "" si elle contient ; " ou \n.
   const needs = /[";\r\n]/.test(v);
   const escaped = v.replace(/"/g, '""');

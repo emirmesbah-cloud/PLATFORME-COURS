@@ -123,6 +123,7 @@ export interface Feedback {
   testimonial: string | null;
   would_recommend: boolean;
   is_public: boolean;
+  publish_consent: boolean;
   is_approved: boolean;
   submitted_at: string;
 }

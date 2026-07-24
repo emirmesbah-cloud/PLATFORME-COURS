@@ -214,7 +214,7 @@ export default defineConfig({
     // time, but visitors can't download them from prod (was leaking the
     // entire TS source — RLS query shapes, edge-function URLs, admin
     // routes — to anyone hitting `/assets/*.map`).
-    sourcemap: 'hidden',
+    sourcemap: false,
     // SHERLOCK R23 PERF : split heavy vendor chunks. The main bundle was
     // ~692KB because everything bundled together (React + supabase-js +
     // recharts + sentry + tanstack + form libs). Splitting these into

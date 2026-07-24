@@ -417,7 +417,8 @@ export async function submitFeedback(args: {
     rating: args.rating,
     testimonial: args.testimonial,
     would_recommend: args.wouldRecommend,
-    is_public: args.isPublic,
+    is_public: false,
+    publish_consent: args.isPublic,
     is_approved: false,
   });
   if (error) throw error;
@@ -434,7 +435,19 @@ export async function fetchAdminFeedback(): Promise<(Feedback & { profile?: Pick
 }
 
 export async function adminToggleFeedbackApproved(id: string, isApproved: boolean) {
-  const { error } = await supabase.from('feedback').update({ is_approved: isApproved }).eq('id', id);
+  const { data: feedback, error: readError } = await supabase
+    .from('feedback')
+    .select('publish_consent')
+    .eq('id', id)
+    .single();
+  if (readError) throw readError;
+  const { error } = await supabase
+    .from('feedback')
+    .update({
+      is_approved: isApproved,
+      is_public: isApproved && feedback.publish_consent,
+    })
+    .eq('id', id);
   if (error) throw error;
   await logAdminAction('feedback_updated', 'feedback', id, { is_approved: isApproved });
 }

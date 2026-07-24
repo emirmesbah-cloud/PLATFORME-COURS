@@ -27,7 +27,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const VDOCIPHER_API_KEY = Deno.env.get("VDOCIPHER_API_KEY") ?? "";
 const VDOCIPHER_API_KEY_IMMIGRATION = Deno.env.get("VDOCIPHER_API_KEY_IMMIGRATION") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
 // SHERLOCK R22 : strict CORS — match the pattern used by admin-purge-user
 // and other sensitive functions. Was '*' previously which let any origin
@@ -74,8 +74,9 @@ Deno.serve(async (req) => {
       return json({ error: "NOT_AUTHENTICATED" }, 401, origin);
     }
 
-    // Service-role client with caller's JWT for auth verification + RLS-aware reads.
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    // Caller-scoped client: the anon key plus JWT makes all reads explicitly
+    // subject to RLS. Never combine a service-role key with caller headers.
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
       auth: { persistSession: false, autoRefreshToken: false },
     });

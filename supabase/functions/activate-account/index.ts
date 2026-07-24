@@ -118,13 +118,34 @@ serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  // Per-IP activation throttle. The backing table is service-role-only.
+  // Fail open on storage errors so an outage never blocks a paid student.
+  try {
+    const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+    const clientIp = req.headers.get('cf-connecting-ip')?.trim() || forwarded || 'unknown';
+    const windowStart = new Date(Date.now() - 15 * 60_000).toISOString();
+    const { count, error: countErr } = await admin
+      .from('activation_attempts')
+      .select('id', { count: 'exact', head: true })
+      .eq('ip', clientIp)
+      .gte('attempted_at', windowStart);
+    if (countErr) throw countErr;
+    if ((count ?? 0) >= 10) return errorResponse('TOO_MANY_ATTEMPTS', 429);
+    const { error: insertErr } = await admin
+      .from('activation_attempts')
+      .insert({ ip: clientIp });
+    if (insertErr) throw insertErr;
+  } catch (throttleErr) {
+    console.warn('[activate-account] throttle unavailable; failing open', throttleErr);
+  }
+
   // 1. Validation du code
   const { data: vData, error: vErr } = await admin.rpc('validate_activation_code', { p_code: code });
   if (vErr) {
     await reportError(vErr, { function: 'activate-account', extra: { step: 'validate_activation_code' } });
-    return errorResponse('INTERNAL_ERROR', 500, { detail: vErr.message });
+    return errorResponse('INTERNAL_ERROR', 500);
   }
-  if (!vData?.ok)       return errorResponse(vData?.error ?? 'CODE_INVALID');
+  if (!vData?.ok) return errorResponse('CODE_UNAVAILABLE');
 
   // 2. Création du user (email auto-confirmé pour permettre le login direct)
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
@@ -140,11 +161,11 @@ serve(async (req) => {
       return errorResponse('EMAIL_ALREADY_EXISTS');
     }
     await reportError(createErr, { function: 'activate-account', extra: { step: 'createUser' } });
-    return errorResponse('INTERNAL_ERROR', 500, { detail: createErr.message });
+    return errorResponse('INTERNAL_ERROR', 500);
   }
 
   const newUserId = created.user?.id;
-  if (!newUserId) return errorResponse('INTERNAL_ERROR', 500, { detail: 'no user id' });
+  if (!newUserId) return errorResponse('INTERNAL_ERROR', 500);
 
   // 3. Génère une session pour le user fraîchement créé.
   //    On utilise signInWithPassword (anon client) pour récupérer un access_token
@@ -207,7 +228,7 @@ serve(async (req) => {
         },
       },
     );
-    return errorResponse('INTERNAL_ERROR', 500, { detail: signInErr?.message ?? 'no session' });
+    return errorResponse('INTERNAL_ERROR', 500);
   }
 
   // 4. Redeem le code (en tant qu'user authentifié → la RPC vérifie auth.uid())
@@ -254,7 +275,7 @@ serve(async (req) => {
         },
       },
     );
-    return errorResponse(rData?.error ?? 'REDEEM_FAILED', 500, { detail: rErr?.message });
+    return errorResponse('REDEEM_FAILED', 500);
   }
 
   // SHERLOCK R23 — CRITICAL BUG FIX :

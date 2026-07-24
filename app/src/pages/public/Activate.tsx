@@ -61,6 +61,8 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 const ERR_MSG: Record<string, string> = {
+  CODE_UNAVAILABLE:       'Code invalide ou indisponible.',
+  TOO_MANY_ATTEMPTS:      'Trop de tentatives. Réessaie dans 15 minutes.',
   CODE_INVALID:           'Code d\'activation invalide.',
   CODE_ALREADY_USED:      'Ce code a déjà été utilisé.',
   EMAIL_ALREADY_EXISTS:   'Un compte existe déjà avec cet email — connecte-toi.',

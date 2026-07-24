@@ -120,6 +120,7 @@ serve(async (req) => {
       .eq('is_published', true)
       .limit(5);
     if (error) throw new Error(`${error.code}: ${error.message}`);
+    if (!data || data.length === 0) throw new Error('no published lessons returned');
     return data;
   }));
 
