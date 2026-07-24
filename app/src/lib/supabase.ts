@@ -3,6 +3,72 @@ import { restoreMainFromBackupIfMissing } from './session-backup';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const RECOVERY_SESSION_KEY = 'aurel:password-recovery-session';
+
+type RememberedRecoverySession = {
+  accessToken: string;
+  expiresAt: number;
+};
+
+function tokenExpiresAt(accessToken: string): number {
+  try {
+    const part = accessToken.split('.')[1];
+    if (!part) return 0;
+    const padded = part.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(part.length / 4) * 4, '=');
+    const payload = JSON.parse(atob(padded)) as { exp?: number };
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function rememberPasswordRecoverySession(accessToken: string): void {
+  const expiresAt = tokenExpiresAt(accessToken);
+  if (!accessToken || expiresAt <= Date.now()) return;
+  try {
+    window.sessionStorage.setItem(
+      RECOVERY_SESSION_KEY,
+      JSON.stringify({ accessToken, expiresAt } satisfies RememberedRecoverySession),
+    );
+  } catch {
+    // PASSWORD_RECOVERY remains the fallback when sessionStorage is unavailable.
+  }
+}
+
+export function isRememberedPasswordRecoverySession(accessToken: string | undefined): boolean {
+  if (!accessToken) return false;
+  try {
+    const raw = window.sessionStorage.getItem(RECOVERY_SESSION_KEY);
+    if (!raw) return false;
+    const remembered = JSON.parse(raw) as Partial<RememberedRecoverySession>;
+    if (
+      remembered.accessToken !== accessToken ||
+      typeof remembered.expiresAt !== 'number' ||
+      remembered.expiresAt <= Date.now()
+    ) {
+      window.sessionStorage.removeItem(RECOVERY_SESSION_KEY);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearPasswordRecoverySession(): void {
+  try { window.sessionStorage.removeItem(RECOVERY_SESSION_KEY); } catch {}
+}
+
+// Capture the implicit-flow recovery token synchronously, before createClient()
+// initializes and removes the URL fragment. Otherwise PASSWORD_RECOVERY can
+// fire before React mounts and a valid link is shown as expired.
+if (window.location.pathname === '/reset-password' && window.location.hash.length > 1) {
+  const recoveryParams = new URLSearchParams(window.location.hash.slice(1));
+  if (recoveryParams.get('type') === 'recovery') {
+    const recoveryAccessToken = recoveryParams.get('access_token');
+    if (recoveryAccessToken) rememberPasswordRecoverySession(recoveryAccessToken);
+  }
+}
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   // eslint-disable-next-line no-console

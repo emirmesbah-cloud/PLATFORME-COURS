@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Loader2, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import {
+  clearPasswordRecoverySession,
+  intentionalRemoval,
+  isRememberedPasswordRecoverySession,
+  rememberPasswordRecoverySession,
+  supabase,
+} from '@/lib/supabase';
 import { jwtIsRecoverySession } from '@/lib/jwt';
+import { clearSessionBackup } from '@/lib/session-backup';
 import { useToast } from '@/components/ui/Toast';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { AurelLogo } from '@/components/features/AurelLogo';
@@ -44,13 +51,21 @@ export function ResetPasswordPage() {
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
-      if (event === 'PASSWORD_RECOVERY') {
+      if (event === 'PASSWORD_RECOVERY' && session) {
         recoveryEventSeen = true;
+        rememberPasswordRecoverySession(session.access_token);
         setLinkValid(true);
         setReady(true);
       }
       // SIGNED_IN avec un JWT recovery (cas reload après l'event a été consommé)
-      if (event === 'SIGNED_IN' && session && jwtIsRecoverySession(session.access_token)) {
+      if (
+        event === 'SIGNED_IN' &&
+        session &&
+        (
+          isRememberedPasswordRecoverySession(session.access_token) ||
+          jwtIsRecoverySession(session.access_token)
+        )
+      ) {
         setLinkValid(true);
         setReady(true);
       }
@@ -59,25 +74,30 @@ export function ResetPasswordPage() {
     // SHERLOCK : HARD TIMEOUT. Avant, on attendait que supabase.auth.getSession()
     // résolve avant de setReady(true). Sur ISP lent, ce call peut hang plusieurs
     // dizaines de secondes — l'user voyait un spinner infini sans pouvoir
-    // demander un nouveau lien. Maintenant : on FORCE setReady(true) après 5s
-    // (R22 : bumped from 3s for in-app webview wrappers like Gmail iOS where
-    // the PASSWORD_RECOVERY event can arrive slightly later than usual).
+    // demander un nouveau lien. On garde une limite à 15s pour les webviews
+    // email/mobile lents, sans rejeter trop tôt un lien encore valide.
     const hardTimeout = setTimeout(() => {
       if (!mounted) return;
       if (!recoveryEventSeen) {
         // eslint-disable-next-line no-console
-        console.warn('[Aurel] reset-password : 5s elapsed without PASSWORD_RECOVERY event — assuming invalid link');
+        console.warn('[Aurel] reset-password: recovery session unavailable after 15s');
       }
       setReady(true);
-    }, 5000);
+    }, 15000);
 
-    // Best-effort getSession check : if it does resolve quickly AND has a
-    // recovery JWT, mark the link valid. If it hangs, the hardTimeout above
-    // will still let the UI render.
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Validate the recovered session with Auth before enabling a password
+    // change. Token identity ties the marker to this exact server-issued
+    // session, so a normal signed-in session cannot pass this gate.
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!mounted) return;
       if (recoveryEventSeen) return;
-      if (session && jwtIsRecoverySession(session.access_token)) {
+      const isRecovery = session && (
+        isRememberedPasswordRecoverySession(session.access_token) ||
+        jwtIsRecoverySession(session.access_token)
+      );
+      if (session && isRecovery) {
+        const { error } = await supabase.auth.getUser(session.access_token);
+        if (!mounted || error) return;
         setLinkValid(true);
         setReady(true);
       }
@@ -104,14 +124,31 @@ export function ResetPasswordPage() {
     const { error } = await supabase.auth.updateUser({ password: pwd });
     setSubmitting(false);
     if (error) {
-      toast.error(error.message, 'Erreur');
+      const message = error.message.toLowerCase();
+      if (message.includes('expired') || message.includes('invalid') || message.includes('session')) {
+        clearPasswordRecoverySession();
+        setLinkValid(false);
+        toast.error('Ce lien a expiré. Demande un nouveau lien de réinitialisation.', 'Lien expiré');
+      } else {
+        toast.error(error.message, 'Erreur');
+      }
       return;
     }
+    clearPasswordRecoverySession();
     setDone(true);
     toast.success('Mot de passe mis à jour.', 'Succès');
     // scope:'global' pour révoquer le refresh token côté serveur — empêche
     // un attaquant qui aurait un refresh token volé de rester connecté.
-    await supabase.auth.signOut({ scope: 'global' });
+    // This is an intentional logout: allow the protected auth key to be
+    // removed and clear the independent backup so the recovery session is
+    // not restored on the next page load.
+    intentionalRemoval.current = true;
+    clearSessionBackup();
+    try {
+      await supabase.auth.signOut({ scope: 'global' });
+    } finally {
+      intentionalRemoval.current = false;
+    }
     // SHERLOCK R3 fix : `done` flag déclenche un redirect via useEffect
     // (cf. ci-dessous) plutôt qu'un setTimeout direct ici. Ça évite que
     // le navigate fire APRÈS un démontage si l'user back-button rapide.
