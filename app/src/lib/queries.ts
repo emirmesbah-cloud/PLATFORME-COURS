@@ -649,18 +649,17 @@ export interface PaymentFilters {
 }
 
 export async function fetchAdminPayments(filters: PaymentFilters = {}): Promise<Payment[]> {
-  let q = supabase
-    .from('payments')
-    .select('*, profile:profiles(first_name, last_name, email), activation_code:activation_codes(code)')
-    .order('created_at', { ascending: false });
-
-  if (filters.status) q = q.eq('status', filters.status);
-  if (filters.tier)   q = q.eq('tier', filters.tier);
-  if (filters.method) q = q.eq('method', filters.method);
-  if (filters.from)   q = q.gte('created_at', filters.from);
-  if (filters.to)     q = q.lt('created_at', filters.to);
-
-  const { data, error } = await withQueryTimeout(q.limit(2000), 15000, 'fetchAdminPayments');
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('admin_list_payments', {
+      p_status: filters.status ?? null,
+      p_tier: filters.tier ?? null,
+      p_method: filters.method ?? null,
+      p_from: filters.from ?? null,
+      p_to: filters.to ?? null,
+    }),
+    15000,
+    'fetchAdminPayments',
+  );
   if (error) throw error;
 
   // Free-text search côté client (jointure profiles n'est pas filtrable via

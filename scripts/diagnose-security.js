@@ -224,6 +224,21 @@ async function main() {
       adminImmigrationError?.message || `${adminImmigrationQuestions?.length ?? 0} questions returned.`,
     );
 
+    const { data: adminPayments, error: adminPaymentsError } = await student
+      .rpc('admin_list_payments', {
+        p_status: null,
+        p_tier: null,
+        p_method: null,
+        p_from: null,
+        p_to: null,
+      });
+    record(
+      results,
+      'admin_can_list_accounting_rows_via_guarded_rpc',
+      !adminPaymentsError && Array.isArray(adminPayments) && adminPayments.length > 0,
+      adminPaymentsError?.message || `${adminPayments?.length ?? 0} payments returned.`,
+    );
+
     const { error: switchCourseError } = await service
       .from('profiles')
       .update({ is_admin: false, course_access: 'immigration' })
