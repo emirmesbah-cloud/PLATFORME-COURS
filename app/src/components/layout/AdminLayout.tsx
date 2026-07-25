@@ -154,7 +154,14 @@ export function AdminLayout() {
               className="flex items-center gap-2 px-3 py-2 rounded-card-sm text-[12px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
               onClick={() => setOpen(false)}
             >
-              <ArrowLeft className="h-3.5 w-3.5" /> Espace étudiant
+              <ArrowLeft className="h-3.5 w-3.5" /> Aperçu étudiant Pflege
+            </Link>
+            <Link
+              to="/immigration"
+              className="flex items-center gap-2 px-3 py-2 rounded-card-sm text-[12px] font-medium text-aurel-orange-dark hover:bg-aurel-orange-soft"
+              onClick={() => setOpen(false)}
+            >
+              <Plane className="h-3.5 w-3.5" /> Aperçu étudiant Immigration
             </Link>
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-card-sm">
               <div

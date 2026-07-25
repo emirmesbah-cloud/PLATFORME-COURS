@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, ChevronDown, CheckCircle2, Circle, Play, Download, FileText, Layers, Lock } from 'lucide-react';
+import { ArrowRight, ChevronDown, CheckCircle2, Circle, Play, Download, FileText, Layers, Lock, Shield } from 'lucide-react';
 import {
   IMMIGRATION_COURSE, IMMIGRATION_SECTIONS, IMMIGRATION_BONUS, IMMIGRATION_FLAT_LESSONS,
 } from '@/data/immigration-structure';
 import { fetchImmigrationStatus, type ImmigrationLessonStatus } from '@/lib/immigration';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
 
 /**
  * ImmigrationOverview — course home, DB-backed (immigration_progress + quiz).
@@ -15,6 +16,7 @@ import { cn } from '@/lib/utils';
  * completed, or — if it has a quiz — passed). Niches + tutos = free access.
  */
 export function ImmigrationOverview() {
+  const { isAdmin } = useAuth();
   const statusQ = useQuery({
     queryKey: ['immigration-status'],
     queryFn: fetchImmigrationStatus,
@@ -55,6 +57,7 @@ export function ImmigrationOverview() {
   };
   // module-N locked if previous main module not cleared. Index 0 always open.
   const isModuleLocked = (sectionSlug: string, moduleSlug: string) => {
+    if (isAdmin) return false;
     if (sectionSlug !== 'modules') return false; // niches + tutos free
     const idx = MAIN_MODULES.findIndex((m) => m.slug === moduleSlug);
     if (idx <= 0) return false;
@@ -77,6 +80,23 @@ export function ImmigrationOverview() {
           <span className="text-zinc-900">Immigration en Allemagne</span>
         </div>
       </div>
+
+      {isAdmin && (
+        <section className="flex flex-col gap-3 rounded-card border border-aurel-orange/30 bg-aurel-orange-soft p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <Shield className="mt-0.5 h-5 w-5 flex-none text-aurel-orange-dark" />
+            <div>
+              <div className="text-sm font-semibold text-zinc-900">Aperçu administrateur</div>
+              <p className="mt-0.5 text-xs text-zinc-600">
+                Tous les modules sont déverrouillés. Les vidéos en brouillon restent invisibles aux étudiants.
+              </p>
+            </div>
+          </div>
+          <Link to="/admin/immigration-lessons" className="btn-outline flex-none">
+            Gérer les vidéos
+          </Link>
+        </section>
+      )}
 
       {/* Hero */}
       <section className="card-hero">

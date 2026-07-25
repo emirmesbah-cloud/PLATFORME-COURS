@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ChevronLeft, ChevronRight, Clock, CheckCircle2, Circle, StickyNote, GraduationCap } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Clock, CheckCircle2, Circle, StickyNote, GraduationCap, Shield } from 'lucide-react';
 import { VideoPlaceholder } from '@/components/features/VideoPlaceholder';
 import { ImmigrationVideoPlayer } from '@/components/features/ImmigrationVideoPlayer';
 import { ImmigrationQuiz } from '@/components/features/ImmigrationQuiz';
@@ -9,6 +9,7 @@ import { ImmigrationNotes } from '@/components/features/ImmigrationNotes';
 import { findLesson, findLessonInModule, fetchImmigrationStatus, setImmigrationCompleted, fetchImmigrationLessonMedia } from '@/lib/immigration';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
 
 type Tab = 'quiz' | 'notes';
 
@@ -19,6 +20,7 @@ type Tab = 'quiz' | 'notes';
  * vdocipherVideoId is filled in (Phase 6).
  */
 export function ImmigrationLessonReader() {
+  const { isAdmin } = useAuth();
   const { moduleSlug, lessonSlug } = useParams<{ moduleSlug: string; lessonSlug: string }>();
   const qc = useQueryClient();
   const toast = useToast();
@@ -51,6 +53,9 @@ export function ImmigrationLessonReader() {
   const completed = status?.completed === true;
   const hasQuiz = status?.has_questions === true;
   const quizPassed = status?.passed === true;
+  const hasVideo = !!mediaQ.data?.vdocipher_video_id;
+  const isAdminDraftPreview = isAdmin && hasVideo && !mediaQ.data?.is_published;
+  const canPlayVideo = hasVideo && (mediaQ.data?.is_published || isAdmin);
 
   async function toggleComplete() {
     setMarking(true);
@@ -88,7 +93,13 @@ export function ImmigrationLessonReader() {
 
       {/* Video : real VDOCipher player once published + id set (admin), else placeholder. */}
       <div className="mb-6">
-        {mediaQ.data?.is_published && mediaQ.data.vdocipher_video_id ? (
+        {isAdminDraftPreview && (
+          <div className="mb-3 flex items-center gap-2 rounded-card-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+            <Shield className="h-4 w-4" />
+            Aperçu admin — cette vidéo est encore invisible aux étudiants.
+          </div>
+        )}
+        {canPlayVideo && mediaQ.data?.vdocipher_video_id ? (
           <ImmigrationVideoPlayer videoId={mediaQ.data.vdocipher_video_id} title={lessonMeta.title} />
         ) : (
           <VideoPlaceholder title={lessonMeta.title} />

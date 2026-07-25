@@ -7,7 +7,7 @@
 //   1. React VideoPlayer mounts with a lesson that has vdocipher_video_id.
 //   2. React POSTs to this function : { video_id }.
 //   3. We verify the caller is authenticated + the video belongs to a real
-//      published lesson (anti-OTP-fishing).
+//      lesson. Students require a published lesson; admins may preview drafts.
 //   4. We call VDOCipher's API with our secret API key to generate an OTP
 //      with a 5-min TTL + a runtime watermark of the user's name + email.
 //   5. Return { otp, playbackInfo } → React passes them to the iframe URL.
@@ -103,56 +103,49 @@ Deno.serve(async (req) => {
       return json({ error: "INVALID_VIDEO_ID" }, 400, origin);
     }
 
-    // ANTI-OTP-FISHING : verify the video ID belongs to a real published lesson.
+    // ANTI-OTP-FISHING : verify the video ID belongs to a real lesson.
     // Otherwise any logged-in student could request OTPs for arbitrary VDOCipher
     // video IDs (leak-by-enumeration).
     //
     // Two courses, two tables :
     //   - Pflege      → public.lessons            (vdocipher_video_id, is_published)
     //   - Immigration → public.immigration_lessons (vdocipher_video_id, is_published)
-    // A video is allowed if it's published in EITHER. `lessonLabel` is for logs only.
+    // Students may play published lessons only. Admins may also preview drafts.
     let videoAllowed = false;
     let lessonLabel = "";
     let apiKey = "";         // course-specific VDOCipher secret, chosen by the matched table
     let matchedCourse = "";  // 'pflege' | 'immigration' — used for the entitlement gate below
+    let videoPublished = false;
 
     const { data: lesson, error: lessonErr } = await supabase
       .from("lessons")
       .select("lesson_number, is_published")
       .eq("vdocipher_video_id", videoId)
-      .eq("is_published", true)
       .maybeSingle();
     if (lesson) {
       videoAllowed = true;
       lessonLabel = `pflege-${lesson.lesson_number}`;
       apiKey = VDOCIPHER_API_KEY;
       matchedCourse = "pflege";
+      videoPublished = lesson.is_published === true;
     } else {
       const { data: immLesson } = await supabase
         .from("immigration_lessons")
         .select("lesson_slug, is_published")
         .eq("vdocipher_video_id", videoId)
-        .eq("is_published", true)
         .maybeSingle();
       if (immLesson) {
         videoAllowed = true;
         lessonLabel = `immigration-${immLesson.lesson_slug}`;
         apiKey = VDOCIPHER_API_KEY_IMMIGRATION;
         matchedCourse = "immigration";
+        videoPublished = immLesson.is_published === true;
       }
     }
 
     if (!videoAllowed) {
       console.warn("[vdocipher-otp] invalid video request", { userId, videoId, err: lessonErr });
       return json({ error: "INVALID_VIDEO" }, 403, origin);
-    }
-
-    // The video is authorized — now make sure THIS course's key is configured.
-    // Checked here (not at startup) so a missing key for one course can never
-    // take down the other.
-    if (!apiKey) {
-      console.error("[vdocipher-otp] missing VDOCipher API key for", lessonLabel);
-      return json({ error: "SERVER_MISCONFIG" }, 500, origin);
     }
 
     // Profile lookup — revoked-account check + course entitlement + future
@@ -169,6 +162,11 @@ Deno.serve(async (req) => {
       return json({ error: "ACCOUNT_REVOKED" }, 403, origin);
     }
 
+    // Draft videos are a preview feature for administrators only.
+    if (!profile.is_admin && !videoPublished) {
+      return json({ error: "INVALID_VIDEO" }, 403, origin);
+    }
+
     // ENTITLEMENT GATE : the caller must actually own the course this video
     // belongs to (admins bypass). course_access is single-valued
     // ('pflege' | 'immigration'). Without this, any logged-in student could
@@ -177,6 +175,12 @@ Deno.serve(async (req) => {
     if (!profile.is_admin && profile.course_access !== matchedCourse) {
       console.warn("[vdocipher-otp] course entitlement mismatch", { userId, matchedCourse, has: profile.course_access });
       return json({ error: "COURSE_FORBIDDEN" }, 403, origin);
+    }
+
+    // The video is authorized; now ensure this course's key is configured.
+    if (!apiKey) {
+      console.error("[vdocipher-otp] missing VDOCipher API key for", lessonLabel);
+      return json({ error: "SERVER_MISCONFIG" }, 500, origin);
     }
 
     // Branded watermark — user-requested change : no personal info shown
