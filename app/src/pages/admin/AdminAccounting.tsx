@@ -342,9 +342,11 @@ export function AdminAccounting() {
                       ? <span className="font-semibold text-aurel-ink">
                           {formatAmount(p.amount, p.currency)}
                         </span>
-                      : <span className="text-xs text-slate-400">
+                      : p.status === 'pending'
+                        ? <span className="text-xs text-slate-400">
                           {formatAmount(p.list_price_dzd, 'DZD')} attendu
-                        </span>}
+                          </span>
+                        : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="px-4 py-3">
                     <span className={cn('badge', STATUS_BADGE[p.status] ?? 'badge-slate')}>
