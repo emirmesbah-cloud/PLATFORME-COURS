@@ -147,11 +147,7 @@ export interface ImmigrationQuestionInput {
 }
 
 export async function adminFetchAllImmigrationQuestions(): Promise<ImmigrationQuizQuestionAdmin[]> {
-  const { data, error } = await supabase
-    .from('immigration_quiz_questions')
-    .select('*')
-    .order('lesson_slug', { ascending: true })
-    .order('position', { ascending: true });
+  const { data, error } = await supabase.rpc('admin_list_immigration_quiz_questions');
   if (error) throw error;
   return (data ?? []) as ImmigrationQuizQuestionAdmin[];
 }

@@ -83,7 +83,7 @@ function BonusRow({ bonus, onTogglePublished, onUploaded }: {
       // Date.now(). Date.now() collides under rapid double-upload from
       // distinct admin tabs and is also guessable, which matters slightly
       // because the bucket is private but signed URLs are bearer-style.
-      const path = `bonus-${bonus.order_index}-${crypto.randomUUID()}.${ext}`;
+      const path = `${bonus.course}/bonus-${bonus.order_index}-${crypto.randomUUID()}.${ext}`;
       const { error } = await supabase.storage.from('bonus-resources').upload(path, file, { upsert: true, contentType: file.type });
       if (error) throw error;
       await onUploaded(path);

@@ -30,14 +30,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          # Pas de cache — on ne commit pas le lockfile (Windows binaries cross-platform issue).
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps --no-audit --no-fund
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
 
       # SHERLOCK R13 — C2: typecheck is BLOCKING. esbuild/Vite doesn't run tsc
       # at build time, so without this step a "any" creep or a missing prop

@@ -140,26 +140,23 @@ serve(async (req) => {
     return data;
   }));
 
-  // CHECK 5 : INSERT lesson_progress (test write path with RLS)
-  // We do a soft check : if it fails because it already exists, that's OK.
-  checks.push(await timed('insert_progress', async () => {
+  // CHECK 5 : progress write through the authoritative SECURITY DEFINER RPC.
+  // Direct INSERT/UPDATE privileges were intentionally revoked in migration
+  // 038, so testing the table directly would now create a false-red alert.
+  checks.push(await timed('rpc_update_progress', async () => {
     // Get any lesson id first
     const { data: lessons } = await userClient
       .from('lessons').select('id').limit(1);
     if (!lessons || lessons.length === 0) return { skipped: 'no lessons' };
 
-    // Get user id from JWT (decode roughly via session)
-    const { data: { user } } = await anon.auth.getUser(auth.data);
-    if (!user?.id) throw new Error('no user from token');
-
-    const { error } = await userClient
-      .from('lesson_progress')
-      .upsert(
-        { user_id: user.id, lesson_id: lessons[0].id, watched_seconds: 1 },
-        { onConflict: 'user_id,lesson_id' },
-      );
+    const { data, error } = await userClient.rpc('update_lesson_progress', {
+      p_lesson_id: lessons[0].id,
+      p_watched_seconds: 1,
+      p_position_seconds: 1,
+    });
     if (error) throw new Error(`${error.code}: ${error.message}`);
-    return 'ok';
+    if (!data?.ok) throw new Error(`RPC rejected progress write: ${data?.error ?? 'unknown'}`);
+    return data;
   }));
 
   // Compile report

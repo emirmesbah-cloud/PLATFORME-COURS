@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, ChevronDown, CheckCircle2, Circle, Play, Download, FileText, Layers, Lock, Shield } from 'lucide-react';
+import { ArrowRight, ChevronDown, CheckCircle2, Circle, Play, Download, Layers, Lock, Shield } from 'lucide-react';
 import {
-  IMMIGRATION_COURSE, IMMIGRATION_SECTIONS, IMMIGRATION_BONUS, IMMIGRATION_FLAT_LESSONS,
+  IMMIGRATION_COURSE, IMMIGRATION_SECTIONS, IMMIGRATION_FLAT_LESSONS,
 } from '@/data/immigration-structure';
 import { fetchImmigrationStatus, type ImmigrationLessonStatus } from '@/lib/immigration';
+import { BonusCard } from '@/components/features/BonusCard';
+import { fetchBonusForCourse } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -23,6 +25,12 @@ export function ImmigrationOverview() {
     staleTime: 30 * 1000,
   });
   const status = statusQ.data ?? [];
+  const bonusQ = useQuery({
+    queryKey: ['immigration-bonus'],
+    queryFn: () => fetchBonusForCourse('immigration'),
+    staleTime: 5 * 60 * 1000,
+  });
+  const bonuses = bonusQ.data ?? [];
   const bySlug = new Map<string, ImmigrationLessonStatus>(status.map((s) => [s.lesson_slug, s]));
 
   const [openModules, setOpenModules] = useState<Set<string>>(
@@ -213,21 +221,20 @@ export function ImmigrationOverview() {
           <Download className="h-4 w-4 text-aurel-teal" />
           <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">Ressources bonus</h2>
         </div>
-        <div className="card divide-y divide-zinc-100">
-          {IMMIGRATION_BONUS.map((b) => (
-            <a key={b.slug} href={`/content/immigration/bonus/${b.file}`} target="_blank" rel="noopener noreferrer"
-              className="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-zinc-50">
-              <div className="grid h-9 w-9 flex-none place-items-center rounded-card-sm bg-aurel-teal-soft text-aurel-teal">
-                <FileText className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[14px] font-medium text-zinc-900">{b.title}</div>
-                <div className="truncate text-[12px] text-zinc-500">{b.desc}</div>
-              </div>
-              <Download className="h-4 w-4 flex-none text-zinc-300 group-hover:text-aurel-teal" />
-            </a>
-          ))}
-        </div>
+        {bonusQ.isError ? (
+          <div className="card p-5 text-sm text-red-600">
+            Les ressources n'ont pas pu charger. Réessaie dans un instant.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {bonuses.map((bonus) => <BonusCard key={bonus.id} bonus={bonus} />)}
+          </div>
+        )}
+        {!bonusQ.isLoading && !bonusQ.isError && bonuses.length === 0 && (
+          <div className="card p-5 text-sm text-zinc-500">
+            Les ressources seront disponibles très bientôt.
+          </div>
+        )}
       </section>
     </div>
   );

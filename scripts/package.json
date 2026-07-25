@@ -7,7 +7,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "generate-codes": "node generate-codes.js"
+    "diagnose-security": "node diagnose-security.js",
+    "generate-codes": "node generate-codes.js",
+    "upload-immigration-bonus": "node upload-immigration-bonus.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0"

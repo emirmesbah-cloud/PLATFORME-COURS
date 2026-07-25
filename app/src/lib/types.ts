@@ -51,6 +51,7 @@ export interface BonusResource {
   file_type: string;
   order_index: number;
   is_published: boolean;
+  course: 'pflege' | 'immigration';
   created_at: string;
 }
 

@@ -90,4 +90,3 @@ verify_jwt = true
 # JWT-required at the gateway; the function ALSO re-verifies via getUser and
 # checks course entitlement (course_access) + revoked_at server-side.
 verify_jwt = true
-

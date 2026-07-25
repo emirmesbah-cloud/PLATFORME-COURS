@@ -5,13 +5,24 @@ import { supabase } from './supabase';
 // (ISP lent, edge réseau bizarre, Supabase Realtime down) de bloquer
 // le dashboard indéfiniment. Reject = TanStack Query treat as error.
 // On laisse retry: 1 du QueryClient gérer un retry rapide.
-function withQueryTimeout<T>(p: PromiseLike<T>, ms = 10000, label = 'query'): Promise<T> {
+type AbortablePromiseLike<T> = PromiseLike<T> & {
+  abortSignal?: (signal: AbortSignal) => PromiseLike<T>;
+};
+
+function withQueryTimeout<T>(p: AbortablePromiseLike<T>, ms = 10000, label = 'query'): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    const controller = new AbortController();
+    const request = typeof p.abortSignal === 'function'
+      ? p.abortSignal(controller.signal)
+      : p;
     const timer = setTimeout(
-      () => reject(new Error(`[Aurel] ${label} timed out after ${ms}ms (slow network?)`)),
+      () => {
+        controller.abort();
+        reject(new Error(`[Aurel] ${label} timed out after ${ms}ms (slow network?)`));
+      },
       ms,
     );
-    Promise.resolve(p).then(
+    Promise.resolve(request).then(
       (v) => { clearTimeout(timer); resolve(v); },
       (e) => { clearTimeout(timer); reject(e); },
     );
@@ -89,6 +100,22 @@ export async function fetchBonus(): Promise<BonusResource[]> {
     supabase.from('bonus_resources').select('*').order('order_index', { ascending: true }),
     10000,
     'fetchBonus',
+  );
+  if (error) throw error;
+  return data as BonusResource[];
+}
+
+export async function fetchBonusForCourse(
+  course: 'pflege' | 'immigration',
+): Promise<BonusResource[]> {
+  const { data, error } = await withQueryTimeout(
+    supabase
+      .from('bonus_resources')
+      .select('*')
+      .eq('course', course)
+      .order('order_index', { ascending: true }),
+    10000,
+    'fetchBonusForCourse',
   );
   if (error) throw error;
   return data as BonusResource[];
@@ -556,11 +583,7 @@ export async function fetchMyQuizStatus(): Promise<QuizLessonStatus[]> {
 // Full row including correct_index + explanation, for the admin CRUD page.
 export async function adminFetchAllQuizQuestions(): Promise<QuizQuestion[]> {
   const { data, error } = await withQueryTimeout(
-    supabase
-      .from('quiz_questions')
-      .select('*')
-      .order('lesson_id', { ascending: true })
-      .order('position', { ascending: true }),
+    supabase.rpc('admin_list_quiz_questions'),
     10000,
     'adminFetchAllQuizQuestions',
   );
@@ -581,7 +604,7 @@ export interface AdminQuestionInput {
   explanation: string | null;
 }
 
-export async function adminUpsertQuizQuestion(q: AdminQuestionInput): Promise<QuizQuestion> {
+export async function adminUpsertQuizQuestion(q: AdminQuestionInput): Promise<void> {
   const payload = {
     lesson_id:     q.lesson_id,
     position:      q.position,
@@ -594,14 +617,13 @@ export async function adminUpsertQuizQuestion(q: AdminQuestionInput): Promise<Qu
     explanation:   q.explanation,
   };
   const q$ = q.id
-    ? supabase.from('quiz_questions').update(payload).eq('id', q.id).select().single()
-    : supabase.from('quiz_questions').insert(payload).select().single();
+    ? supabase.from('quiz_questions').update(payload).eq('id', q.id).select('id').single()
+    : supabase.from('quiz_questions').insert(payload).select('id').single();
   const { data, error } = await q$;
   if (error) throw error;
   await logAdminAction(q.id ? 'quiz_question_updated' : 'quiz_question_created',
-                       'quiz_question', (data as QuizQuestion).id,
+                       'quiz_question', data.id,
                        { lesson_id: q.lesson_id, position: q.position });
-  return data as QuizQuestion;
 }
 
 export async function adminDeleteQuizQuestion(id: string): Promise<void> {
