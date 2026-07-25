@@ -8,9 +8,9 @@ import {
   fetchAdminPayments, fetchAccountingStats, recordPayment, cancelPayment,
   queryKeys,
 } from '@/lib/queries';
-import type { Payment, PaymentMethod, PaymentCurrency } from '@/lib/types';
+import type { Course, Payment, PaymentMethod, PaymentCurrency } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
-import { cn } from '@/lib/utils';
+import { cn, courseLabel } from '@/lib/utils';
 
 // Labels FR pour l'UI. La DB stocke les codes.
 const METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -34,6 +34,7 @@ const STATUS_BADGE: Record<string, string> = {
 
 interface UIFilters {
   status: '' | 'pending' | 'recorded' | 'cancelled';
+  course: '' | Course;
   tier:   '' | 'autonome' | 'accompagne';
   method: '' | PaymentMethod;
   from:   string; // YYYY-MM-DD
@@ -46,12 +47,13 @@ export function AdminAccounting() {
   const toast = useToast();
 
   const [filters, setFilters] = useState<UIFilters>({
-    status: '', tier: '', method: '', from: '', to: '', search: '',
+    status: '', course: '', tier: '', method: '', from: '', to: '', search: '',
   });
 
   // Transformer filters UI → filters DB. Date `to` doit être exclusive +1j.
   const dbFilters = useMemo(() => ({
     status: filters.status || null,
+    course: filters.course || null,
     tier:   filters.tier   || null,
     method: filters.method || null,
     from:   filters.from   ? `${filters.from}T00:00:00.000Z` : null,
@@ -170,12 +172,44 @@ export function AdminAccounting() {
           sub={`${stats?.ytd.count ?? 0} paiement(s)`}
           accent="orange"
         />
-        <PendingCard pending={stats?.pending ?? 0} />
+        <PendingCard pending={stats?.pending ?? 0} pendingDzd={stats?.pending_dzd ?? 0} />
       </div>
+
+      {stats && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {(['pflege', 'immigration'] as Course[]).map((course) => {
+            const courseStats = stats.by_course.find((row) => row.course === course);
+            return (
+              <div key={course} className="card-padded flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Revenus {courseLabel(course)}
+                  </div>
+                  <div className="mt-1 text-xl font-bold text-aurel-ink">
+                    {formatAmount(courseStats?.dzd ?? 0, 'DZD')}
+                  </div>
+                  {(courseStats?.eur ?? 0) > 0 && (
+                    <div className="text-sm text-slate-500">+ {formatAmount(courseStats?.eur ?? 0, 'EUR')}</div>
+                  )}
+                </div>
+                <div className={cn('badge', course === 'immigration' ? 'badge-teal' : 'badge-orange')}>
+                  {courseStats?.count ?? 0} paiement(s)
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {(statsQ.isError || paymentsQ.isError) && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          Certaines données financières n'ont pas pu charger. Recharge la page avant d'enregistrer un paiement.
+        </div>
+      )}
 
       {/* Filtres */}
       <div className="card-padded">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
           <div className="lg:col-span-2">
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Recherche</label>
             <div className="relative">
@@ -187,6 +221,15 @@ export function AdminAccounting() {
                 onChange={(e) => setFilters({ ...filters, search: e.target.value })}
               />
             </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Cours</label>
+            <select className="input w-full" value={filters.course}
+              onChange={(e) => setFilters({ ...filters, course: e.target.value as UIFilters['course'] })}>
+              <option value="">Tous</option>
+              <option value="pflege">Pflege</option>
+              <option value="immigration">Immigration</option>
+            </select>
           </div>
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Statut</label>
@@ -240,6 +283,7 @@ export function AdminAccounting() {
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Étudiant</th>
               <th className="px-4 py-3">Code</th>
+              <th className="px-4 py-3">Cours</th>
               <th className="px-4 py-3">Tier</th>
               <th className="px-4 py-3">Méthode</th>
               <th className="px-4 py-3 text-right">Montant</th>
@@ -251,14 +295,14 @@ export function AdminAccounting() {
             {paymentsQ.isLoading && rows.length === 0 ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">
-                  {Array.from({ length: 8 }).map((_, j) => (
+                  {Array.from({ length: 9 }).map((_, j) => (
                     <td key={j} className="px-4 py-3"><div className="h-3 w-3/4 rounded bg-slate-200" /></td>
                   ))}
                 </tr>
               ))
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
                   Aucun paiement ne correspond à ces filtres.
                 </td>
               </tr>
@@ -278,6 +322,11 @@ export function AdminAccounting() {
                     {p.activation_code?.code ?? '—'}
                   </td>
                   <td className="px-4 py-3">
+                    <span className={cn('badge', p.course === 'immigration' ? 'badge-teal' : 'badge-orange')}>
+                      {courseLabel(p.course)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
                     <span className={cn(
                       'badge',
                       p.tier === 'accompagne' ? 'badge-teal' : 'badge-orange',
@@ -293,7 +342,9 @@ export function AdminAccounting() {
                       ? <span className="font-semibold text-aurel-ink">
                           {formatAmount(p.amount, p.currency)}
                         </span>
-                      : <span className="text-slate-300">—</span>}
+                      : <span className="text-xs text-slate-400">
+                          {formatAmount(p.list_price_dzd, 'DZD')} attendu
+                        </span>}
                   </td>
                   <td className="px-4 py-3">
                     <span className={cn('badge', STATUS_BADGE[p.status] ?? 'badge-slate')}>
@@ -384,7 +435,7 @@ function StatCard({ icon: Icon, label, dzd, eur, sub, accent }: {
   );
 }
 
-function PendingCard({ pending }: { pending: number }) {
+function PendingCard({ pending, pendingDzd }: { pending: number; pendingDzd: number }) {
   return (
     <div className={cn(
       'card-padded',
@@ -403,6 +454,11 @@ function PendingCard({ pending }: { pending: number }) {
       <div className="mt-2 text-xs text-slate-500">
         {pending === 0 ? 'Tout est à jour ✨' : 'paiement(s) en attente'}
       </div>
+      {pending > 0 && (
+        <div className="mt-1 text-xs font-semibold text-amber-700">
+          {formatAmount(pendingDzd, 'DZD')} au tarif catalogue
+        </div>
+      )}
     </div>
   );
 }
@@ -415,7 +471,9 @@ function RecordPaymentModal({
   onSave: (args: { method: PaymentMethod; amount: number; currency: PaymentCurrency; notes: string }) => void;
 }) {
   const [method,   setMethod]   = useState<PaymentMethod>(payment.method ?? 'ccp');
-  const [amount,   setAmount]   = useState<string>(payment.amount?.toString() ?? '');
+  const [amount,   setAmount]   = useState<string>(
+    payment.amount?.toString() ?? payment.list_price_dzd.toString(),
+  );
   const [currency, setCurrency] = useState<PaymentCurrency>(payment.currency ?? 'DZD');
   const [notes,    setNotes]    = useState<string>(payment.notes ?? '');
 
@@ -441,12 +499,18 @@ function RecordPaymentModal({
           </div>
           <div className="text-xs text-slate-500">{payment.profile?.email}</div>
           <div className="mt-1 flex items-center gap-2 text-xs">
+            <span className={cn('badge', payment.course === 'immigration' ? 'badge-teal' : 'badge-orange')}>
+              {courseLabel(payment.course)}
+            </span>
             <span className={cn('badge', payment.tier === 'accompagne' ? 'badge-teal' : 'badge-orange')}>
               {TIER_LABELS[payment.tier]}
             </span>
             {payment.activation_code && (
               <span className="font-mono text-slate-500">{payment.activation_code.code}</span>
             )}
+          </div>
+          <div className="mt-2 text-xs text-slate-500">
+            Tarif officiel : <b>{formatAmount(payment.list_price_dzd, 'DZD')}</b>
           </div>
         </div>
 
@@ -474,7 +538,7 @@ function RecordPaymentModal({
                 className="input w-full"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="ex : 45000"
+                placeholder={`ex : ${payment.list_price_dzd}`}
               />
             </div>
             <div>
@@ -544,7 +608,7 @@ function buildCsv(rows: Payment[]): string {
   // En-têtes en français, séparateur ";" pour ouverture native dans Excel FR.
   const headers = [
     'Date création', 'Date enregistrement', 'Étudiant', 'Email', 'Code',
-    'Tier', 'Méthode', 'Montant', 'Devise', 'Statut', 'Notes',
+    'Cours', 'Tier', 'Tarif officiel DZD', 'Méthode', 'Montant', 'Devise', 'Statut', 'Notes',
   ];
   const lines: string[] = [];
   // BOM UTF-8 pour qu'Excel ouvre correctement les accents.
@@ -556,7 +620,9 @@ function buildCsv(rows: Payment[]): string {
       `${p.profile?.first_name ?? ''} ${p.profile?.last_name ?? ''}`.trim(),
       p.profile?.email ?? '',
       p.activation_code?.code ?? '',
+      courseLabel(p.course),
       TIER_LABELS[p.tier] ?? p.tier,
+      p.list_price_dzd.toString(),
       p.method ? METHOD_LABELS[p.method] : '',
       p.amount != null ? p.amount.toString() : '',
       p.currency ?? '',

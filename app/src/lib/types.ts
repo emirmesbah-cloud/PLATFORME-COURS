@@ -1,6 +1,7 @@
 // DB types (1:1 mapping with Phase 1 schema)
 
 export type Tier = 'autonome' | 'accompagne';
+export type Course = 'pflege' | 'immigration';
 
 export interface Profile {
   id: string;
@@ -15,7 +16,7 @@ export interface Profile {
   last_login_at: string | null;
   is_admin: boolean;
   // Single-course gating : which course this student bought. Default 'pflege'.
-  course_access?: 'pflege' | 'immigration';
+  course_access?: Course;
 }
 
 export interface Lesson {
@@ -59,6 +60,7 @@ export interface ActivationCode {
   id: string;
   code: string;
   tier: Tier;
+  course: Course;
   is_used: boolean;
   used_by_user_id: string | null;
   used_at: string | null;
@@ -214,6 +216,8 @@ export interface Payment {
   activation_code_id: string | null;
   user_id: string;
   tier: Tier;
+  course: Course;
+  list_price_dzd: number;
   method: PaymentMethod | null;
   amount: number | null;
   currency: PaymentCurrency | null;
@@ -226,7 +230,7 @@ export interface Payment {
   // Enrichi par fetchAdminPayments (jointure profiles)
   profile?: Pick<Profile, 'first_name' | 'last_name' | 'email'>;
   // Enrichi par fetchAdminPayments (jointure activation_codes pour le code lui-même)
-  activation_code?: { code: string } | null;
+  activation_code?: { code: string; course: Course } | null;
 }
 
 export interface AccountingStats {
@@ -235,6 +239,8 @@ export interface AccountingStats {
   last_month: { dzd: number; eur: number; count: number };
   ytd:        { dzd: number; eur: number; count: number };
   pending:    number;
+  pending_dzd: number;
+  by_course:  { course: Course; dzd: number; eur: number; count: number }[];
   by_tier:    { tier: string; dzd: number; eur: number; count: number }[];
   by_method:  { method: string; dzd: number; eur: number; count: number }[];
   monthly:    { month: string; dzd: number; eur: number; count: number }[];

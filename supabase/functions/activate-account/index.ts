@@ -318,7 +318,7 @@ serve(async (req) => {
     notifyTelegram(`Nouvel étudiant inscrit ✅`, {
       function: 'activate-account',
       level: 'info',
-      extra: { email, name: `${first_name} ${last_name}`, code, tier: rData.tier },
+      extra: { email, name: `${first_name} ${last_name}`, code, tier: rData.tier, course: rData.course },
     }).catch(() => {}),
   );
 
@@ -330,6 +330,7 @@ serve(async (req) => {
       first_name,
       last_name,
       tier: rData.tier,
+      course: rData.course,
     },
     session: {
       access_token:  signInData.session.access_token,

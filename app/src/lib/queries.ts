@@ -34,7 +34,7 @@ import type {
   LessonNote, Certificate, CertificateResult, Feedback, EmailLog,
   AdminAuditLog, AdvancedAnalytics,
   QuizQuestion, QuizSubmissionResult, QuizLessonStatus,
-  Payment, PaymentMethod, PaymentCurrency, AccountingStats,
+  Payment, PaymentMethod, PaymentCurrency, AccountingStats, Course,
 } from './types';
 
 // SHERLOCK R14 — H10 : profile shape côté admin inclut revoked_at + reason
@@ -274,11 +274,13 @@ export async function fetchAdminStats(): Promise<AdminStats | null> {
 
 export async function fetchAdminCodes(filters: {
   tier?: 'autonome' | 'accompagne' | null;
+  course?: Course | null;
   isUsed?: boolean | null;
   search?: string;
 } = {}): Promise<ActivationCode[]> {
   let q = supabase.from('activation_codes').select('*').order('created_at', { ascending: false });
   if (filters.tier)   q = q.eq('tier', filters.tier);
+  if (filters.course) q = q.eq('course', filters.course);
   if (typeof filters.isUsed === 'boolean') q = q.eq('is_used', filters.isUsed);
   if (filters.search) q = q.ilike('code', `%${filters.search}%`);
   const { data, error } = await q.limit(500);
@@ -639,6 +641,7 @@ export async function adminDeleteQuizQuestion(id: string): Promise<void> {
 export interface PaymentFilters {
   status?: 'pending' | 'recorded' | 'cancelled' | null;
   tier?: 'autonome' | 'accompagne' | null;
+  course?: Course | null;
   method?: PaymentMethod | null;
   // ISO date strings, inclusive on `from`, exclusive on `to` (so use the
   // start of the next day for "until end of day X").
@@ -656,6 +659,7 @@ export async function fetchAdminPayments(filters: PaymentFilters = {}): Promise<
       p_method: filters.method ?? null,
       p_from: filters.from ?? null,
       p_to: filters.to ?? null,
+      p_course: filters.course ?? null,
     }),
     15000,
     'fetchAdminPayments',

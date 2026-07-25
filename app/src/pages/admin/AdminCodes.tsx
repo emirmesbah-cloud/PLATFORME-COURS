@@ -6,30 +6,34 @@ import type { ActivationCode } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
-import { tierLabel, tierPrice, formatDate, formatDateTime, cn } from '@/lib/utils';
-import type { Tier } from '@/lib/types';
+import { courseLabel, tierLabel, tierPrice, formatDate, formatDateTime, cn } from '@/lib/utils';
+import type { Course, Tier } from '@/lib/types';
 
 export function AdminCodes() {
   const qc = useQueryClient();
   const toast = useToast();
 
   const [tier, setTier] = useState<Tier>('autonome');
-  const [course, setCourse] = useState<'pflege' | 'immigration'>('pflege');
+  const [course, setCourse] = useState<Course>('pflege');
   const [count, setCount] = useState(1);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [generated, setGenerated] = useState<string[] | null>(null);
   const [generatedTier, setGeneratedTier] = useState<Tier>('autonome');
+  const [generatedCourse, setGeneratedCourse] = useState<Course>('pflege');
   const [copyState, setCopyState] = useState<'idle' | 'codes' | 'whatsapp'>('idle');
 
   // Filters
+  const [filterCourse, setFilterCourse] = useState<'all' | Course>('all');
   const [filterTier, setFilterTier]   = useState<'all' | Tier>('all');
   const [filterUsed, setFilterUsed]   = useState<'all' | 'available' | 'used'>('all');
   const [search, setSearch]           = useState('');
 
+  const codesQueryKey = [...queryKeys.adminCodes, filterCourse, filterTier, filterUsed, search] as const;
   const codesQ = useQuery({
-    queryKey: [...queryKeys.adminCodes, filterTier, filterUsed, search] as const,
+    queryKey: codesQueryKey,
     queryFn: () => fetchAdminCodes({
+      course: filterCourse === 'all' ? null : filterCourse,
       tier: filterTier === 'all' ? null : filterTier,
       isUsed: filterUsed === 'all' ? null : filterUsed === 'used',
       search: search.trim() || undefined,
@@ -60,6 +64,7 @@ export function AdminCodes() {
         id: `optim-${code}-${now}`,
         code,
         tier,
+        course,
         is_used: false,
         used_at: null,
         used_by_user_id: null,
@@ -68,23 +73,24 @@ export function AdminCodes() {
         created_by: 'admin-panel',
       }));
 
-      // Met à jour TOUTES les query keys [adminCodes, ...filters] qui matchent.
-      qc.setQueriesData<ActivationCode[]>(
-        { queryKey: queryKeys.adminCodes },
-        (old) => {
-          if (!old) return old;
-          // Filtre seulement les codes qui matchent les filtres actifs sur cette query
-          // (best-effort : si un filtre exclut le tier généré, on prepend quand même —
-          // un refetch prochain remettra l'ordre. Trade-off acceptable pour latence 0)
-          return [...optimisticCodes, ...old];
-        }
-      );
+      // Update only the visible filter result. Updating every cached filter used
+      // to make Immigration codes briefly appear inside a Pflege-only view.
+      const visibleInCurrentFilter =
+        (filterCourse === 'all' || filterCourse === course)
+        && (filterTier === 'all' || filterTier === tier)
+        && filterUsed !== 'used'
+        && !search.trim();
+      if (visibleInCurrentFilter) {
+        qc.setQueryData<ActivationCode[]>(codesQueryKey, (old) => [...optimisticCodes, ...(old ?? [])]);
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.adminCodes });
 
       // Stats peuvent légèrement bouger (codes_total +N) → invalidate sans await
       qc.invalidateQueries({ queryKey: queryKeys.adminStats });
 
       setGenerated(r.codes);
       setGeneratedTier(tier);
+      setGeneratedCourse(course);
       setNotes('');
       toast.success(`${r.codes.length} code(s) ${tierLabel(tier)} générés.`);
     } catch (err) {
@@ -94,11 +100,13 @@ export function AdminCodes() {
     }
   }
 
-  function buildWhatsappMessage(codes: string[], tierLocal: Tier) {
-    const tierLine = `Formule : ${tierLabel(tierLocal)} (${tierPrice(tierLocal)})`;
+  function buildWhatsappMessage(codes: string[], tierLocal: Tier, courseLocal: Course) {
+    const courseLine = `Cours : ${courseLabel(courseLocal)}`;
+    const tierLine = `Formule : ${tierLabel(tierLocal)} (${tierPrice(tierLocal, courseLocal)})`;
     if (codes.length === 1) {
       return `🎓 Bienvenue chez Aurel Academy !
 
+${courseLine}
 ${tierLine}
 
 Voici ton code d'activation : ${codes[0]}
@@ -110,6 +118,7 @@ Tout est prêt pour toi. À bientôt !
     }
     return `🎓 Codes d'activation Aurel Academy
 
+${courseLine}
 ${tierLine}
 
 ${codes.map((c) => `• ${c}`).join('\n')}
@@ -165,7 +174,7 @@ ${codes.map((c) => `• ${c}`).join('\n')}
                   course === 'immigration' ? 'border-aurel-orange bg-aurel-orange-soft text-aurel-orange-dark' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
                 )}
               >
-                ✈️ Immigration<br/><span className="text-xs font-normal">codes IU</span>
+                ✈️ Immigration<br/><span className="text-xs font-normal">codes IU · 38 000 DA</span>
               </button>
             </div>
           </div>
@@ -175,7 +184,7 @@ ${codes.map((c) => `• ${c}`).join('\n')}
             {course === 'immigration' ? (
               // Immigration : offre unique (Autonome) → un seul préfixe IU.
               <div className="rounded-lg border border-aurel-orange bg-aurel-orange-soft px-3 py-2.5 text-sm font-semibold text-aurel-orange-dark">
-                Autonome<br/><span className="text-xs font-normal">offre unique Immigration</span>
+                Autonome<br/><span className="text-xs font-normal">38 000 DA · offre unique Immigration</span>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2">
@@ -237,8 +246,13 @@ ${codes.map((c) => `• ${c}`).join('\n')}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input className="input w-44 pl-9" placeholder="Rechercher AU-… / AC-…" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <input className="input w-44 pl-9" placeholder="Rechercher AU-… / IU-…" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
+            <select value={filterCourse} onChange={(e) => setFilterCourse(e.target.value as 'all' | Course)} className="input w-40">
+              <option value="all">Tous cours</option>
+              <option value="pflege">Pflege</option>
+              <option value="immigration">Immigration</option>
+            </select>
             <select value={filterTier} onChange={(e) => setFilterTier(e.target.value as 'all' | Tier)} className="input w-36">
               <option value="all">Tous tiers</option>
               <option value="autonome">Autonome</option>
@@ -265,6 +279,7 @@ ${codes.map((c) => `• ${c}`).join('\n')}
               <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Code</th>
+                  <th className="px-4 py-3">Cours</th>
                   <th className="px-4 py-3">Formule</th>
                   <th className="px-4 py-3">Statut</th>
                   <th className="px-4 py-3">Créé le</th>
@@ -276,6 +291,11 @@ ${codes.map((c) => `• ${c}`).join('\n')}
                 {codes.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-mono text-aurel-ink">{c.code}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn('badge', c.course === 'immigration' ? 'badge-teal' : 'badge-orange')}>
+                        {courseLabel(c.course)}
+                      </span>
+                    </td>
                     <td className="px-4 py-3"><span className="badge badge-orange">{tierLabelFor(c.tier)}</span></td>
                     <td className="px-4 py-3">
                       {c.is_used
@@ -297,12 +317,12 @@ ${codes.map((c) => `• ${c}`).join('\n')}
       <Modal
         open={!!generated}
         onClose={() => setGenerated(null)}
-        title={`${generated?.length ?? 0} code(s) ${tierLabel(generatedTier)} prêt(s)`}
+        title={`${generated?.length ?? 0} code(s) ${courseLabel(generatedCourse)} prêt(s)`}
         maxWidth="max-w-xl"
       >
         {generated && (() => {
           const codesText = generated.join('\n');
-          const waText = buildWhatsappMessage(generated, generatedTier);
+          const waText = buildWhatsappMessage(generated, generatedTier, generatedCourse);
           return (
             <div className="space-y-4">
               <div className="rounded-lg bg-slate-900 p-4 font-mono text-sm text-white">

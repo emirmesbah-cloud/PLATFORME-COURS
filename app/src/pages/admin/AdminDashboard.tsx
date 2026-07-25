@@ -10,7 +10,7 @@ import {
 } from '@/lib/queries';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
-import { cn } from '@/lib/utils';
+import { cn, courseLabel } from '@/lib/utils';
 
 /**
  * AdminDashboard — Linear Tech direction (palette Aurel).
@@ -220,18 +220,23 @@ export function AdminDashboard() {
                         {p.profile?.first_name} {p.profile?.last_name}
                       </div>
                       <div className="font-mono text-[11px] text-zinc-500 truncate">
-                        {p.activation_code?.code ?? '—'} · {p.tier === 'accompagne' ? 'Accompagné' : 'Autonome'}
+                        {p.activation_code?.code ?? '—'} · {courseLabel(p.course)} · {p.tier === 'accompagne' ? 'Accompagné' : 'Autonome'}
                       </div>
                     </div>
                     <div className="text-right">
                       {isPending ? (
-                        <span className="rounded-pill bg-aurel-orange-soft px-2.5 py-1 font-mono text-[10px] font-semibold text-aurel-orange-dark uppercase tracking-wider">
-                          À compléter
-                        </span>
+                        <div>
+                          <span className="rounded-pill bg-aurel-orange-soft px-2.5 py-1 font-mono text-[10px] font-semibold text-aurel-orange-dark uppercase tracking-wider">
+                            À compléter
+                          </span>
+                          <div className="mt-1 font-mono text-[10px] text-zinc-500">
+                            {formatMoney(p.list_price_dzd)} DA attendu
+                          </div>
+                        </div>
                       ) : (
                         <span className="text-[15px] font-semibold tabular">
                           {p.amount != null
-                            ? `${formatMoney(p.amount)} ${p.currency ?? 'DA'}`
+                            ? `${formatMoney(p.amount)} ${p.currency === 'DZD' ? 'DA' : (p.currency ?? 'DA')}`
                             : '—'}
                         </span>
                       )}

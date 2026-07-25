@@ -53,10 +53,20 @@ export function tierLabel(tier: string): string {
   return tier;
 }
 
-export function tierPrice(tier: string): string {
-  if (tier === 'autonome')   return '12 900 DA';
-  if (tier === 'accompagne') return '42 800 DA';
-  return '—';
+export type CourseKey = 'pflege' | 'immigration';
+
+export function courseLabel(course: CourseKey): string {
+  return course === 'immigration' ? 'Immigration' : 'Pflege';
+}
+
+export function coursePriceDzd(course: CourseKey, tier: string): number {
+  if (course === 'immigration') return 38000;
+  if (tier === 'accompagne') return 42800;
+  return 12900;
+}
+
+export function tierPrice(tier: string, course: CourseKey = 'pflege'): string {
+  return `${new Intl.NumberFormat('fr-FR').format(coursePriceDzd(course, tier))} DA`;
 }
 
 export function initials(firstName?: string | null, lastName?: string | null): string {

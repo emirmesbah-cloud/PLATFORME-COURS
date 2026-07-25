@@ -8,8 +8,12 @@ import { supabase, SUPABASE_URL_PUBLIC } from '@/lib/supabase';
 import { useToast } from '@/components/ui/Toast';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { AurelLogo } from '@/components/features/AurelLogo';
-import { ACTIVATION_CODE_REGEX, WHATSAPP_REGEX, normalizeWhatsapp } from '@/lib/utils';
+import {
+  ACTIVATION_CODE_REGEX, WHATSAPP_REGEX, normalizeWhatsapp,
+  courseLabel, coursePriceDzd,
+} from '@/lib/utils';
 import { trackEvent } from '@/lib/pixel';
+import type { Course, Tier } from '@/lib/types';
 
 /**
  * Fire the Meta Pixel "Purchase" event when a student successfully activates.
@@ -23,14 +27,18 @@ import { trackEvent } from '@/lib/pixel';
  * so we count one Purchase per real activation, never duplicated. No-op if
  * fbq isn't loaded (ad-blocker, dev environment).
  */
-function fireActivationPurchase(args: { tier: 'autonome' | 'accompagne'; first_name: string }) {
+function courseFromActivationCode(code: string): Course {
+  return code.startsWith('IU-') || code.startsWith('IC-') ? 'immigration' : 'pflege';
+}
+
+function fireActivationPurchase(args: { tier: Tier; course: Course; first_name: string }) {
   trackEvent('Purchase', {
     content_name: 'Activation Aurel Academy',
-    content_category: 'Pflege',
+    content_category: courseLabel(args.course),
     tier: args.tier,
+    course: args.course,
     first_name: args.first_name,
-    // Prix officiels Aurel (cf. aurel-academy.com/pflege/inscription).
-    value: args.tier === 'accompagne' ? 42800 : 12900,
+    value: coursePriceDzd(args.course, args.tier),
     currency: 'DZD',
   });
 }
@@ -43,7 +51,7 @@ const schema = z.object({
   // rendering) et le regex `^(AU|AC)-...$` rejetait silencieusement.
   // Transform + pipe garantit que le state contient toujours UPPERCASE.
   code: z.string().trim().transform((s) => s.toUpperCase()).pipe(
-    z.string().regex(ACTIVATION_CODE_REGEX, 'Format attendu : AU-XXXXXX ou AC-XXXXXX (6 caractères)')
+    z.string().regex(ACTIVATION_CODE_REGEX, 'Format attendu : AU-, AC- ou IU- suivi de 6 caractères')
   ),
   email: z.string().email('Email invalide'),
   password: z.string().min(8, 'Au moins 8 caractères').max(128, 'Maximum 128 caractères'),
@@ -110,24 +118,24 @@ export function ActivatePage() {
     // est dans un état orphan : auth.users sans profile → AuthGuard
     // bouclera /dashboard ↔ /activate). SHERLOCK R3 fix : on faisait juste
     // un sign-in successful check, on n'attrapait pas le cas orphan.
-    const tryAutoLogin = async (): Promise<boolean> => {
+    const tryAutoLogin = async (): Promise<Course | null> => {
       const { data: signInData, error: signInErr } =
         await supabase.auth.signInWithPassword({ email, password });
-      if (signInErr || !signInData?.session?.user) return false;
+      if (signInErr || !signInData?.session?.user) return null;
       // Verify the profile actually exists for this user. If it doesn't,
       // the activation didn't really succeed — the auth.users row is orphan.
       // We sign back out and surface an explicit error so the user knows
       // to contact support instead of looping.
       const { data: prof, error: profErr } = await supabase
         .from('profiles')
-        .select('id')
+        .select('id, course_access')
         .eq('id', signInData.session.user.id)
         .maybeSingle();
       if (profErr || !prof) {
         await supabase.auth.signOut().catch(() => {});
-        return false;
+        return null;
       }
-      return true;
+      return prof.course_access === 'immigration' ? 'immigration' : 'pflege';
     };
 
     try {
@@ -149,13 +157,15 @@ export function ActivatePage() {
       const data = await r.json();
       if (!data.ok) {
         const recoverable = ['CODE_ALREADY_USED', 'EMAIL_ALREADY_EXISTS'].includes(data.error);
-        if (recoverable && await tryAutoLogin()) {
+        const recoveredCourse = recoverable ? await tryAutoLogin() : null;
+        if (recoveredCourse) {
           fireActivationPurchase({
             tier: parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome',
+            course: recoveredCourse,
             first_name: parsed.data.first_name.trim(),
           });
           toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
-          window.location.replace('/dashboard');
+          window.location.replace(recoveredCourse === 'immigration' ? '/immigration' : '/dashboard');
           return;
         }
         const msg = ERR_MSG[data.error] || 'Erreur inconnue. Contacte Aurel.';
@@ -227,6 +237,10 @@ export function ActivatePage() {
       // /activate (race condition session-set vs profile-loaded).
       try {
         const nowIso = new Date().toISOString();
+        const activatedCourse =
+          data.user?.course === 'immigration'
+            ? 'immigration'
+            : courseFromActivationCode(parsed.data.code);
         const cachedProfile = {
           userId:   data.user.id,
           profile: {
@@ -236,6 +250,7 @@ export function ActivatePage() {
             last_name:        parsed.data.last_name.trim(),
             whatsapp:         normalizeWhatsapp(parsed.data.whatsapp.trim()),
             tier:             data.user.tier,
+            course_access:    activatedCourse,
             is_admin:         false,
             activated_at:     nowIso,
             diplome_algerien: parsed.data.diplome_algerien,
@@ -251,6 +266,9 @@ export function ActivatePage() {
       // does a hard reload, so any synchronous fbq() call must run first.
       fireActivationPurchase({
         tier: (data.user?.tier ?? (parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome')) as 'autonome' | 'accompagne',
+        course: data.user?.course === 'immigration'
+          ? 'immigration'
+          : courseFromActivationCode(parsed.data.code),
         first_name: parsed.data.first_name.trim(),
       });
       toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
@@ -264,16 +282,22 @@ export function ActivatePage() {
       //   2. useAuth bootstrap lit localStorage (qu'on a écrit manuellement en R10)
       //   3. Session hydrate synchrone, AuthGuard pass, /dashboard render.
       // Timing : ~500ms de white flash, c'est OK pour une activation one-time.
-      window.location.replace('/dashboard');
+      window.location.replace(
+        (data.user?.course === 'immigration' || courseFromActivationCode(parsed.data.code) === 'immigration')
+          ? '/immigration'
+          : '/dashboard',
+      );
     } catch (e) {
       // Network error: try auto-login as last resort
-      if (await tryAutoLogin()) {
+      const recoveredCourse = await tryAutoLogin();
+      if (recoveredCourse) {
         fireActivationPurchase({
           tier: parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome',
+          course: recoveredCourse,
           first_name: parsed.data.first_name.trim(),
         });
         toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
-        window.location.replace('/dashboard');
+        window.location.replace(recoveredCourse === 'immigration' ? '/immigration' : '/dashboard');
         return;
       }
       toast.error('Erreur réseau. Vérifie ta connexion.', 'Activation impossible');
