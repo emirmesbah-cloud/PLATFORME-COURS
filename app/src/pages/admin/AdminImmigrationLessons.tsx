@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plane } from 'lucide-react';
 import {
@@ -134,6 +134,12 @@ function LessonRow({
   const [vid, setVid] = useState(initialVideoId);
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState(false);
+
+  // The rows mount before the async media query finishes. Keep the input in
+  // sync when its saved VDOCipher ID arrives (or changes after a refetch).
+  useEffect(() => {
+    setVid(initialVideoId);
+  }, [initialVideoId]);
 
   async function saveVid() {
     if (vid.trim() === initialVideoId) return;
