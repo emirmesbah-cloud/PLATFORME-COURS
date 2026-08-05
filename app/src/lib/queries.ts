@@ -35,6 +35,7 @@ import type {
   AdminAuditLog, AdvancedAnalytics,
   QuizQuestion, QuizSubmissionResult, QuizLessonStatus,
   Payment, PaymentMethod, PaymentCurrency, AccountingStats, Course,
+  WebinarGroup, WebinarGroupSlug,
 } from './types';
 
 // SHERLOCK R14 — H10 : profile shape côté admin inclut revoked_at + reason
@@ -63,6 +64,7 @@ export const queryKeys = {
   adminFeedback: ['admin', 'feedback'] as const,
   adminEmails: ['admin', 'emails'] as const,
   adminAudit: ['admin', 'audit'] as const,
+  adminWebinarGroups: ['admin', 'webinar_groups'] as const,
   // Quiz
   quizQuestions: (lessonId: string) => ['quiz_questions', lessonId] as const,
   quizQuestionsStudent: (lessonId: string) => ['quiz_questions', 'student', lessonId] as const,
@@ -508,6 +510,34 @@ export async function fetchAuditLogs(filters: { actionType?: string; limit?: num
   const { data, error } = await q;
   if (error) throw error;
   return (data ?? []) as AdminAuditLog[];
+}
+
+// ── Admin: webinar WhatsApp destinations ────────────────────────────────────
+export async function fetchWebinarGroups(): Promise<WebinarGroup[]> {
+  const { data, error } = await withQueryTimeout(
+    supabase
+      .from('webinar_groups')
+      .select('slug, whatsapp_group_code, updated_at')
+      .order('slug', { ascending: true }),
+    10000,
+    'fetchWebinarGroups',
+  );
+  if (error) throw error;
+  return (data ?? []) as WebinarGroup[];
+}
+
+export async function updateWebinarGroup(
+  slug: WebinarGroupSlug,
+  whatsappGroupCode: string,
+): Promise<WebinarGroup> {
+  const { data, error } = await supabase
+    .from('webinar_groups')
+    .update({ whatsapp_group_code: whatsappGroupCode })
+    .eq('slug', slug)
+    .select('slug, whatsapp_group_code, updated_at')
+    .single();
+  if (error) throw error;
+  return data as WebinarGroup;
 }
 
 export async function logAdminAction(

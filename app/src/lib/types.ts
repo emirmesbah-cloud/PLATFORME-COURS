@@ -88,6 +88,14 @@ export interface AdminStats {
   avg_completion: number;
 }
 
+export type WebinarGroupSlug = 'immigration' | 'pflege';
+
+export interface WebinarGroup {
+  slug: WebinarGroupSlug;
+  whatsapp_group_code: string;
+  updated_at: string;
+}
+
 // ── Phase 3 ────────────────────────────────────────────────────
 
 export interface LessonNote {
