@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, KeyRound, Users, BookOpen, Gift, Menu, X, ArrowLeft, LogOut,
   TrendingUp, Heart, Mail, Shield, AlertTriangle, GraduationCap, Wallet, Plane,
+  MessageCircle,
 } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
@@ -45,6 +46,7 @@ const NAV_GROUPS: { label: string; items: { to: string; label: string; icon: typ
       { to: '/admin/analytics',    label: 'Analytics',    icon: TrendingUp },
       { to: '/admin/feedback',     label: 'Avis',         icon: Heart },
       { to: '/admin/emails',       label: 'Emails',       icon: Mail },
+      { to: '/admin/webinar-groups', label: 'Groupes webinar', icon: MessageCircle },
       { to: '/admin/audit',        label: 'Audit',        icon: Shield },
     ],
   },
