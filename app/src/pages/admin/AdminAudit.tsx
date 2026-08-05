@@ -16,6 +16,7 @@ const ACTION_LABEL: Record<string, { label: string; color: string }> = {
   feedback_updated:      { label: 'Avis modéré',           color: 'badge-teal' },
   feedback_approved:     { label: 'Avis approuvé',         color: 'badge-green' },
   feedback_rejected:     { label: 'Avis rejeté',           color: 'badge-red' },
+  webinar_group_updated: { label: 'Groupe webinar modifié', color: 'badge-orange' },
 };
 
 export function AdminAudit() {
