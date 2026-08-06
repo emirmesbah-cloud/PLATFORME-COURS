@@ -37,6 +37,9 @@ export function StudentLayout() {
   // Single-course gating : a student who bought Immigration shouldn't land
   // on the Pflege space. Admins are exempt (they preview everything).
   if (!isAdmin && profile?.course_access === 'immigration') {
+    if (location.pathname === '/profil') {
+      return <Navigate to="/immigration/profil" replace />;
+    }
     return <Navigate to="/immigration" replace />;
   }
 

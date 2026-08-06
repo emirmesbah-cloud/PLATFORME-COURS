@@ -66,6 +66,47 @@ export function findLessonInModule(moduleSlug: string, lessonSlug: string): Immi
   return null;
 }
 
+export interface ImmigrationModuleAccess {
+  locked: boolean;
+  previousModuleSlug: string | null;
+  previousModuleTitle: string | null;
+}
+
+/**
+ * Apply the same progressive-module rule everywhere a lesson can be opened.
+ * Main module 0 is always open; niches and tutorials are intentionally free.
+ * Admins bypass progression so they can preview and manage the whole course.
+ */
+export function getImmigrationModuleAccess(
+  moduleSlug: string,
+  status: ImmigrationLessonStatus[],
+  isAdmin: boolean,
+): ImmigrationModuleAccess {
+  if (isAdmin) {
+    return { locked: false, previousModuleSlug: null, previousModuleTitle: null };
+  }
+
+  const mainModules = IMMIGRATION_SECTIONS.find((section) => section.slug === 'modules')?.modules ?? [];
+  const moduleIndex = mainModules.findIndex((module) => module.slug === moduleSlug);
+  if (moduleIndex <= 0) {
+    return { locked: false, previousModuleSlug: null, previousModuleTitle: null };
+  }
+
+  const previousModule = mainModules[moduleIndex - 1];
+  const bySlug = new Map(status.map((lessonStatus) => [lessonStatus.lesson_slug, lessonStatus]));
+  const previousCleared = previousModule.lessons.every((lesson) => {
+    const lessonStatus = bySlug.get(lesson.slug);
+    if (!lessonStatus) return false;
+    return lessonStatus.has_questions ? lessonStatus.passed : lessonStatus.completed;
+  });
+
+  return {
+    locked: !previousCleared,
+    previousModuleSlug: previousModule.slug,
+    previousModuleTitle: previousModule.title,
+  };
+}
+
 // ── DB-backed status / progress / notes / quiz (mig 033) ────────
 
 /** One round-trip : status of every immigration lesson for the current user. */
@@ -86,7 +127,7 @@ export async function fetchImmigrationStatus(): Promise<ImmigrationLessonStatus[
 export async function setImmigrationCompleted(
   lessonSlug: string, moduleSlug: string, completed: boolean,
 ): Promise<void> {
-  const { error } = await withQueryTimeout(
+  const { data, error } = await withQueryTimeout(
     supabase.rpc('set_immigration_lesson_completed', {
       p_lesson_slug: lessonSlug, p_module_slug: moduleSlug, p_completed: completed,
     }),
@@ -94,6 +135,8 @@ export async function setImmigrationCompleted(
     'setImmigrationCompleted',
   );
   if (error) throw error;
+  const result = data as { ok?: boolean; error?: string } | null;
+  if (!result?.ok) throw new Error(result?.error || 'IMMIGRATION_PROGRESS_FAILED');
 }
 
 /** Fetch a lesson's quiz questions (without correct answers — server scores). */
@@ -143,7 +186,7 @@ export async function fetchImmigrationNote(lessonSlug: string): Promise<string> 
 
 /** Save the student's personal note for a lesson. */
 export async function saveImmigrationNote(lessonSlug: string, content: string): Promise<void> {
-  const { error } = await withQueryTimeout(
+  const { data, error } = await withQueryTimeout(
     supabase.rpc('upsert_immigration_note', {
       p_lesson_slug: lessonSlug, p_content: content,
     }),
@@ -151,6 +194,8 @@ export async function saveImmigrationNote(lessonSlug: string, content: string): 
     'saveImmigrationNote',
   );
   if (error) throw error;
+  const result = data as { ok?: boolean; error?: string } | null;
+  if (!result?.ok) throw new Error(result?.error || 'IMMIGRATION_NOTE_SAVE_FAILED');
 }
 
 // ── Admin : quiz CRUD (immigration_quiz_questions) ──────────────

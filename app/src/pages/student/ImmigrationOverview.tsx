@@ -5,7 +5,7 @@ import { ArrowRight, ChevronDown, CheckCircle2, Circle, Play, Download, Layers, 
 import {
   IMMIGRATION_COURSE, IMMIGRATION_SECTIONS, IMMIGRATION_FLAT_LESSONS,
 } from '@/data/immigration-structure';
-import { fetchImmigrationStatus, type ImmigrationLessonStatus } from '@/lib/immigration';
+import { fetchImmigrationStatus, getImmigrationModuleAccess, type ImmigrationLessonStatus } from '@/lib/immigration';
 import { BonusCard } from '@/components/features/BonusCard';
 import { fetchBonusForCourse } from '@/lib/queries';
 import { cn } from '@/lib/utils';
@@ -56,20 +56,10 @@ export function ImmigrationOverview() {
   const total = IMMIGRATION_COURSE.totalLessons;
   const percent = total ? Math.round((completedCount / total) * 100) : 0;
 
-  // Per-module cleared state (for the 11 main modules).
-  const MAIN_MODULES = IMMIGRATION_SECTIONS.find((s) => s.slug === 'modules')?.modules ?? [];
-  const moduleCleared = (moduleSlug: string) => {
-    const mod = MAIN_MODULES.find((m) => m.slug === moduleSlug);
-    if (!mod) return false;
-    return mod.lessons.every((l) => isCleared(l.slug));
-  };
   // module-N locked if previous main module not cleared. Index 0 always open.
   const isModuleLocked = (sectionSlug: string, moduleSlug: string) => {
-    if (isAdmin) return false;
     if (sectionSlug !== 'modules') return false; // niches + tutos free
-    const idx = MAIN_MODULES.findIndex((m) => m.slug === moduleSlug);
-    if (idx <= 0) return false;
-    return !moduleCleared(MAIN_MODULES[idx - 1].slug);
+    return getImmigrationModuleAccess(moduleSlug, status, isAdmin).locked;
   };
 
   // Resume target : first non-cleared lesson in an unlocked module.

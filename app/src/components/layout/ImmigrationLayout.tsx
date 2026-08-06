@@ -1,6 +1,6 @@
 import { Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useEffect, useRef } from 'react';
-import { LogOut, AlertTriangle, Shield } from 'lucide-react';
+import { LogOut, AlertTriangle, Shield, User } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
 import { AurelLogo } from '@/components/features/AurelLogo';
@@ -36,6 +36,13 @@ export function ImmigrationLayout() {
             <AurelLogo />
           </Link>
           <div className="flex items-center gap-3">
+            <Link
+              to="/immigration/profil"
+              aria-label="Profil"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-card-sm px-3 py-2 text-[13px] font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+            >
+              <User className="h-4 w-4" /> <span className="hidden sm:inline">Profil</span>
+            </Link>
             {isAdmin && (
               <Link
                 to="/admin"

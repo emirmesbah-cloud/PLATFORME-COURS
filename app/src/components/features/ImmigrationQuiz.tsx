@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, XCircle, RotateCcw, Trophy, BookOpen, ArrowRight } from 'lucide-react';
+import { CheckCircle2, XCircle, RotateCcw, Trophy, BookOpen, ArrowRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import {
   fetchImmigrationQuiz, submitImmigrationQuiz,
   type ImmigrationQuizResult, type ImmigrationQuizQuestionStudent,
@@ -18,7 +18,7 @@ export function ImmigrationQuiz({ lessonSlug, onPassed }: { lessonSlug: string; 
   const qc = useQueryClient();
   const toast = useToast();
 
-  const { data: questions, isLoading } = useQuery({
+  const { data: questions, isLoading, isError, refetch } = useQuery({
     queryKey: ['immigration-quiz', lessonSlug],
     queryFn: () => fetchImmigrationQuiz(lessonSlug),
     staleTime: 5 * 60 * 1000,
@@ -39,6 +39,20 @@ export function ImmigrationQuiz({ lessonSlug, onPassed }: { lessonSlug: string; 
       <div className="card-padded animate-pulse">
         <div className="mb-3 h-4 w-32 rounded bg-zinc-200" />
         <div className="space-y-2">{[1,2,3,4].map((i) => <div key={i} className="h-10 rounded bg-zinc-100" />)}</div>
+      </div>
+    );
+  }
+  if (isError) {
+    return (
+      <div className="card-padded flex flex-col items-center gap-3 text-center">
+        <AlertTriangle className="h-8 w-8 text-amber-500" />
+        <div>
+          <p className="font-semibold text-zinc-900">Le quiz n'a pas pu charger</p>
+          <p className="mt-1 text-sm text-zinc-600">Vérifie ta connexion puis réessaie.</p>
+        </div>
+        <button onClick={() => refetch()} className="btn-primary">
+          <RefreshCw className="h-4 w-4" /> Réessayer
+        </button>
       </div>
     );
   }
@@ -156,6 +170,7 @@ function Result({ result, questions, userAnswers, onRetry }: {
   const total = result.total ?? 0;
   const threshold = result.threshold ?? Math.ceil(total * 0.6);
   const correct = result.correct ?? [];
+  const hasDetailedCorrections = correct.length === questions.length;
 
   return (
     <div className="card overflow-hidden">
@@ -172,7 +187,7 @@ function Result({ result, questions, userAnswers, onRetry }: {
       </div>
 
       <div className="space-y-3 p-5">
-        {questions.map((q, i) => {
+        {hasDetailedCorrections ? questions.map((q, i) => {
           const userPick = userAnswers[i];
           const goodIdx = correct[i];
           const isGood = userPick === goodIdx;
@@ -193,7 +208,19 @@ function Result({ result, questions, userAnswers, onRetry }: {
               </div>
             </div>
           );
-        })}
+        }) : (
+          <div className="rounded-card-sm border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
+            <div className="flex items-start gap-2">
+              <BookOpen className="mt-0.5 h-4 w-4 flex-none text-aurel-orange" />
+              <div>
+                <p className="font-semibold text-zinc-900">Résultat enregistré</p>
+                <p className="mt-1">
+                  Les réponses exactes ne sont pas affichées. Revois la leçon, puis recommence le quiz pour améliorer ton score.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t border-zinc-100 bg-zinc-50 px-5 py-3">

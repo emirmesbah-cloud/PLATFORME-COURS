@@ -121,6 +121,7 @@ export const routes: RouteObject[] = [
     ),
     children: [
       { index: true,                          element: <L><ImmigrationOverview /></L> },
+      { path: 'profil',                       element: <StudentProfile /> },
       { path: ':moduleSlug/:lessonSlug',       element: <L><ImmigrationLessonReader /></L> },
     ],
   },

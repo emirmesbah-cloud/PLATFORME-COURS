@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ChevronLeft, ChevronRight, Clock, CheckCircle2, Circle, StickyNote, GraduationCap, Shield, AlertTriangle, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Clock, CheckCircle2, Circle, StickyNote, GraduationCap, Shield, AlertTriangle, RefreshCw, Lock } from 'lucide-react';
 import { VideoPlaceholder } from '@/components/features/VideoPlaceholder';
 import { ImmigrationVideoPlayer } from '@/components/features/ImmigrationVideoPlayer';
 import { ImmigrationQuiz } from '@/components/features/ImmigrationQuiz';
 import { ImmigrationNotes } from '@/components/features/ImmigrationNotes';
-import { findLesson, findLessonInModule, fetchImmigrationStatus, setImmigrationCompleted, fetchImmigrationLessonMedia } from '@/lib/immigration';
+import { findLesson, findLessonInModule, fetchImmigrationStatus, setImmigrationCompleted, fetchImmigrationLessonMedia, getImmigrationModuleAccess } from '@/lib/immigration';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -38,16 +38,78 @@ export function ImmigrationLessonReader() {
     staleTime: 30 * 1000,
   });
 
+  const moduleAccess = moduleSlug
+    ? getImmigrationModuleAccess(moduleSlug, statusQ.data ?? [], isAdmin)
+    : { locked: false, previousModuleSlug: null, previousModuleTitle: null };
+  const accessCheckPending = !isAdmin && statusQ.isLoading;
+  const accessCheckFailed = !isAdmin && statusQ.isError;
+  const canLoadLesson = Boolean(
+    moduleSlug && lessonSlug && lessonMeta && nav &&
+    !accessCheckPending && !accessCheckFailed && !moduleAccess.locked,
+  );
+
   // Video media : id + publish flag for THIS lesson (mig 035).
   const mediaQ = useQuery({
     queryKey: ['immigration-lesson-media', lessonSlug],
     queryFn: () => fetchImmigrationLessonMedia(lessonSlug!),
-    enabled: !!lessonSlug,
+    // Fail closed while progression is loading. Previously a student could
+    // paste a locked Module 1+ URL and the page fetched media/OTP before the
+    // overview's visual lock had any effect.
+    enabled: canLoadLesson,
     staleTime: 60 * 1000,
   });
 
   if (!moduleSlug || !lessonSlug || !lessonMeta || !nav) {
     return <Navigate to="/immigration" replace />;
+  }
+
+  if (accessCheckPending) {
+    return (
+      <div className="mx-auto max-w-lg">
+        <Link to="/immigration" className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-aurel-orange">
+          <ArrowLeft className="h-4 w-4" /> Tous les modules
+        </Link>
+        <div className="card-padded flex justify-center">
+          <Spinner label="Vérification de l'accès…" />
+        </div>
+      </div>
+    );
+  }
+
+  if (accessCheckFailed) {
+    return (
+      <div className="mx-auto max-w-lg">
+        <Link to="/immigration" className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-aurel-orange">
+          <ArrowLeft className="h-4 w-4" /> Tous les modules
+        </Link>
+        <div className="card-padded space-y-3 text-center">
+          <AlertTriangle className="mx-auto h-9 w-9 text-amber-500" />
+          <h2 className="text-xl font-bold text-zinc-900">Accès temporairement indisponible</h2>
+          <p className="text-sm text-zinc-600">La progression n'a pas pu charger. Vérifie ta connexion puis réessaie.</p>
+          <button onClick={() => statusQ.refetch()} className="btn-primary">Réessayer</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (moduleAccess.locked) {
+    return (
+      <div className="mx-auto max-w-lg">
+        <Link to="/immigration" className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-aurel-orange">
+          <ArrowLeft className="h-4 w-4" /> Tous les modules
+        </Link>
+        <div className="card-padded space-y-3 text-center">
+          <Lock className="mx-auto h-9 w-9 text-zinc-400" />
+          <h2 className="text-xl font-bold text-zinc-900">Module verrouillé</h2>
+          <p className="text-sm text-zinc-600">
+            Termine d'abord le module précédent
+            {moduleAccess.previousModuleTitle ? ` — « ${moduleAccess.previousModuleTitle.replace(/^MODULE\s+\d+\s*[—–-]\s*/i, '')} »` : ''}
+            {' '}pour accéder à cette leçon.
+          </p>
+          <Link to="/immigration" className="btn-primary inline-flex">Retour au cours</Link>
+        </div>
+      </div>
+    );
   }
 
   const status = (statusQ.data ?? []).find((s) => s.lesson_slug === lessonSlug);
