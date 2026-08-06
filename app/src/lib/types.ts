@@ -88,7 +88,7 @@ export interface AdminStats {
   avg_completion: number;
 }
 
-export type WebinarGroupSlug = 'immigration' | 'pflege';
+export type WebinarGroupSlug = 'immigration' | 'pflege' | 'tiktok';
 
 export interface WebinarGroup {
   slug: WebinarGroupSlug;

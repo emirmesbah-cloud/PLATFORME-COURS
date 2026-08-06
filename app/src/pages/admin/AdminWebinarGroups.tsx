@@ -17,6 +17,11 @@ const GROUP_META: Record<WebinarGroupSlug, { title: string; pageUrl: string; des
     pageUrl: 'https://aurel-academy.com/pflege/webinar/',
     description: "Lien utilisé après l'inscription au webinar Pflege.",
   },
+  tiktok: {
+    title: 'Campagne TikTok',
+    pageUrl: 'https://aurel-academy.com/webinartk/',
+    description: 'Lien utilisé par la landing page des publicités TikTok.',
+  },
 };
 
 function parseWhatsAppGroupCode(value: string): string | null {
