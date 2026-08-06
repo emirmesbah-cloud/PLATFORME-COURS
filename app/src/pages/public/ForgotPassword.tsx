@@ -63,10 +63,17 @@ export function ForgotPasswordPage() {
     }
 
     setSubmitting(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
-      redirectTo: window.location.origin + '/reset-password',
-    });
-    setSubmitting(false);
+    let requestError: unknown = null;
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
+        redirectTo: window.location.origin + '/reset-password',
+      });
+      requestError = error;
+    } catch (error) {
+      requestError = error;
+    } finally {
+      setSubmitting(false);
+    }
 
     // Set cooldown REGARDLESS of error : on ne veut pas révéler si l'email
     // existe ou pas (privacy + anti-enumeration). Le cooldown s'applique
@@ -79,13 +86,13 @@ export function ForgotPasswordPage() {
     // d'un email — donc `error != null` ici signale un VRAI problème
     // (network, 429, 500, captcha, smtp down). On ne ment pas à l'user dans
     // ces cas-là.
-    if (error) {
+    if (requestError) {
       // eslint-disable-next-line no-console
-      console.warn('[Aurel] reset-password error', error);
-      const status = (error as { status?: number }).status ?? 0;
-      const msg = (error.message ?? '').toLowerCase();
+      console.warn('[Aurel] reset-password error', requestError);
+      const status = (requestError as { status?: number }).status ?? 0;
+      const msg = requestError instanceof Error ? requestError.message.toLowerCase() : '';
       const isRateLimited = status === 429 || msg.includes('rate') || msg.includes('limit');
-      const isServer = status >= 500 || msg.includes('network') || msg.includes('failed to fetch');
+      const isServer = status >= 500 || msg.includes('network') || msg.includes('fetch') || msg.includes('abort');
       if (isRateLimited || isServer) {
         toast.error(
           isRateLimited

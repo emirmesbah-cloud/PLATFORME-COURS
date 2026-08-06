@@ -12,24 +12,29 @@ import { FullPageSpinner } from '@/components/ui/Spinner';
  *
  * Mirrors AdminGuard's stub handling : the JWT-stub profile has NO course_access,
  * so deciding on it would wrongly bounce a legit Immigration student on a new
- * device / slow ISP (first load, before cache/DB resolves). We wait briefly for
- * the profile to upgrade to 'cache'/'db' (which carry course_access) before
- * deciding; after 5s of only-stub we fall back to /dashboard (fail-closed).
+ * device / slow ISP (first load, before cache/DB resolves). A cached Pflege
+ * value can also be stale immediately after an admin grants Immigration.
+ * We therefore wait for the authoritative DB profile before denying access.
  */
 export function ImmigrationGuard({ children }: { children: React.ReactNode }) {
   const { session, profile, profileSource, isLoading, isAdmin } = useAuth();
 
-  // Brief wait for a JWT-stub profile to upgrade to cache/DB (which carries
-  // course_access). Same 5s fail-closed pattern as AdminGuard.
-  const [stubExpired, setStubExpired] = useState(false);
+  // loadProfile can take 12s × 3 attempts on a very slow connection. The old
+  // 5s timeout rejected legitimate Immigration students before attempt 1 had
+  // even completed.
+  const [profileWaitExpired, setProfileWaitExpired] = useState(false);
   useEffect(() => {
-    if (session && profile && profileSource === 'jwt') {
-      setStubExpired(false);
-      const t = setTimeout(() => setStubExpired(true), 5000);
+    const needsAuthoritativeCheck = session && profile && (
+      profileSource === 'jwt' ||
+      (profileSource === 'cache' && profile.course_access !== 'immigration')
+    );
+    if (needsAuthoritativeCheck) {
+      setProfileWaitExpired(false);
+      const t = setTimeout(() => setProfileWaitExpired(true), 45_000);
       return () => clearTimeout(t);
     }
-    setStubExpired(false);
-  }, [session?.user?.id, profile?.id, profileSource]);
+    setProfileWaitExpired(false);
+  }, [session?.user?.id, profile?.id, profile?.course_access, profileSource]);
 
   if (isLoading) return <FullPageSpinner />;
   if (!session) return <Navigate to="/login" replace />;
@@ -38,10 +43,13 @@ export function ImmigrationGuard({ children }: { children: React.ReactNode }) {
     return <FullPageSpinner label="Vérification de l'accès…" />;
   }
 
-  // Only the JWT stub so far (no course_access on it) — wait for cache/DB rather
-  // than bouncing a real Immigration student. After 5s, fail closed.
-  if (profileSource === 'jwt') {
-    if (!stubExpired) {
+  // Wait on a JWT stub or a potentially stale denying cache. A DB-confirmed
+  // profile remains the authorization source; after 45s we still fail closed.
+  if (
+    profileSource === 'jwt' ||
+    (profileSource === 'cache' && profile.course_access !== 'immigration')
+  ) {
+    if (!profileWaitExpired) {
       return <FullPageSpinner label="Vérification de l'accès…" />;
     }
     return <Navigate to="/dashboard" replace />;

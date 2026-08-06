@@ -13,7 +13,7 @@ export function RootRedirect() {
   // DB confirmait — flash UI désagréable.
   //
   // Maintenant : si le profile n'est pas encore DB-confirmed, on attend
-  // jusqu'à 5s. Au-delà, fallback /dashboard (le RootRedirect n'a pas
+  // jusqu'à 45s. Au-delà, fallback /dashboard (le RootRedirect n'a pas
   // accès à des routes protégées, donc l'admin sera juste sur /dashboard
   // brièvement avant que la DB n'arrive et qu'il navigue lui-même).
   const [waited, setWaited] = useState(false);
@@ -21,10 +21,13 @@ export function RootRedirect() {
     const needsWait = session && (!profile || profileSource !== 'db');
     if (needsWait) {
       // SHERLOCK R3 fix : ne re-set PAS waited=false ici. Une fois le
-      // timeout 5s écoulé, on reste en mode "go ahead with what we have"
+      // timeout écoulé, on reste en mode "go ahead with what we have"
       // jusqu'au prochain user.id change. Sinon, profile arrives → waited
       // flip false → spinner re-flicker → DB confirms → final route.
-      const t = setTimeout(() => setWaited(true), 5000);
+      // loadProfile may legitimately need 12s × 3 retries on a poor mobile
+      // connection. Five seconds routed Immigration students into Pflege
+      // before the first authoritative request had completed.
+      const t = setTimeout(() => setWaited(true), 45_000);
       return () => clearTimeout(t);
     }
     // Pas de needsWait → pas besoin de timer. On reset waited à false
@@ -35,7 +38,7 @@ export function RootRedirect() {
   if (isLoading) return <FullPageSpinner />;
   if (!session)  return <Navigate to="/login" replace />;
 
-  // Profile pas DB-confirmé yet → spinner jusqu'à 5s pour laisser le
+  // Profile pas DB-confirmé yet → spinner jusqu'à 45s pour laisser le
   // loadProfile background rapatrier la vérité. Évite le flash d'admin
   // routé vers /dashboard.
   if ((!profile || profileSource !== 'db') && !waited) {

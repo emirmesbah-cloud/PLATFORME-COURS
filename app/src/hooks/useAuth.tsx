@@ -37,9 +37,9 @@ import {
 } from 'react';
 import type { Session, User, RealtimeChannel } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
-import { supabase, intentionalRemoval } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { decodeJwtPayload } from '@/lib/jwt';
-import { writeSessionBackup, clearSessionBackup, readSessionBackup } from '@/lib/session-backup';
+import { clearSessionBackup } from '@/lib/session-backup';
 import { setSentryUser } from '@/lib/sentry';
 import type { Profile } from '@/lib/types';
 
@@ -221,21 +221,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // stub/cache state and is_admin is unreliable.
   const isAdminConfirmedRef = useRef(false);
 
-  // R23 : throttle the spurious-SIGNED_OUT warning to once per minute.
-  // Otherwise on flapping ISP it spams the console + Sentry breadcrumbs.
-  const lastSpuriousSignOutLogAtRef = useRef(0);
-
-  // SHERLOCK R12 (BULLETPROOF) — Persist auth forever, until explicit user logout.
-  // Tracks WHO triggered the SIGNED_OUT event :
-  //   true  = user clicked logout button OR realtime kicked us (legitimate)
-  //   false = supabase-js auto-fired SIGNED_OUT (token refresh fail, network hiccup,
-  //          transient 401 from slow Supabase EU from DZ — NOT a real signout)
-  // The SIGNED_OUT handler below checks this ref. If false → ignore event,
-  // keep user logged in. If true → execute cleanup normally.
-  // → User experience : « jamais déco sauf si je clique logout », même quand
-  //   le réseau merde / Supabase rame / le token essaie de se refresh.
-  const intentionalSignOutRef = useRef(false);
-
   /**
    * Charge le profile via SELECT direct sur profiles.
    *
@@ -353,18 +338,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (reason?: 'kicked' | 'verify_failed') => {
       if (isSigningOutRef.current) return;
       isSigningOutRef.current = true;
-      // R12 : mark this signOut as intentional so the SIGNED_OUT handler
-      // actually executes cleanup (vs ignoring spurious supabase-js firings)
-      intentionalSignOutRef.current = true;
-      // R16 : unlock the localStorage suppression so supabase-js can actually
-      // clear the auth key during this intentional logout. The flag is
-      // re-asserted to false in the finally block below.
-      intentionalRemoval.current = true;
-      // R17 : also clear our independent session backup — otherwise next page
-      // load would restore the dead session from backup.
+      // Clear the legacy backup as well as the official Supabase session.
       clearSessionBackup();
       try {
         writeLocalSessionId(null);
+        // Clear local state first. A revoked or kicked session must stop
+        // rendering protected UI even when the server revoke call is slow.
+        setSession(null);
+        setProfile(null);
+        setProfileSource('none');
+        clearCachedProfile();
+        queryClient.clear();
+        setSentryUser(null);
+
         if (realtimeChannelRef.current) {
           await supabase.removeChannel(realtimeChannelRef.current);
           realtimeChannelRef.current = null;
@@ -372,16 +358,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // SECURITY : scope:'global' révoque le refresh token côté SERVEUR.
         // Sans ça, un attaquant qui aurait exfiltré le refresh token pourrait
         // continuer à l'utiliser après le logout.
-        await supabase.auth.signOut({ scope: 'global' });
-        setSession(null);
-        setProfile(null);
-        setProfileSource('none');
-        clearCachedProfile();
-        // SHERLOCK R3 fix : clear queryClient cache + Sentry user. Avant,
-        // un kick laissait les queries d'admin et le contexte Sentry
-        // attribués à l'ancien user.
-        queryClient.clear();
-        setSentryUser(null);
+        try {
+          await Promise.race([
+            supabase.auth.signOut({ scope: 'global' }),
+            new Promise<void>((_, reject) => window.setTimeout(() => reject(new Error('signOut timeout')), 5_000)),
+          ]);
+        } catch (error) {
+          console.warn('[Aurel] forced server signOut failed/slow; local session is already cleared', error);
+        }
 
         if (reason === 'kicked') {
           window.dispatchEvent(
@@ -395,9 +379,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } finally {
         isSigningOutRef.current = false;
-        // R16 : re-lock the storage suppression so future spurious SIGNED_OUT
-        // events (from token refresh failures) cannot clear localStorage.
-        intentionalRemoval.current = false;
       }
     },
     [queryClient]
@@ -443,10 +424,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             filter: `id=eq.${userId}`,
           },
           (payload) => {
-            const newRow = payload.new as { current_session_id?: string | null };
+            const newRow = payload.new as Profile & { current_session_id?: string | null };
             const oldRow = payload.old as { current_session_id?: string | null };
             const sidChanged = newRow?.current_session_id !== oldRow?.current_session_id;
-            if (!sidChanged) return; // ignore les updates non pertinents
+            if (!sidChanged) {
+              // Course access and profile edits must reach an already logged-in
+              // student immediately. Previously every non-session UPDATE was
+              // ignored, so an admin could grant Immigration access while the
+              // student's browser kept a stale Pflege profile for up to 24h.
+              if (newRow?.id === userId) {
+                setProfile(newRow);
+                setProfileSource('db');
+                writeCachedProfile(userId, newRow);
+                setSentryUser({
+                  id: newRow.id,
+                  email: newRow.email,
+                  tier: newRow.tier,
+                  is_admin: newRow.is_admin,
+                });
+              }
+              return;
+            }
 
             const newSid = newRow?.current_session_id;
             if (!newSid) return;
@@ -582,9 +580,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Étape 1 : lecture synchrone du state local de supabase-js (instant).
       // supabase-js HYDRATE la session depuis localStorage de manière
       // synchrone à la construction du client, donc storage est déjà rempli.
-      // R17 : if the main key didn't have a session for some reason, fall back
-      // to our independent backup (restoreMainFromBackupIfMissing already ran
-      // before supabase-js init, but defensive double-check here too).
+      // Read the official Supabase session cache synchronously. The client
+      // validates or refreshes it in the background immediately afterward.
       let localSession: Session | null = null;
       try {
         const localSessionStr = localStorage.getItem('aurel-academy-auth');
@@ -597,25 +594,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               localSession = null;
             }
           } catch {}
-        }
-        // R17 : if main storage didn't yield a session, try the independent
-        // backup. This catches any case where supabase-js's own storage was
-        // wiped (failed token refresh, edge race, ServiceWorker shenanigans).
-        if (!localSession) {
-          const backup = readSessionBackup();
-          if (backup?.access_token && backup?.user) {
-            localSession = backup;
-            // Re-write the main key so supabase-js sees it on its own hydration.
-            try {
-              localStorage.setItem('aurel-academy-auth', JSON.stringify({
-                ...backup,
-                currentSession: backup,
-                expiresAt: backup.expires_at,
-              }));
-              // eslint-disable-next-line no-console
-              console.info('[Aurel R17] Bootstrap restored session from backup');
-            } catch {}
-          }
         }
         if (localSession?.user && mounted) {
           setSession(localSession);
@@ -713,34 +691,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // double claim/subscribe si Supabase JS fire SIGNED_IN au restore.
     let lastHandledUserId: string | null = null;
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      // SHERLOCK R15 — CRITICAL BUG FIX of R12.
-      //
-      // R12 was supposed to ignore spurious SIGNED_OUT events but had a
-      // FATAL ordering bug : `setSession(newSession)` ran UNCONDITIONALLY
-      // at the top of the handler, BEFORE the SIGNED_OUT check.
-      // So when supabase-js fired SIGNED_OUT with newSession=null (token
-      // refresh hiccup on slow ISP, transient 401, etc.), this line
-      // immediately cleared the session → AuthGuard saw session=null →
-      // redirect to /login. The "ignore" return below was too late : damage done.
-      //
-      // FIX : early-return BEFORE any state mutation if the event is a
-      // spurious SIGNED_OUT (no intentionalSignOutRef set). Now the React
-      // session state survives spurious SIGNED_OUT events. The JWT in
-      // supabase-js storage may briefly become invalid ; supabase-js's own
-      // auto-refresh re-issues a fresh token on next API call. User stays
-      // logged in. This is what R12 was supposed to do.
-      if (event === 'SIGNED_OUT' && !intentionalSignOutRef.current) {
-        // R23 : throttle the log to once per minute. On flapping ISP this
-        // can fire dozens of times in a row and pollute Sentry breadcrumbs.
-        const now = Date.now();
-        if (now - lastSpuriousSignOutLogAtRef.current > 60_000) {
-          lastSpuriousSignOutLogAtRef.current = now;
-          // eslint-disable-next-line no-console
-          console.warn('[Aurel R15] Ignoring spurious SIGNED_OUT — session preserved (throttled)');
-        }
-        return;
-      }
-
+      // Supabase is the single source of truth for session lifecycle.
       setSession(newSession);
 
       // CRITICAL FIX (port from Naim) : INITIAL_SESSION fire au boot quand
@@ -792,9 +743,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // SHERLOCK R19 : only call claim_session if we DON'T already have a
-        // local session_id for this user. On F5 with R17 backup restore,
-        // supabase-js fires SIGNED_IN (not INITIAL_SESSION) because it sees a
-        // "new" session in storage. But we already have a session_id from the
+        // local session_id for this user. On a restored browser session,
+        // supabase-js can fire SIGNED_IN while we already have a session id.
         // original login. Re-claiming would :
         //   1. Issue a NEW UUID server-side that races with our existing one.
         //   2. If claim_session times out CLIENT-side but SUCCEEDS server-side
@@ -826,26 +776,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Refresh JWT silencieux → on touche à rien sauf si le profile manque
         if (!profile) await loadProfile(newSession.user.id);
       } else if (event === 'SIGNED_OUT') {
-        // SHERLOCK R12 (BULLETPROOF) — never logout except via explicit user
-        // action. supabase-js fires SIGNED_OUT for many reasons : explicit
-        // signOut call, token refresh failure, transient 401 from slow auth
-        // endpoint, refresh-token revoked, etc.
-        //
-        // We only want to acknowledge SIGNED_OUT when WE triggered it (user
-        // clicked logout button OR realtime kicked another session). Any
-        // other SIGNED_OUT = spurious = ignore = keep user logged in.
-        //
-        // Users on slow DZ → Supabase EU routing had constant random logouts.
-        // No more. The session JWT might be stale but the React state stays.
-        // Next API call may 401, but user can click around or refresh and
-        // supabase-js will auto-refresh. Worst case : a few failed queries
-        // until the next refresh cycle. Never a logout unless intentional.
-        if (!intentionalSignOutRef.current) {
-          console.warn('[Aurel] Ignoring spurious SIGNED_OUT — user stays logged in (R12)');
-          return;
-        }
-        intentionalSignOutRef.current = false;
-
+        // Supabase emits SIGNED_OUT when the session is explicitly closed or
+        // is no longer valid. Keeping that dead JWT in React/localStorage made
+        // every protected request fail with 401 while the UI still looked
+        // authenticated. Clear deterministically and let the login page start
+        // a clean session.
         lastHandledUserId = null;
         if (realtimeChannelRef.current) {
           await supabase.removeChannel(realtimeChannelRef.current);
@@ -884,21 +819,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdminConfirmedRef.current = true;
     }
   }, [profile?.is_admin, profileSource]);
-
-  // SHERLOCK R17 : write to independent session backup whenever the session
-  // changes. The backup survives even if supabase-js wipes its own storage on
-  // a failed token refresh. On next page load, supabase.ts's
-  // restoreMainFromBackupIfMissing() rehydrates the main storage from this
-  // backup BEFORE supabase-js initializes → no F5 logout possible.
-  useEffect(() => {
-    if (session) {
-      writeSessionBackup(session);
-    }
-    // Note : do NOT call clearSessionBackup() when session becomes null here.
-    // That happens both for intentional logouts AND for transient state in
-    // useAuth during re-renders. Backup clearing is done explicitly inside
-    // signOut() and forceSignOut() to keep it tied to user intent.
-  }, [session]);
 
   // SHERLOCK R12 (BULLETPROOF) — removed the periodic verifyLocalSession poll.
   //
@@ -954,7 +874,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           consecutiveFailures += 1;
           // 3 strikes : on accepte que le user est vraiment kicked.
           if (consecutiveFailures >= 3) {
-            intentionalSignOutRef.current = true;
             await forceSignOut('kicked');
           }
         } else if (result.data?.ok === true) {
@@ -976,16 +895,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session, loadProfile]);
 
   const signOut = useCallback(async () => {
-    // R12 : mark this signOut as user-initiated so SIGNED_OUT event executes
-    // its cleanup branch. Without this flag, my R12 fix would treat the
-    // event as spurious and refuse to clear state.
-    intentionalSignOutRef.current = true;
-    // R16 : unlock the localStorage suppression so supabase.auth.signOut()
-    // can clear the auth key for real (user clicked logout, we want it gone).
-    // Re-locked in the finally block so future spurious SIGNED_OUT events
-    // cannot wipe storage during the next session.
-    intentionalRemoval.current = true;
-    // R17 : also clear our independent session backup.
+    // Also remove the legacy duplicate session backup.
     clearSessionBackup();
 
     // SHERLOCK R7 fix : OPTIMISTIC clear FIRST so the UI flips to logged-out
@@ -1020,9 +930,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn('[Aurel] server signOut failed/slow (local state already cleared):', (e as Error)?.message ?? e);
-    } finally {
-      // R16 : re-lock so subsequent spurious SIGNED_OUT events can't wipe storage.
-      intentionalRemoval.current = false;
     }
   }, [queryClient]);
 

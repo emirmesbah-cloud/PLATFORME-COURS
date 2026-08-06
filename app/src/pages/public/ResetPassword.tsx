@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Loader2, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
 import {
   clearPasswordRecoverySession,
-  intentionalRemoval,
   isRememberedPasswordRecoverySession,
   rememberPasswordRecoverySession,
   supabase,
@@ -40,6 +39,7 @@ export function ResetPasswordPage() {
   const [ready, setReady]         = useState(false);
   const [linkValid, setLinkValid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [done, setDone]           = useState(false);
 
   const [pwd, setPwd]         = useState('');
@@ -57,9 +57,11 @@ export function ResetPasswordPage() {
         setLinkValid(true);
         setReady(true);
       }
-      // SIGNED_IN avec un JWT recovery (cas reload après l'event a été consommé)
+      // A recovery token may refresh while the form is open. The remembered
+      // marker is tied to the same user id, so INITIAL_SESSION/SIGNED_IN/
+      // TOKEN_REFRESHED can all safely restore the form after a reload.
       if (
-        event === 'SIGNED_IN' &&
+        (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') &&
         session &&
         (
           isRememberedPasswordRecoverySession(session.access_token) ||
@@ -112,6 +114,7 @@ export function ResetPasswordPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submittingRef.current) return;
     if (pwd.length < 8) {
       toast.error('Mot de passe trop faible (min. 8 caractères).', 'Erreur');
       return;
@@ -120,34 +123,45 @@ export function ResetPasswordPage() {
       toast.error('Les mots de passe ne correspondent pas.', 'Erreur');
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
-    const { error } = await supabase.auth.updateUser({ password: pwd });
-    setSubmitting(false);
-    if (error) {
-      const message = error.message.toLowerCase();
-      if (message.includes('expired') || message.includes('invalid') || message.includes('session')) {
-        clearPasswordRecoverySession();
-        setLinkValid(false);
-        toast.error('Ce lien a expiré. Demande un nouveau lien de réinitialisation.', 'Lien expiré');
-      } else {
-        toast.error(error.message, 'Erreur');
-      }
-      return;
-    }
-    clearPasswordRecoverySession();
-    setDone(true);
-    toast.success('Mot de passe mis à jour.', 'Succès');
-    // scope:'global' pour révoquer le refresh token côté serveur — empêche
-    // un attaquant qui aurait un refresh token volé de rester connecté.
-    // This is an intentional logout: allow the protected auth key to be
-    // removed and clear the independent backup so the recovery session is
-    // not restored on the next page load.
-    intentionalRemoval.current = true;
-    clearSessionBackup();
     try {
-      await supabase.auth.signOut({ scope: 'global' });
+      const { error } = await supabase.auth.updateUser({ password: pwd });
+      if (error) {
+        const message = error.message.toLowerCase();
+        if (message.includes('expired') || message.includes('invalid') || message.includes('session')) {
+          clearPasswordRecoverySession();
+          setLinkValid(false);
+          toast.error('Ce lien a expiré. Demande un nouveau lien de réinitialisation.', 'Lien expiré');
+        } else {
+          toast.error(error.message, 'Erreur');
+        }
+        return;
+      }
+
+      clearPasswordRecoverySession();
+      setDone(true);
+      toast.success('Mot de passe mis à jour.', 'Succès');
+      // Revoke other sessions after a successful password change. Local UI
+      // already moves to success, so a slow sign-out cannot hide the result.
+      clearSessionBackup();
+      try {
+        await supabase.auth.signOut({ scope: 'global' });
+      } catch {
+        // The password update already succeeded. The login redirect remains
+        // the safe next step even if the remote session revoke was slow.
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : '';
+      toast.error(
+        message.includes('abort') || message.includes('network') || message.includes('fetch')
+          ? 'Connexion interrompue. Vérifie Internet puis réessaie avec ce même lien.'
+          : 'Le mot de passe n’a pas pu être mis à jour. Réessaie.',
+        'Erreur réseau',
+      );
     } finally {
-      intentionalRemoval.current = false;
+      submittingRef.current = false;
+      setSubmitting(false);
     }
     // SHERLOCK R3 fix : `done` flag déclenche un redirect via useEffect
     // (cf. ci-dessous) plutôt qu'un setTimeout direct ici. Ça évite que

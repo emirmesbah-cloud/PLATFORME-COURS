@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, ChevronDown, CheckCircle2, Circle, Play, Download, Layers, Lock, Shield } from 'lucide-react';
+import { ArrowRight, ChevronDown, CheckCircle2, Circle, Play, Download, Layers, Lock, Shield, AlertTriangle, RefreshCw } from 'lucide-react';
 import {
   IMMIGRATION_COURSE, IMMIGRATION_SECTIONS, IMMIGRATION_FLAT_LESSONS,
 } from '@/data/immigration-structure';
@@ -103,6 +103,21 @@ export function ImmigrationOverview() {
           <Link to="/admin/immigration-lessons" className="btn-outline flex-none">
             Gérer les vidéos
           </Link>
+        </section>
+      )}
+
+      {statusQ.isError && (
+        <section className="flex flex-col gap-3 rounded-card border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3 text-amber-900">
+            <AlertTriangle className="mt-0.5 h-5 w-5 flex-none" />
+            <div>
+              <div className="text-sm font-semibold">Progression temporairement indisponible</div>
+              <p className="mt-0.5 text-xs">La connexion a échoué. Tes données ne sont pas perdues.</p>
+            </div>
+          </div>
+          <button onClick={() => statusQ.refetch()} className="btn-outline flex-none">
+            <RefreshCw className="h-4 w-4" /> Réessayer
+          </button>
         </section>
       )}
 

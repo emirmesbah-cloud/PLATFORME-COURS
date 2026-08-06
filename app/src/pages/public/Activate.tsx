@@ -139,21 +139,29 @@ export function ActivatePage() {
     };
 
     try {
-      const r = await fetch(`${SUPABASE_URL_PUBLIC}/functions/v1/activate-account`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY as string,
-        },
-        body: JSON.stringify({
-          code: parsed.data.code.trim(),
-          email,
-          password,
-          first_name: parsed.data.first_name.trim(),
-          last_name: parsed.data.last_name.trim(),
-          whatsapp: normalizeWhatsapp(parsed.data.whatsapp.trim()),
-        }),
-      });
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 30_000);
+      let r: Response;
+      try {
+        r = await fetch(`${SUPABASE_URL_PUBLIC}/functions/v1/activate-account`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY as string,
+          },
+          body: JSON.stringify({
+            code: parsed.data.code.trim(),
+            email,
+            password,
+            first_name: parsed.data.first_name.trim(),
+            last_name: parsed.data.last_name.trim(),
+            whatsapp: normalizeWhatsapp(parsed.data.whatsapp.trim()),
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        window.clearTimeout(timeout);
+      }
       const data = await r.json();
       if (!data.ok) {
         const recoverable = ['CODE_ALREADY_USED', 'EMAIL_ALREADY_EXISTS'].includes(data.error);

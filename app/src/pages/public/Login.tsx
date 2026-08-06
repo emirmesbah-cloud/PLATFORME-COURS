@@ -36,26 +36,30 @@ export function LoginPage() {
     if (!parse.success) return;
     submittingRef.current = true;
     setSubmitting(true);
-    const { error } = await supabase.auth.signInWithPassword(parse.data);
-    if (error) {
+    try {
+      const { error } = await supabase.auth.signInWithPassword(parse.data);
+      if (error) {
+        toast.error('Email ou mot de passe incorrect.', 'Connexion impossible');
+        return;
+      }
+
+      // Route through the authoritative profile redirect after sign-in.
+      const fromPath = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+      navigate(fromPath || '/', { replace: true });
+    } catch (error) {
+      // Network failures and the global 30s Supabase timeout used to leave
+      // the submit button frozen forever because this path was not caught.
+      const message = error instanceof Error ? error.message.toLowerCase() : '';
+      toast.error(
+        message.includes('abort') || message.includes('network') || message.includes('fetch')
+          ? 'Connexion réseau trop lente ou interrompue. Vérifie Internet puis réessaie.'
+          : 'Une erreur inattendue est survenue. Réessaie.',
+        'Connexion impossible',
+      );
+    } finally {
       submittingRef.current = false;
       setSubmitting(false);
-      toast.error('Email ou mot de passe incorrect.', 'Connexion impossible');
-      return;
     }
-
-    submittingRef.current = false;
-    setSubmitting(false);
-
-    // SHERLOCK R3 fix : on N'EXÉCUTE PLUS un SELECT is_admin manuel ici.
-    // Avant, ce check bypassait le `isAdmin = profileSource === 'db'` gate
-    // de useAuth — un admin avec poisoned cache était routé vers /admin
-    // dès le sign-in, exposant l'URL admin avant la confirmation DB.
-    // Maintenant : on route toujours vers "/" (RootRedirect), qui attend
-    // la confirmation DB du profile et tranche admin/student avec le
-    // isAdmin gated du context. Single source of truth.
-    const fromPath = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-    navigate(fromPath || '/', { replace: true });
   }
 
   // Banner shown when redirected from VideoPlayer / AuthGuard after session
@@ -64,6 +68,7 @@ export function LoginPage() {
     | { sessionExpired?: boolean; profileLoadFailed?: boolean }
     | null;
   const showSessionExpiredBanner = !!navState?.sessionExpired;
+  const showProfileLoadFailedBanner = !!navState?.profileLoadFailed;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
@@ -75,6 +80,12 @@ export function LoginPage() {
             <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               <p className="font-semibold">Reconnexion nécessaire</p>
               <p className="mt-1 text-xs">Ta session a expiré suite à une mise à jour serveur. Reconnecte-toi pour reprendre.</p>
+            </div>
+          )}
+          {showProfileLoadFailedBanner && !showSessionExpiredBanner && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="font-semibold">Profil temporairement indisponible</p>
+              <p className="mt-1 text-xs">La connexion était trop lente. Reconnecte-toi pour relancer le chargement.</p>
             </div>
           )}
 

@@ -9,7 +9,7 @@ type AbortablePromiseLike<T> = PromiseLike<T> & {
   abortSignal?: (signal: AbortSignal) => PromiseLike<T>;
 };
 
-function withQueryTimeout<T>(p: AbortablePromiseLike<T>, ms = 10000, label = 'query'): Promise<T> {
+export function withQueryTimeout<T>(p: AbortablePromiseLike<T>, ms = 10000, label = 'query'): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const controller = new AbortController();
     const request = typeof p.abortSignal === 'function'
@@ -181,17 +181,24 @@ export async function fetchVdocipherOtp(videoId: string): Promise<VdocipherOtpRe
 
   // Helper to do the actual fetch with whatever access token is current.
   const doFetch = async (accessToken: string) => {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-        'apikey': env.VITE_SUPABASE_ANON_KEY,
-      },
-      body: JSON.stringify({ video_id: videoId }),
-    });
-    const body = await r.json().catch(() => ({}));
-    return { status: r.status, ok: r.ok, body };
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 20_000);
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ video_id: videoId }),
+        signal: controller.signal,
+      });
+      const body = await r.json().catch(() => ({}));
+      return { status: r.status, ok: r.ok, body };
+    } finally {
+      window.clearTimeout(timer);
+    }
   };
 
   // 1. Grab the current access token.

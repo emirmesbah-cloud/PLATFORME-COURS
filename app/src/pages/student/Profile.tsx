@@ -42,26 +42,29 @@ export function StudentProfile() {
     }
     const normalizedWa = normalizeWhatsapp(trimmedWa);
     setSaving(true);
-    const { error } = await supabase
-      .from('profiles')
-      .update({ first_name: first.trim(), last_name: last.trim(), whatsapp: normalizedWa, diplome_algerien: diplome })
-      .eq('id', user.id)
-      .select('id')
-      .maybeSingle();
-    setSaving(false);
-    if (error) {
-      // SHERLOCK R7 fix : surface the actual error code/message instead
-      // of a generic "Réessaie" — helps debug RLS / trigger failures.
-      // eslint-disable-next-line no-console
-      console.warn('[Aurel] profile save error:', error);
-      const msg = error.code === '42501'
-        ? 'Permission refusée (RLS). Si tu viens de te connecter, recharge la page.'
-        : `Impossible de sauvegarder. ${error.message?.slice(0, 80) || 'Réessaie.'}`;
-      toast.error(msg, 'Erreur');
-      return;
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ first_name: first.trim(), last_name: last.trim(), whatsapp: normalizedWa, diplome_algerien: diplome })
+        .eq('id', user.id)
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        // Surface the actual error code/message instead of a generic retry.
+        console.warn('[Aurel] profile save error:', error);
+        const msg = error.code === '42501'
+          ? 'Permission refusée (RLS). Si tu viens de te connecter, recharge la page.'
+          : `Impossible de sauvegarder. ${error.message?.slice(0, 80) || 'Réessaie.'}`;
+        toast.error(msg, 'Erreur');
+        return;
+      }
+      await refreshProfile();
+      toast.success('Profil mis à jour.');
+    } catch {
+      toast.error('Connexion interrompue. Vérifie Internet puis réessaie.', 'Erreur réseau');
+    } finally {
+      setSaving(false);
     }
-    await refreshProfile();
-    toast.success('Profil mis à jour.');
   }
 
   // R22 : double-submit guard. Resend charges per email — without this,
@@ -80,6 +83,8 @@ export function StudentProfile() {
         return;
       }
       toast.success(`Lien envoyé à ${profile.email}.`, 'Email envoyé');
+    } catch {
+      toast.error('Connexion interrompue. Réessaie dans un instant.', 'Envoi impossible');
     } finally {
       setSendingReset(false);
     }

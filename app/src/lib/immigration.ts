@@ -11,6 +11,7 @@ import {
   type ImmigrationLesson,
 } from '@/data/immigration-structure';
 import { supabase } from '@/lib/supabase';
+import { withQueryTimeout } from '@/lib/queries';
 
 // ── DB-backed types (mig 20260611000033) ────────────────────────
 export interface ImmigrationLessonStatus {
@@ -69,29 +70,43 @@ export function findLessonInModule(moduleSlug: string, lessonSlug: string): Immi
 
 /** One round-trip : status of every immigration lesson for the current user. */
 export async function fetchImmigrationStatus(): Promise<ImmigrationLessonStatus[]> {
-  const { data, error } = await supabase.rpc('get_my_immigration_status');
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('get_my_immigration_status'),
+    12_000,
+    'fetchImmigrationStatus',
+  );
   if (error) throw error;
-  if (!data || (data as { ok: boolean }).ok === false) return [];
-  return ((data as { lessons: ImmigrationLessonStatus[] }).lessons ?? []);
+  if (!data) return [];
+  const result = data as { ok: boolean; error?: string; lessons?: ImmigrationLessonStatus[] };
+  if (result.ok === false) throw new Error(result.error || 'IMMIGRATION_STATUS_FAILED');
+  return result.lessons ?? [];
 }
 
 /** Mark / unmark a lesson completed (persisted in DB, cross-device). */
 export async function setImmigrationCompleted(
   lessonSlug: string, moduleSlug: string, completed: boolean,
 ): Promise<void> {
-  const { error } = await supabase.rpc('set_immigration_lesson_completed', {
-    p_lesson_slug: lessonSlug, p_module_slug: moduleSlug, p_completed: completed,
-  });
+  const { error } = await withQueryTimeout(
+    supabase.rpc('set_immigration_lesson_completed', {
+      p_lesson_slug: lessonSlug, p_module_slug: moduleSlug, p_completed: completed,
+    }),
+    12_000,
+    'setImmigrationCompleted',
+  );
   if (error) throw error;
 }
 
 /** Fetch a lesson's quiz questions (without correct answers — server scores). */
 export async function fetchImmigrationQuiz(lessonSlug: string): Promise<ImmigrationQuizQuestionStudent[]> {
-  const { data, error } = await supabase
-    .from('immigration_quiz_questions')
-    .select('id, lesson_slug, position, question_text, option_a, option_b, option_c, option_d')
-    .eq('lesson_slug', lessonSlug)
-    .order('position', { ascending: true });
+  const { data, error } = await withQueryTimeout(
+    supabase
+      .from('immigration_quiz_questions')
+      .select('id, lesson_slug, position, question_text, option_a, option_b, option_c, option_d')
+      .eq('lesson_slug', lessonSlug)
+      .order('position', { ascending: true }),
+    12_000,
+    'fetchImmigrationQuiz',
+  );
   if (error) throw error;
   return (data ?? []) as ImmigrationQuizQuestionStudent[];
 }
@@ -100,29 +115,41 @@ export async function fetchImmigrationQuiz(lessonSlug: string): Promise<Immigrat
 export async function submitImmigrationQuiz(
   lessonSlug: string, answers: number[],
 ): Promise<ImmigrationQuizResult> {
-  const { data, error } = await supabase.rpc('submit_immigration_quiz_attempt', {
-    p_lesson_slug: lessonSlug, p_answers: answers,
-  });
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('submit_immigration_quiz_attempt', {
+      p_lesson_slug: lessonSlug, p_answers: answers,
+    }),
+    15_000,
+    'submitImmigrationQuiz',
+  );
   if (error) throw error;
   return data as ImmigrationQuizResult;
 }
 
 /** Fetch the student's personal note for a lesson. */
 export async function fetchImmigrationNote(lessonSlug: string): Promise<string> {
-  const { data, error } = await supabase
-    .from('immigration_notes')
-    .select('content')
-    .eq('lesson_slug', lessonSlug)
-    .maybeSingle();
+  const { data, error } = await withQueryTimeout(
+    supabase
+      .from('immigration_notes')
+      .select('content')
+      .eq('lesson_slug', lessonSlug)
+      .maybeSingle(),
+    10_000,
+    'fetchImmigrationNote',
+  );
   if (error) throw error;
   return (data?.content as string) ?? '';
 }
 
 /** Save the student's personal note for a lesson. */
 export async function saveImmigrationNote(lessonSlug: string, content: string): Promise<void> {
-  const { error } = await supabase.rpc('upsert_immigration_note', {
-    p_lesson_slug: lessonSlug, p_content: content,
-  });
+  const { error } = await withQueryTimeout(
+    supabase.rpc('upsert_immigration_note', {
+      p_lesson_slug: lessonSlug, p_content: content,
+    }),
+    12_000,
+    'saveImmigrationNote',
+  );
   if (error) throw error;
 }
 
@@ -180,11 +207,15 @@ export interface ImmigrationLessonMedia {
 
 /** Student : video id + publish state for ONE lesson (null row = no video yet). */
 export async function fetchImmigrationLessonMedia(lessonSlug: string): Promise<ImmigrationLessonMedia | null> {
-  const { data, error } = await supabase
-    .from('immigration_lessons')
-    .select('lesson_slug, vdocipher_video_id, is_published')
-    .eq('lesson_slug', lessonSlug)
-    .maybeSingle();
+  const { data, error } = await withQueryTimeout(
+    supabase
+      .from('immigration_lessons')
+      .select('lesson_slug, vdocipher_video_id, is_published')
+      .eq('lesson_slug', lessonSlug)
+      .maybeSingle(),
+    12_000,
+    'fetchImmigrationLessonMedia',
+  );
   if (error) throw error;
   return (data as ImmigrationLessonMedia) ?? null;
 }

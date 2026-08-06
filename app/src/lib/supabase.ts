@@ -1,34 +1,35 @@
 import { createClient } from '@supabase/supabase-js';
-import { restoreMainFromBackupIfMissing } from './session-backup';
+import { clearSessionBackup } from './session-backup';
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const RECOVERY_SESSION_KEY = 'aurel:password-recovery-session';
 
 type RememberedRecoverySession = {
-  accessToken: string;
+  userId: string;
   expiresAt: number;
 };
 
-function tokenExpiresAt(accessToken: string): number {
+function tokenIdentity(accessToken: string): { userId: string; expiresAt: number } | null {
   try {
     const part = accessToken.split('.')[1];
-    if (!part) return 0;
+    if (!part) return null;
     const padded = part.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(part.length / 4) * 4, '=');
-    const payload = JSON.parse(atob(padded)) as { exp?: number };
-    return typeof payload.exp === 'number' ? payload.exp * 1000 : 0;
+    const payload = JSON.parse(atob(padded)) as { sub?: string; exp?: number };
+    if (!payload.sub || typeof payload.exp !== 'number') return null;
+    return { userId: payload.sub, expiresAt: payload.exp * 1000 };
   } catch {
-    return 0;
+    return null;
   }
 }
 
 export function rememberPasswordRecoverySession(accessToken: string): void {
-  const expiresAt = tokenExpiresAt(accessToken);
-  if (!accessToken || expiresAt <= Date.now()) return;
+  const identity = tokenIdentity(accessToken);
+  if (!identity || identity.expiresAt <= Date.now()) return;
   try {
     window.sessionStorage.setItem(
       RECOVERY_SESSION_KEY,
-      JSON.stringify({ accessToken, expiresAt } satisfies RememberedRecoverySession),
+      JSON.stringify(identity satisfies RememberedRecoverySession),
     );
   } catch {
     // PASSWORD_RECOVERY remains the fallback when sessionStorage is unavailable.
@@ -38,11 +39,13 @@ export function rememberPasswordRecoverySession(accessToken: string): void {
 export function isRememberedPasswordRecoverySession(accessToken: string | undefined): boolean {
   if (!accessToken) return false;
   try {
+    const identity = tokenIdentity(accessToken);
+    if (!identity) return false;
     const raw = window.sessionStorage.getItem(RECOVERY_SESSION_KEY);
     if (!raw) return false;
     const remembered = JSON.parse(raw) as Partial<RememberedRecoverySession>;
     if (
-      remembered.accessToken !== accessToken ||
+      remembered.userId !== identity.userId ||
       typeof remembered.expiresAt !== 'number' ||
       remembered.expiresAt <= Date.now()
     ) {
@@ -59,10 +62,11 @@ export function clearPasswordRecoverySession(): void {
   try { window.sessionStorage.removeItem(RECOVERY_SESSION_KEY); } catch {}
 }
 
-// Capture the implicit-flow recovery token synchronously, before createClient()
-// initializes and removes the URL fragment. Otherwise PASSWORD_RECOVERY can
-// fire before React mounts and a valid link is shown as expired.
-if (window.location.pathname === '/reset-password' && window.location.hash.length > 1) {
+// Capture the implicit-flow recovery identity synchronously, before
+// createClient() initializes and removes the URL fragment. We remember the
+// user id (not the raw token), so a legitimate token refresh while the reset
+// form is open does not make the link appear expired.
+if (/\/reset-password\/?$/.test(window.location.pathname) && window.location.hash.length > 1) {
   const recoveryParams = new URLSearchParams(window.location.hash.slice(1));
   if (recoveryParams.get('type') === 'recovery') {
     const recoveryAccessToken = recoveryParams.get('access_token');
@@ -78,43 +82,12 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   );
 }
 
-// SHERLOCK R16 (BULLETPROOF² — fix to R12+R15) :
-// R12 and R15 prevented React state from being cleared on spurious SIGNED_OUT.
-// But supabase-js ALSO clears localStorage internally when its refresh token
-// flow fails. Result : user's React session survives the current page, BUT
-// next refresh (F5) loads with empty localStorage → AuthGuard sees no session
-// → redirects to /login. From the user's POV : "F5 logs me out".
-//
-// FIX : a custom storage wrapper that REFUSES to delete the auth key unless
-// the deletion was explicitly initiated by the user (logout button OR realtime
-// kick). All other deletion attempts — typically supabase-js auto-clearing
-// during a failed refresh on slow Algerian → Supabase EU routing — are
-// silently suppressed. The stale JWT stays in localStorage ; supabase-js's
-// own auto-refresh will retry on next API call and either succeed (network
-// recovered) or fail again (real revocation → kicked event from Realtime
-// will eventually fire forceSignOut and unlock the storage).
-//
-// Side effect of suppressing removeItem :
-//   - If the refresh_token is genuinely revoked server-side, the stale JWT
-//     in localStorage will return 401 on every API call until the user's
-//     Realtime channel catches up and forceSignOut fires. Worst case : a
-//     few failed queries in a row. Never an unintended logout.
-//   - On INTENTIONAL signOut (button click or kick), useAuth sets
-//     intentionalRemoval=true before calling supabase.auth.signOut(), so
-//     the wrapper allows removeItem normally.
-
 const AUTH_KEY = 'aurel-academy-auth';
 
-// R17 : restore main storage from backup BEFORE supabase-js initializes.
-// This way, supabase-js's synchronous hydration from localStorage already
-// sees the restored session. Fixes F5 logout when the main key was wiped
-// by a previous failed token refresh that R16 didn't catch in time.
-restoreMainFromBackupIfMissing(AUTH_KEY);
-
-// Mutable flag shared with useAuth via the export below. Toggled true ONLY
-// inside forceSignOut() / explicit signOut handlers — never reset to true
-// by transient code paths.
-export const intentionalRemoval = { current: false };
+// Remove the legacy duplicate refresh-token backup. Supabase owns the auth
+// lifecycle now; resurrecting a server-revoked session caused repeated 401s
+// and made valid users look logged in while every protected request failed.
+clearSessionBackup();
 
 // SHERLOCK R14 — M8 : fallback en mémoire si localStorage throw (Safari Private
 // Browsing pre-15.4 throws QuotaExceeded on ANY setItem call ; certains
@@ -132,16 +105,30 @@ const safeStorage = {
     catch { memMap.set(k, v); }
   },
   removeItem(k: string): void {
-    // R16 : refuse to delete the auth key unless the deletion is intentional.
-    if (k === AUTH_KEY && !intentionalRemoval.current) {
-      // eslint-disable-next-line no-console
-      console.warn('[Aurel R16] Suppressed auth key removeItem — session preserved across refresh');
-      return;
-    }
     try { window.localStorage.removeItem(k); } catch {}
     memMap.delete(k);
   },
 };
+
+// A dead mobile connection must not leave auth/profile requests pending
+// forever. Respect a caller-provided AbortSignal and add a 30s ceiling for
+// every Supabase request (Auth, REST, RPC and Storage).
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const upstream = init.signal;
+  const forwardAbort = () => controller.abort();
+  if (upstream) {
+    if (upstream.aborted) controller.abort();
+    else upstream.addEventListener('abort', forwardAbort, { once: true });
+  }
+  const timer = window.setTimeout(() => controller.abort(), 30_000);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+    upstream?.removeEventListener('abort', forwardAbort);
+  }
+}
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
@@ -150,6 +137,9 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     detectSessionInUrl: true,
     storage: safeStorage,
     storageKey: AUTH_KEY,
+  },
+  global: {
+    fetch: fetchWithTimeout,
   },
 });
 

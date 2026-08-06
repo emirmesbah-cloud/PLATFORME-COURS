@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ChevronLeft, ChevronRight, Clock, CheckCircle2, Circle, StickyNote, GraduationCap, Shield } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Clock, CheckCircle2, Circle, StickyNote, GraduationCap, Shield, AlertTriangle, RefreshCw } from 'lucide-react';
 import { VideoPlaceholder } from '@/components/features/VideoPlaceholder';
 import { ImmigrationVideoPlayer } from '@/components/features/ImmigrationVideoPlayer';
 import { ImmigrationQuiz } from '@/components/features/ImmigrationQuiz';
@@ -10,6 +10,7 @@ import { findLesson, findLessonInModule, fetchImmigrationStatus, setImmigrationC
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import { Spinner } from '@/components/ui/Spinner';
 
 type Tab = 'quiz' | 'notes';
 
@@ -99,7 +100,22 @@ export function ImmigrationLessonReader() {
             Aperçu admin — cette vidéo est encore invisible aux étudiants.
           </div>
         )}
-        {canPlayVideo && mediaQ.data?.vdocipher_video_id ? (
+        {mediaQ.isLoading ? (
+          <div className="flex aspect-video w-full items-center justify-center rounded-card bg-zinc-950 text-white">
+            <Spinner label="Chargement de la leçon…" />
+          </div>
+        ) : mediaQ.isError ? (
+          <div className="flex aspect-video w-full items-center justify-center rounded-card bg-zinc-950 text-white">
+            <div className="flex flex-col items-center gap-3 p-6 text-center">
+              <AlertTriangle className="h-10 w-10 text-amber-400" />
+              <div className="font-semibold">La leçon n'a pas pu charger</div>
+              <p className="max-w-sm text-sm text-zinc-400">Vérifie ta connexion puis réessaie.</p>
+              <button onClick={() => mediaQ.refetch()} className="btn-primary">
+                <RefreshCw className="h-4 w-4" /> Réessayer
+              </button>
+            </div>
+          </div>
+        ) : canPlayVideo && mediaQ.data?.vdocipher_video_id ? (
           <ImmigrationVideoPlayer videoId={mediaQ.data.vdocipher_video_id} title={lessonMeta.title} />
         ) : (
           <VideoPlaceholder title={lessonMeta.title} />
