@@ -2,24 +2,13 @@
 // Aurel Academy — Plateforme étudiant — Phase 1
 // Edge Function : POST /functions/v1/activate-account
 //
-// Deux actions, une seule page /activate pour les DEUX cours :
+// Implémente le flow complet d'activation décrit dans le brief :
+//   { code, email, password, first_name, last_name, whatsapp } → session
 //
-//   { action: 'check', code }
-//     → { ok, program: 'pflege' | 'immigration', tier }
-//     Étape 1→2 : le SERVEUR dit quel programme le code débloque, pour que
-//     /activate affiche le bon formulaire. Lecture seule : ne crée rien, ne
-//     consomme pas le code. Le `program` renvoyé pilote uniquement l'AFFICHAGE.
-//
-//   { action: 'activate', code, email, password, first_name, last_name, whatsapp }
-//     → session  (action par défaut)
-//     Étape 4 : activation réelle. Le cours inscrit n'est JAMAIS lu depuis la
-//     requête : redeem_activation_code relit `course` sur la ligne du code.
-//     Falsifier la réponse de 'check' ne change donc que le formulaire affiché.
-//
-// Étapes de l'activation :
+// Étapes :
 //   1. Validation basique des champs
-//   2. RPC validate_activation_code(code) → vérifie que le code existe, n'est
-//      ni utilisé, ni révoqué, ni en attente. Retourne le tier + le cours.
+//   2. RPC validate_activation_code(code) → vérifie que le code existe et
+//      n'est pas déjà utilisé. Retourne le tier.
 //   3. auth.admin.createUser : crée l'utilisateur (email confirmé)
 //   4. auth.admin.signInWithPassword : génère une session (OU retourne
 //      { needs_login: true } si tu préfères que le client se signIn lui-même).
@@ -27,11 +16,8 @@
 //      le profile + marque le code utilisé. Atomique.
 //
 // Erreurs explicites retournées :
-//   États du code  : CODE_INVALID, CODE_ALREADY_USED, CODE_REVOKED, CODE_PENDING
-//                    (CODE_UNAVAILABLE = état inattendu, ne devrait pas arriver)
-//   Compte / input : EMAIL_ALREADY_EXISTS, EMAIL_INVALID, MISSING_FIELDS,
-//                    WEAK_PASSWORD, INVALID_ACTION, PAYLOAD_TOO_LARGE
-//   Serveur        : REDEEM_FAILED, INTERNAL_ERROR, TOO_MANY_ATTEMPTS
+//   CODE_INVALID, CODE_ALREADY_USED, EMAIL_ALREADY_EXISTS, MISSING_FIELDS,
+//   WEAK_PASSWORD, REDEEM_FAILED, INTERNAL_ERROR.
 //
 // Déploiement :
 //   supabase functions deploy activate-account
@@ -77,71 +63,6 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-/**
- * "AU-X3K7M9" → "AU-X3••••"
- *
- * An activation code is a bearer secret : whoever holds it can claim a paid
- * seat. It must never land intact in a log sink (console, Sentry, Telegram).
- * We keep the prefix + 2 characters so Aurel can still disambiguate which code
- * a support ticket is about, but the masked form cannot be redeemed.
- */
-function maskCode(code: string): string {
-  if (!code) return '(vide)';
-  if (code.length <= 5) return '•'.repeat(code.length);
-  return code.slice(0, 5) + '•'.repeat(code.length - 5);
-}
-
-// Code states surfaced to the client, straight from the RPC. Anything the RPC
-// returns that is NOT in this list is a bug on our side, not a user-facing
-// state, so it collapses to CODE_UNAVAILABLE.
-const CODE_STATE_ERRORS = new Set([
-  'CODE_INVALID',
-  'CODE_ALREADY_USED',
-  'CODE_REVOKED',
-  'CODE_PENDING',
-]);
-
-function codeStateError(rpcError: unknown): string {
-  const e = typeof rpcError === 'string' ? rpcError : '';
-  return CODE_STATE_ERRORS.has(e) ? e : 'CODE_UNAVAILABLE';
-}
-
-// Per-IP budget over a rolling 15 min window, shared by BOTH actions.
-// Raised from 10 to 20 alongside the two-step flow : one activation now costs
-// two requests ('check' + 'activate') instead of one, and Algerian students
-// routinely activate from the same carrier-NAT / cyber-café IP. 20 keeps the
-// effective number of activations per IP where it was, while 20 probes per
-// 15 min remains negligible against a 31^6 (~887M) keyspace.
-const MAX_ATTEMPTS_PER_WINDOW = 20;
-
-/**
- * Records the attempt and reports whether the caller is over budget.
- * Fails OPEN on storage errors — a throttle-table outage must never block a
- * student who has already paid.
- */
-async function isThrottled(admin: SupabaseClient, req: Request): Promise<boolean> {
-  try {
-    const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-    const clientIp = req.headers.get('cf-connecting-ip')?.trim() || forwarded || 'unknown';
-    const windowStart = new Date(Date.now() - 15 * 60_000).toISOString();
-    const { count, error: countErr } = await admin
-      .from('activation_attempts')
-      .select('id', { count: 'exact', head: true })
-      .eq('ip', clientIp)
-      .gte('attempted_at', windowStart);
-    if (countErr) throw countErr;
-    if ((count ?? 0) >= MAX_ATTEMPTS_PER_WINDOW) return true;
-    const { error: insertErr } = await admin
-      .from('activation_attempts')
-      .insert({ ip: clientIp });
-    if (insertErr) throw insertErr;
-    return false;
-  } catch (throttleErr) {
-    console.warn('[activate-account] throttle unavailable; failing open', throttleErr);
-    return false;
-  }
-}
-
 serve(async (req) => {
   // Build CORS headers from the request origin (allowlist enforced in buildCors)
   const origin = req.headers.get('origin');
@@ -171,73 +92,13 @@ serve(async (req) => {
     return errorResponse('INVALID_JSON');
   }
 
-  // `action` selects the step of the two-step activation flow :
-  //   'check'    → step 1→2 : validate the code and report WHICH program it
-  //                unlocks, so /activate can render the matching account form.
-  //                Read-only : creates nothing, consumes nothing, and the code
-  //                stays redeemable.
-  //   'activate' → step 4 : the real activation. Default, so any older client
-  //                posting the original payload shape keeps working.
-  const action = (payload?.action ?? 'activate').toString();
-  if (action !== 'check' && action !== 'activate') {
-    return errorResponse('INVALID_ACTION');
-  }
-
-  // Codes are generated from an uppercase-only alphabet, so normalising here
-  // makes the server robust to a lowercase WhatsApp copy-paste instead of
-  // relying on the browser to have done it.
-  const code        = (payload?.code        ?? '').toString().trim().toUpperCase();
+  const code        = (payload?.code        ?? '').toString().trim();
   const email       = (payload?.email       ?? '').toString().trim().toLowerCase();
   const password    = (payload?.password    ?? '').toString();
   const first_name  = (payload?.first_name  ?? '').toString().trim();
   const last_name   = (payload?.last_name   ?? '').toString().trim();
   const whatsapp    = (payload?.whatsapp    ?? '').toString().trim();
 
-  // Client admin (service_role) pour valider le code et créer le user.
-  const admin: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  // Per-IP throttle, applied to BOTH actions so the cheap read-only 'check'
-  // step cannot be used to walk the code keyspace any faster than 'activate'
-  // could. The backing table is service-role-only.
-  if (await isThrottled(admin, req)) return errorResponse('TOO_MANY_ATTEMPTS', 429);
-
-  // ── Step 1→2 : which program does this code unlock? ───────────────────────
-  if (action === 'check') {
-    if (!code) return errorResponse('MISSING_FIELDS');
-
-    const { data: cData, error: cErr } = await admin.rpc('validate_activation_code', { p_code: code });
-    if (cErr) {
-      await reportError(cErr, {
-        function: 'activate-account',
-        extra: { step: 'validate_activation_code', action: 'check', code: maskCode(code) },
-      });
-      return errorResponse('INTERNAL_ERROR', 500);
-    }
-    if (!cData?.ok) return errorResponse(codeStateError(cData?.error));
-
-    // Deployment-order guard: validate_activation_code only returns `course`
-    // once migration 048 is applied. If this function ships first, fail loudly
-    // here instead of handing the client an undefined program — guessing one
-    // is how a student ends up enrolled in the wrong course.
-    if (cData.course !== 'pflege' && cData.course !== 'immigration') {
-      await reportError(new Error('validate_activation_code returned no usable course'), {
-        function: 'activate-account',
-        extra: { step: 'check', code: maskCode(code), got: cData.course ?? null },
-      });
-      return errorResponse('INTERNAL_ERROR', 500);
-    }
-
-    // `program` is the ONLY thing the client learns, and it comes exclusively
-    // from the stored code row. It decides which FORM is rendered — never which
-    // course gets enrolled: redeem_activation_code re-reads `course` from that
-    // same row at activation time, so tampering with the response changes the
-    // form the user sees and nothing else.
-    return jsonResponse({ ok: true, program: cData.course, tier: cData.tier });
-  }
-
-  // ── Step 4 : full activation ──────────────────────────────────────────────
   if (!code || !email || !password || !first_name || !last_name || !whatsapp) {
     return errorResponse('MISSING_FIELDS');
   }
@@ -252,19 +113,39 @@ serve(async (req) => {
     return errorResponse('MISSING_FIELDS');
   }
 
+  // Client admin (service_role) pour valider le code et créer le user.
+  const admin: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  // Per-IP activation throttle. The backing table is service-role-only.
+  // Fail open on storage errors so an outage never blocks a paid student.
+  try {
+    const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+    const clientIp = req.headers.get('cf-connecting-ip')?.trim() || forwarded || 'unknown';
+    const windowStart = new Date(Date.now() - 15 * 60_000).toISOString();
+    const { count, error: countErr } = await admin
+      .from('activation_attempts')
+      .select('id', { count: 'exact', head: true })
+      .eq('ip', clientIp)
+      .gte('attempted_at', windowStart);
+    if (countErr) throw countErr;
+    if ((count ?? 0) >= 10) return errorResponse('TOO_MANY_ATTEMPTS', 429);
+    const { error: insertErr } = await admin
+      .from('activation_attempts')
+      .insert({ ip: clientIp });
+    if (insertErr) throw insertErr;
+  } catch (throttleErr) {
+    console.warn('[activate-account] throttle unavailable; failing open', throttleErr);
+  }
+
   // 1. Validation du code
   const { data: vData, error: vErr } = await admin.rpc('validate_activation_code', { p_code: code });
   if (vErr) {
-    await reportError(vErr, {
-      function: 'activate-account',
-      extra: { step: 'validate_activation_code', code: maskCode(code) },
-    });
+    await reportError(vErr, { function: 'activate-account', extra: { step: 'validate_activation_code' } });
     return errorResponse('INTERNAL_ERROR', 500);
   }
-  // Surface the EXACT state (invalid / used / revoked / pending) instead of
-  // collapsing every failure into one opaque message — the activation page
-  // shows a different, actionable text per state.
-  if (!vData?.ok) return errorResponse(codeStateError(vData?.error));
+  if (!vData?.ok) return errorResponse('CODE_UNAVAILABLE');
 
   // 2. Création du user (email auto-confirmé pour permettre le login direct)
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
@@ -340,7 +221,7 @@ serve(async (req) => {
         level: 'critical',
         extra: {
           email,
-          code: maskCode(code),
+          code,
           orphan_user_id: deleteOk ? null : newUserId,
           delete_err: deleteErr,
           detail: signInErr?.message ?? 'no session',
@@ -386,7 +267,7 @@ serve(async (req) => {
         level: 'critical',
         extra: {
           email,
-          code: maskCode(code),
+          code,
           orphan_user_id: deleteOk ? null : newUserId,
           rpc_error: rData?.error ?? 'REDEEM_FAILED',
           delete_err: deleteErr,
@@ -437,7 +318,7 @@ serve(async (req) => {
     notifyTelegram(`Nouvel étudiant inscrit ✅`, {
       function: 'activate-account',
       level: 'info',
-      extra: { email, name: `${first_name} ${last_name}`, code: maskCode(code), tier: rData.tier, course: rData.course },
+      extra: { email, name: `${first_name} ${last_name}`, code, tier: rData.tier, course: rData.course },
     }).catch(() => {}),
   );
 

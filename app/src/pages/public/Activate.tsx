@@ -1,45 +1,37 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Loader2, KeyRound } from 'lucide-react';
+import { supabase, SUPABASE_URL_PUBLIC } from '@/lib/supabase';
 import { useToast } from '@/components/ui/Toast';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { AurelLogo } from '@/components/features/AurelLogo';
-import { ActivationCodeForm, type CodeFormValues } from '@/components/features/ActivationCodeForm';
-import { ActivationAccountForm, type AccountFormValues } from '@/components/features/ActivationAccountForm';
-import { ActivationSuccess } from '@/components/features/ActivationSuccess';
-import { normalizeWhatsapp, courseLabel, coursePriceDzd } from '@/lib/utils';
 import {
-  checkActivationCode, activateAccount, asProgram, activationErrorMessage,
-  TERMINAL_CODE_STATES, PROGRAM_COPY, type Program,
-} from '@/lib/activation';
+  ACTIVATION_CODE_REGEX, WHATSAPP_REGEX, normalizeWhatsapp,
+  courseLabel, coursePriceDzd,
+} from '@/lib/utils';
 import { trackEvent } from '@/lib/pixel';
-import type { Tier } from '@/lib/types';
-
-/**
- * ONE activation page for BOTH programs.
- *
- * The core rule: the URL never decides the course — the validated activation
- * code does, server-side. This page:
- *   1. asks for the code (neutral copy — we don't know the program yet)
- *   2. asks the SERVER which program that code unlocks
- *   3. renders the matching account form (Pflege keeps its nursing onboarding;
- *      Immigration is never shown a nursing question)
- *   4. creates the account + enrollment in one server-side transaction
- *   5. sends the student to their own course
- *
- * The `program` value only ever picks which form to draw. The enrollment is
- * re-derived from the code row inside redeem_activation_code, so tampering with
- * the client state changes what you see and not what you get.
- */
+import type { Course, Tier } from '@/lib/types';
 
 /**
  * Fire the Meta Pixel "Purchase" event when a student successfully activates.
  *
- * Aurel sells cash-on-delivery: the student pays in person before receiving a
- * code, so by the time they're on this page they have ALREADY PAID — a real
- * purchase from Meta's perspective, not a lead. Fired once per real activation
- * from each success path. No-op if fbq isn't loaded (ad-blocker, dev).
+ * Aurel sells cash-on-delivery : the user pays Aurel in person before
+ * receiving an activation code. By the time they're on this page entering
+ * the code, they've ALREADY PAID — so this is a real purchase from Meta's
+ * perspective, not just a lead.
+ *
+ * Fired from each of the 3 success paths (recovery / normal / late-login)
+ * so we count one Purchase per real activation, never duplicated. No-op if
+ * fbq isn't loaded (ad-blocker, dev environment).
  */
-function fireActivationPurchase(args: { tier: Tier; course: Program; first_name: string }) {
+function courseFromActivationCode(code: string): Course {
+  return code.startsWith('IU-') || code.startsWith('IC-') ? 'immigration' : 'pflege';
+}
+
+function fireActivationPurchase(args: { tier: Tier; course: Course; first_name: string }) {
   trackEvent('Purchase', {
     content_name: 'Activation Aurel Academy',
     content_category: courseLabel(args.course),
@@ -51,81 +43,89 @@ function fireActivationPurchase(args: { tier: Tier; course: Program; first_name:
   });
 }
 
-type Step = 'code' | 'account' | 'success';
+const schema = z.object({
+  // SHERLOCK R14 — H2 : transform uppercase AVANT le regex check. L'input
+  // a déjà `autoCapitalize="characters"` + `className="...uppercase..."`
+  // côté visuel, mais un copier-coller de WhatsApp ("au-x3k7m9") échappait
+  // au CSS uppercase (qui ne change pas la value du DOM, seulement le
+  // rendering) et le regex `^(AU|AC)-...$` rejetait silencieusement.
+  // Transform + pipe garantit que le state contient toujours UPPERCASE.
+  code: z.string().trim().transform((s) => s.toUpperCase()).pipe(
+    z.string().regex(ACTIVATION_CODE_REGEX, 'Format attendu : AU-, AC- ou IU- suivi de 6 caractères')
+  ),
+  email: z.string().email('Email invalide'),
+  password: z.string().min(8, 'Au moins 8 caractères').max(128, 'Maximum 128 caractères'),
+  confirm_password: z.string().min(8).max(128),
+  first_name: z.string().min(1, 'Prénom requis').max(50),
+  last_name: z.string().min(1, 'Nom requis').max(50),
+  whatsapp: z.string().regex(WHATSAPP_REGEX, 'Format : 0555290826 (numéro algérien)'),
+  diplome_algerien: z.enum(['DEI', 'DEMA', 'ATS', 'Autre']),
+  accept_terms: z.literal(true, { errorMap: () => ({ message: 'Tu dois accepter les conditions' }) }),
+}).refine((d) => d.password === d.confirm_password, {
+  message: 'Les mots de passe ne correspondent pas',
+  path: ['confirm_password'],
+});
+
+type FormValues = z.infer<typeof schema>;
+
+const ERR_MSG: Record<string, string> = {
+  CODE_UNAVAILABLE:       'Code invalide ou indisponible.',
+  TOO_MANY_ATTEMPTS:      'Trop de tentatives. Réessaie dans 15 minutes.',
+  CODE_INVALID:           'Code d\'activation invalide.',
+  CODE_ALREADY_USED:      'Ce code a déjà été utilisé.',
+  EMAIL_ALREADY_EXISTS:   'Un compte existe déjà avec cet email — connecte-toi.',
+  EMAIL_INVALID:          'Email invalide.',
+  WEAK_PASSWORD:          'Mot de passe trop faible (min. 8 caractères).',
+  MISSING_FIELDS:         'Champs requis manquants.',
+  REDEEM_FAILED:          'Erreur lors de l\'activation. Réessaie ou contacte Aurel.',
+};
 
 export function ActivatePage() {
   const navigate = useNavigate();
   const toast = useToast();
-
-  const [step, setStep] = useState<Step>('code');
-  const [code, setCode] = useState('');
-  // Both come from the server, never from parsing the code in the browser.
-  const [program, setProgram] = useState<Program | null>(null);
-  const [codeTier, setCodeTier] = useState<Tier | null>(null);
-  const [codeError, setCodeError] = useState<string | null>(null);
-  const [firstName, setFirstName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // SHERLOCK R6 fix : double-submit ref guard (sync) for slow 3G.
   const submittingRef = useRef(false);
+  // Sherlock fix : was missing `resolver`, so `errors` stayed empty and all
+  // inline {errors.X && ...} messages never rendered. Users only saw a single
+  // generic toast on submit. Now per-field validation works.
+  const { register, handleSubmit, formState: { errors }, watch } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { diplome_algerien: 'DEI' as const, accept_terms: false as never },
+  });
 
-  // ── Step 1 → 2 : which program does this code unlock? ─────────────────────
-  async function onCodeSubmit(values: CodeFormValues) {
+  async function onSubmit(raw: FormValues) {
     if (submittingRef.current) return;
-    submittingRef.current = true;
-    setSubmitting(true);
-    setCodeError(null);
-
-    try {
-      const result = await checkActivationCode(values.code);
-      if (!result.ok || !result.program) {
-        setCodeError(activationErrorMessage(result.error));
-        return;
-      }
-      setCode(values.code);
-      setProgram(result.program);
-      setCodeTier(result.tier ?? null);
-      setStep('account');
-    } catch {
-      setCodeError(activationErrorMessage('NETWORK_ERROR'));
-    } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
+    const parsed = schema.safeParse(raw);
+    if (!parsed.success) {
+      const firstErr = parsed.error.errors[0];
+      const fieldName = firstErr.path.join('.');
+      toast.error(`${fieldName || 'champ'} : ${firstErr.message}`, 'Formulaire invalide');
+      // eslint-disable-next-line no-console
+      console.error('[Aurel] Activate validation errors:', parsed.error.errors);
+      return;
     }
-  }
-
-  /** Send the student back to step 1 with an explanation. */
-  function failBackToCode(error: string | undefined) {
-    setCodeError(activationErrorMessage(error));
-    setProgram(null);
-    setCodeTier(null);
-    setStep('code');
-  }
-
-  // ── Step 4 : create the account + the enrollment ──────────────────────────
-  async function onAccountSubmit(values: AccountFormValues) {
-    if (submittingRef.current || !program) return;
 
     submittingRef.current = true;
     setSubmitting(true);
-    const email = values.email.trim().toLowerCase();
-    const password = values.password;
-    const first_name = values.first_name.trim();
-    const whatsapp = normalizeWhatsapp(values.whatsapp.trim());
+    const email = parsed.data.email.trim().toLowerCase();
+    const password = parsed.data.password;
 
-    /**
-     * Auto-recovery: if activate-account already created the account but the
-     * response was lost (network drop), a retry returns CODE_ALREADY_USED. We
-     * silently sign in with the credentials just entered — and then verify the
-     * PROFILE exists, because an auth.users row without a profile means the
-     * activation did not really succeed and AuthGuard would loop
-     * /dashboard ↔ /activate. (SHERLOCK R3)
-     *
-     * The course comes from the profile row, i.e. still server-side truth.
-     */
-    const tryAutoLogin = async (): Promise<Program | null> => {
+    // Auto-recovery : si activate-account a déjà créé le compte mais que la
+    // réponse a été perdue (network drop), retry retournerait CODE_ALREADY_USED.
+    // On tente alors un signin silencieux avec les creds que l'user vient de
+    // saisir — si ça marche, on vérifie que le profil EXISTE (sinon le user
+    // est dans un état orphan : auth.users sans profile → AuthGuard
+    // bouclera /dashboard ↔ /activate). SHERLOCK R3 fix : on faisait juste
+    // un sign-in successful check, on n'attrapait pas le cas orphan.
+    const tryAutoLogin = async (): Promise<Course | null> => {
       const { data: signInData, error: signInErr } =
         await supabase.auth.signInWithPassword({ email, password });
       if (signInErr || !signInData?.session?.user) return null;
+      // Verify the profile actually exists for this user. If it doesn't,
+      // the activation didn't really succeed — the auth.users row is orphan.
+      // We sign back out and surface an explicit error so the user knows
+      // to contact support instead of looping.
       const { data: prof, error: profErr } = await supabase
         .from('profiles')
         .select('id, course_access')
@@ -135,51 +135,53 @@ export function ActivatePage() {
         await supabase.auth.signOut().catch(() => {});
         return null;
       }
-      return asProgram(prof.course_access) ?? 'pflege';
-    };
-
-    /** Shared terminal handling: pixel, then success screen or redirect. */
-    const finish = (course: Program, tier: Tier) => {
-      fireActivationPurchase({ tier, course, first_name });
-      setFirstName(first_name);
-      if (PROGRAM_COPY[course].showSuccessScreen) {
-        setProgram(course);
-        setStep('success');
-        return;
-      }
-      // Pflege keeps its existing behaviour: toast + straight to the dashboard.
-      toast.success(`Bienvenue ${first_name} chez Aurel Academy !`, 'Compte activé');
-      window.location.replace(PROGRAM_COPY[course].destination);
+      return prof.course_access === 'immigration' ? 'immigration' : 'pflege';
     };
 
     try {
-      // No course/program is sent — the server reads it off the code row.
-      const data = await activateAccount({
-        code, email, password,
-        first_name,
-        last_name: values.last_name.trim(),
-        whatsapp,
-      });
-
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 30_000);
+      let r: Response;
+      try {
+        r = await fetch(`${SUPABASE_URL_PUBLIC}/functions/v1/activate-account`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY as string,
+          },
+          body: JSON.stringify({
+            code: parsed.data.code.trim(),
+            email,
+            password,
+            first_name: parsed.data.first_name.trim(),
+            last_name: parsed.data.last_name.trim(),
+            whatsapp: normalizeWhatsapp(parsed.data.whatsapp.trim()),
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        window.clearTimeout(timeout);
+      }
+      const data = await r.json();
       if (!data.ok) {
-        const recoverable = data.error === 'CODE_ALREADY_USED' || data.error === 'EMAIL_ALREADY_EXISTS';
+        const recoverable = ['CODE_ALREADY_USED', 'EMAIL_ALREADY_EXISTS'].includes(data.error);
         const recoveredCourse = recoverable ? await tryAutoLogin() : null;
         if (recoveredCourse) {
-          finish(recoveredCourse, codeTier ?? 'autonome');
+          fireActivationPurchase({
+            tier: parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome',
+            course: recoveredCourse,
+            first_name: parsed.data.first_name.trim(),
+          });
+          toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
+          window.location.replace(recoveredCourse === 'immigration' ? '/immigration' : '/dashboard');
           return;
         }
-        // The code stopped being usable between step 1 and step 4 (revoked,
-        // claimed by someone else, put on hold). Step 1 owns the code, so the
-        // student goes back there rather than being stuck on a dead form.
-        if (data.error && TERMINAL_CODE_STATES.has(data.error)) {
-          failBackToCode(data.error);
-          return;
-        }
-        toast.error(activationErrorMessage(data.error), 'Activation impossible');
-        // R22 : on EMAIL_ALREADY_EXISTS with auto-login failure, point the
-        // student at the login page so they know where to go.
+        const msg = ERR_MSG[data.error] || 'Erreur inconnue. Contacte Aurel.';
+        // R22 : on EMAIL_ALREADY_EXISTS with auto-login failure, redirect
+        // to /login after toast so the user knows where to go.
+        toast.error(msg, 'Activation impossible');
         if (data.error === 'EMAIL_ALREADY_EXISTS') {
-          setTimeout(() => navigate('/login', { state: { from: { pathname: '/' } } }), 1500);
+          setTimeout(() => navigate('/login', { state: { from: { pathname: '/dashboard' } } }), 1500);
         }
         return;
       }
@@ -187,31 +189,34 @@ export function ActivatePage() {
       // SHERLOCK R10 fix — TOTALEMENT non-bloquant.
       // Bug : sur ISP lent, soit `await supabase.auth.setSession()` soit le
       // SIGNED_IN handler interne (qui appelle claim_session RPC) hang 15-30s,
-      // bloquant la navigation. User stuck sur "Activation en cours" alors que
-      // tout a réussi côté serveur (auth.users + profile créés, code redeemed).
+      // bloquant le navigate vers /dashboard. User stuck sur "Activer mon
+      // compte" alors que tout a réussi côté serveur (auth.users + profile
+      // créés, code redeemed, welcome email envoyé).
       //
       // Fix : on stocke MANUELLEMENT les tokens dans localStorage au format
       // attendu par supabase-js (clé 'aurel-academy-auth'). useAuth bootstrap
-      // les hydratera au prochain render.
+      // les hydratera au prochain render. setSession() est fired in background
+      // pour activer les handlers Supabase officiels — mais on navigate AVANT
+      // qu'il complete. Le diplôme update suit le même pattern.
       try {
         const sessionPayload = {
           currentSession: {
-            access_token:  data.session!.access_token,
-            refresh_token: data.session!.refresh_token,
-            expires_at:    data.session!.expires_at,
-            expires_in:    data.session!.expires_in,
-            token_type:    data.session!.token_type ?? 'bearer',
+            access_token:  data.session.access_token,
+            refresh_token: data.session.refresh_token,
+            expires_at:    data.session.expires_at,
+            expires_in:    data.session.expires_in,
+            token_type:    data.session.token_type ?? 'bearer',
             user: data.user ? {
               id:    data.user.id,
               email: data.user.email ?? email,
               user_metadata: {
-                first_name,
-                last_name: values.last_name.trim(),
-                whatsapp,
+                first_name: parsed.data.first_name.trim(),
+                last_name:  parsed.data.last_name.trim(),
+                whatsapp:   normalizeWhatsapp(parsed.data.whatsapp.trim()),
               },
             } : undefined,
           },
-          expiresAt: data.session!.expires_at,
+          expiresAt: data.session.expires_at,
         };
         localStorage.setItem('aurel-academy-auth', JSON.stringify(sessionPayload));
       } catch (e) {
@@ -220,47 +225,43 @@ export function ActivatePage() {
 
       // Fire setSession in background — non-blocking
       supabase.auth.setSession({
-        access_token:  data.session!.access_token,
-        refresh_token: data.session!.refresh_token,
+        access_token:  data.session.access_token,
+        refresh_token: data.session.refresh_token,
       }).then(() => {}, (e) => console.warn('[Aurel] setSession bg failed (non-blocking):', e?.message ?? e));
 
-      // The activated course is whatever the SERVER says it is. `program` is
-      // itself the server's answer from step 1, so the fallback is still
-      // server-derived — the code is never parsed in the browser.
-      const activatedCourse = asProgram(data.user?.course) ?? program;
-      const activatedTier = (data.user?.tier ?? codeTier ?? 'autonome') as Tier;
+      // Fire diplôme update in background — non-blocking
+      supabase
+        .from('profiles')
+        .update({ diplome_algerien: parsed.data.diplome_algerien })
+        .eq('id', data.user.id)
+        .then(({ error }) => {
+          if (error) console.warn('[Aurel] diplome update failed (non-blocking):', error.message);
+        }, (e) => console.warn('[Aurel] diplome update threw (non-blocking):', e?.message ?? e));
 
-      // Diplôme algérien is Pflege-only onboarding — never written for an
-      // Immigration student. Background, non-blocking.
-      if (activatedCourse === 'pflege' && values.diplome_algerien && data.user) {
-        supabase
-          .from('profiles')
-          .update({ diplome_algerien: values.diplome_algerien })
-          .eq('id', data.user.id)
-          .then(({ error }) => {
-            if (error) console.warn('[Aurel] diplome update failed (non-blocking):', error.message);
-          }, (e) => console.warn('[Aurel] diplome update threw (non-blocking):', e?.message ?? e));
-      }
-
-      // Pre-fill the profile cache : on a slow ISP this lets AuthGuard proceed
-      // immediately instead of waiting on the profiles query. Without it, some
-      // first-time students were bounced back to /activate (race between
-      // session-set and profile-loaded).
+      // Pre-fill profile cache (port from Naim) : sur ISP lent, le cache
+      // localStorage permet à AuthGuard de passer immédiatement vers
+      // /dashboard sans attendre la query DB sur profiles. Sans ça, des
+      // étudiants en première activation pouvaient être bouncés vers
+      // /activate (race condition session-set vs profile-loaded).
       try {
         const nowIso = new Date().toISOString();
+        const activatedCourse =
+          data.user?.course === 'immigration'
+            ? 'immigration'
+            : courseFromActivationCode(parsed.data.code);
         const cachedProfile = {
-          userId: data.user!.id,
+          userId:   data.user.id,
           profile: {
-            id:               data.user!.id,
-            email,
-            first_name,
-            last_name:        values.last_name.trim(),
-            whatsapp,
-            tier:             activatedTier,
+            id:               data.user.id,
+            email:            email,
+            first_name:       parsed.data.first_name.trim(),
+            last_name:        parsed.data.last_name.trim(),
+            whatsapp:         normalizeWhatsapp(parsed.data.whatsapp.trim()),
+            tier:             data.user.tier,
             course_access:    activatedCourse,
             is_admin:         false,
             activated_at:     nowIso,
-            diplome_algerien: values.diplome_algerien ?? null,
+            diplome_algerien: parsed.data.diplome_algerien,
             created_at:       nowIso,
             last_login_at:    nowIso,
           },
@@ -269,15 +270,45 @@ export function ActivatePage() {
         localStorage.setItem('aurel:profile-cache:v1', JSON.stringify(cachedProfile));
       } catch {}
 
-      finish(activatedCourse, activatedTier);
-    } catch {
-      // Network error: try auto-login as a last resort.
+      // Meta Pixel — fire Purchase BEFORE navigation. Window.location.replace
+      // does a hard reload, so any synchronous fbq() call must run first.
+      fireActivationPurchase({
+        tier: (data.user?.tier ?? (parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome')) as 'autonome' | 'accompagne',
+        course: data.user?.course === 'immigration'
+          ? 'immigration'
+          : courseFromActivationCode(parsed.data.code),
+        first_name: parsed.data.first_name.trim(),
+      });
+      toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
+      // SHERLOCK R11 fix : window.location.replace au lieu de navigate().
+      // navigate() est un client-side route change qui ne re-bootstrap PAS useAuth.
+      // useAuth état React = session: null (car setSession est fire-and-forget en R10).
+      // → AuthGuard voit session null → redirect /login → user voit Connexion form
+      //   au lieu du dashboard alors que toast disait "Compte activé".
+      // window.location.replace force un full reload :
+      //   1. App React re-mount
+      //   2. useAuth bootstrap lit localStorage (qu'on a écrit manuellement en R10)
+      //   3. Session hydrate synchrone, AuthGuard pass, /dashboard render.
+      // Timing : ~500ms de white flash, c'est OK pour une activation one-time.
+      window.location.replace(
+        (data.user?.course === 'immigration' || courseFromActivationCode(parsed.data.code) === 'immigration')
+          ? '/immigration'
+          : '/dashboard',
+      );
+    } catch (e) {
+      // Network error: try auto-login as last resort
       const recoveredCourse = await tryAutoLogin();
       if (recoveredCourse) {
-        finish(recoveredCourse, codeTier ?? 'autonome');
+        fireActivationPurchase({
+          tier: parsed.data.code.startsWith('AC-') ? 'accompagne' : 'autonome',
+          course: recoveredCourse,
+          first_name: parsed.data.first_name.trim(),
+        });
+        toast.success(`Bienvenue ${parsed.data.first_name} chez Aurel Academy !`, 'Compte activé');
+        window.location.replace(recoveredCourse === 'immigration' ? '/immigration' : '/dashboard');
         return;
       }
-      toast.error(activationErrorMessage('NETWORK_ERROR'), 'Activation impossible');
+      toast.error('Erreur réseau. Vérifie ta connexion.', 'Activation impossible');
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -290,47 +321,108 @@ export function ActivatePage() {
         <div className="mb-6 flex justify-center"><AurelLogo size="lg" /></div>
 
         <div className="card-padded">
-          {step === 'code' && (
-            <>
-              <ActivationCodeForm
-                onSubmit={onCodeSubmit}
-                submitting={submitting}
-                serverError={codeError}
-                defaultCode={code}
-              />
-              <p className="mt-6 text-center text-sm text-slate-600">
-                Pas encore de code ?{' '}
-                <a href="https://aurel-academy.com/" className="font-semibold text-aurel-orange hover:underline">
-                  Découvrir nos programmes
-                </a>
-              </p>
-            </>
-          )}
+          <div className="mb-6 flex items-start gap-3 rounded-lg bg-aurel-orange-soft p-4 text-sm text-aurel-orange-dark">
+            <KeyRound className="mt-0.5 h-5 w-5 flex-shrink-0" />
+            <div>
+              <div className="font-semibold">Active ton compte</div>
+              <p>Saisis le code d'activation reçu par WhatsApp après paiement.</p>
+            </div>
+          </div>
 
-          {step === 'account' && program && (
-            <ActivationAccountForm
-              program={program}
-              code={code}
-              onSubmit={onAccountSubmit}
-              onBack={() => { setCodeError(null); setStep('code'); }}
-              submitting={submitting}
-            />
-          )}
+          <h1 className="mb-1 text-2xl font-bold text-aurel-ink">Activation de ton compte</h1>
+          <p className="mb-6 text-sm text-slate-600">
+            Tu n'as pas encore de code ?{' '}
+            <a href="https://aurel-academy.com/pflege/inscription/" className="font-semibold text-aurel-orange hover:underline">
+              Découvre le programme
+            </a>
+          </p>
 
-          {step === 'success' && program && (
-            <ActivationSuccess
-              program={program}
-              firstName={firstName}
-              // Full page load, NOT navigate() — see ActivationSuccess docs.
-              onContinue={() => window.location.replace(PROGRAM_COPY[program].destination)}
-            />
-          )}
+          <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 gap-4 md:grid-cols-2" noValidate>
+            <div className="md:col-span-2">
+              <label className="label" htmlFor="code">Code d'activation</label>
+              <input id="code" placeholder="AU-XXXXXX ou AC-XXXXXX" autoCapitalize="characters" autoCorrect="off" spellCheck={false} className="input font-mono uppercase tracking-widest" {...register('code')} />
+              {errors.code && <p className="field-error">{errors.code.message}</p>}
+            </div>
 
-          {step !== 'success' && (
-            <p className="mt-6 text-center text-sm text-slate-600">
-              Déjà un compte ? <Link to="/login" className="font-semibold text-aurel-teal hover:underline">Connexion</Link>
-            </p>
-          )}
+            <div>
+              <label className="label" htmlFor="first_name">Prénom</label>
+              <input id="first_name" autoComplete="given-name" autoCapitalize="words" className="input" {...register('first_name')} />
+              {errors.first_name && <p className="field-error">{errors.first_name.message}</p>}
+            </div>
+            <div>
+              <label className="label" htmlFor="last_name">Nom</label>
+              <input id="last_name" autoComplete="family-name" autoCapitalize="words" className="input" {...register('last_name')} />
+              {errors.last_name && <p className="field-error">{errors.last_name.message}</p>}
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="label" htmlFor="email">Email</label>
+              <input id="email" type="email" autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} className="input" placeholder="ton@email.com" {...register('email')} />
+              {errors.email && <p className="field-error">{errors.email.message}</p>}
+            </div>
+
+            <div>
+              <label className="label" htmlFor="password">Mot de passe</label>
+              <PasswordInput id="password" autoComplete="new-password" className="input" placeholder="min. 8 caractères" {...register('password')} />
+              {errors.password && <p className="field-error">{errors.password.message}</p>}
+            </div>
+            <div>
+              <label className="label" htmlFor="confirm_password">Confirmer le mot de passe</label>
+              <PasswordInput id="confirm_password" autoComplete="new-password" className="input" {...register('confirm_password')} />
+              {errors.confirm_password && <p className="field-error">{errors.confirm_password.message}</p>}
+            </div>
+
+            <div>
+              <label className="label" htmlFor="whatsapp">WhatsApp</label>
+              <input id="whatsapp" type="tel" inputMode="tel" autoComplete="tel" autoCapitalize="none" className="input" placeholder="0555290826" {...register('whatsapp')} />
+              {errors.whatsapp && <p className="field-error">{errors.whatsapp.message}</p>}
+            </div>
+            <div>
+              <label className="label" htmlFor="diplome_algerien">Diplôme algérien</label>
+              <select id="diplome_algerien" className="input" {...register('diplome_algerien')}>
+                <option value="DEI">DEI (Diplôme d'État Infirmier)</option>
+                <option value="DEMA">DEMA</option>
+                <option value="ATS">ATS</option>
+                <option value="Autre">Autre</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input type="checkbox" className="mt-1" {...register('accept_terms')} />
+                <span>
+                  J'accepte les{' '}
+                  <a href="https://aurel-academy.com/conditions/" className="text-aurel-orange hover:underline" target="_blank" rel="noopener">
+                    conditions d'utilisation
+                  </a>{' '}
+                  et la{' '}
+                  <a href="https://aurel-academy.com/confidentialite/" className="text-aurel-orange hover:underline" target="_blank" rel="noopener">
+                    politique de confidentialité
+                  </a>.
+                </span>
+              </label>
+              {errors.accept_terms && <p className="field-error">{errors.accept_terms.message}</p>}
+            </div>
+
+            <div className="md:col-span-2 mt-2">
+              <button type="submit" disabled={submitting || !watch('accept_terms')} className="btn-primary btn-lg btn-block">
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />} Activer mon compte
+              </button>
+              {/* SHERLOCK R14 — L6 : sub-text rassurant pendant le submit. Sur
+                  ISP DZ lent, l'activate-account peut prendre 5-15s — sans
+                  feedback, l'user croit que c'est freezé et refresh la page
+                  (qui interrompt et leur fait perdre le compte activé). */}
+              {submitting && (
+                <p className="text-xs text-slate-500 mt-2 text-center">
+                  Activation en cours, ne ferme pas la page…
+                </p>
+              )}
+            </div>
+          </form>
+
+          <p className="mt-6 text-center text-sm text-slate-600">
+            Déjà un compte ? <Link to="/login" className="font-semibold text-aurel-teal hover:underline">Connexion</Link>
+          </p>
         </div>
       </div>
     </div>
