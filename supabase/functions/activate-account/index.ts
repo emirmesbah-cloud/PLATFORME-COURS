@@ -422,6 +422,10 @@ serve(async (req) => {
         user_id: newUserId,
         vars: {
           first_name,
+          // Le cours vient de redeem_activation_code (donc du CODE), jamais du
+          // payload client. Sans lui, welcomeEmail retombe sur Pflege et un
+          // étudiant Immigration reçoit le mauvais email de bienvenue.
+          course: rData.course,
           app_url: 'https://app.aurel-academy.com',
         },
       }),

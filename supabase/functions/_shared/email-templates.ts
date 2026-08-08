@@ -6,6 +6,10 @@
 
 export interface TemplateVars {
   first_name?: string;
+  // Programme du student, tel que retourné par redeem_activation_code (donc
+  // par le CODE d'activation, jamais par le client). Absent = 'pflege', ce qui
+  // préserve le comportement de tous les appels existants.
+  course?: 'pflege' | 'immigration';
   app_url?: string;          // ex : https://app.aurel-academy.com
   whatsapp_url?: string;     // ex : https://wa.me/213555290826
   next_lesson_number?: number;
@@ -103,25 +107,51 @@ function btn(href: string, text: string, color: 'orange' | 'teal' = 'orange'): s
 }
 
 // ─── Template 1 : Welcome ───────────────────────────────────────────────────
+// Un seul type d'email ('welcome') mais DEUX contenus, choisis par le cours du
+// student. Le cours vient de `vars.course`, que activate-account remplit avec
+// la valeur retournée par redeem_activation_code — donc avec le cours porté par
+// le CODE d'activation. Sans ce branchement, un étudiant Immigration recevait
+// le mail Pflege ("Deutsch für Pflegekräfte", 18 leçons, lien /dashboard).
+//
+// Chiffres tirés de app/src/data/immigration-structure.ts (61 leçons ·
+// 3 sections · 7 ressources) et du programme Pflege existant (18 · 7).
 export function welcomeEmail(vars: TemplateVars): { subject: string; html: string; text: string } {
   const name = vars.first_name ?? 'à toi';
   const url  = vars.app_url ?? APP_URL_DEFAULT;
   const wa   = vars.whatsapp_url ?? WHATSAPP_URL_DEFAULT;
-  const subject = '🎓 Bienvenue chez Aurel Academy — tes 18 leçons t\'attendent';
-  const html = shell(`
-    <h1 style="margin:0 0 12px;font-size:24px;color:${INK};">Bienvenue ${esc(name)} !</h1>
-    <p style="margin:0 0 16px;">Ton accès à la formation <strong>Deutsch für Pflegekräfte</strong> est activé. Tu peux dès maintenant attaquer tes 18 leçons et débloquer tes 7 ressources premium :</p>
-    <ul style="padding-left:20px;color:#475569;font-size:14px;">
-      <li>📚 18 leçons vidéo</li>
+
+  // Défaut 'pflege' : tout appelant existant qui ne passe pas `course` garde
+  // exactement l'email qu'il envoyait avant.
+  const isImmigration = vars.course === 'immigration';
+
+  const courseName = isImmigration
+    ? 'Immigration en Allemagne pour Algériens'
+    : 'Deutsch für Pflegekräfte';
+  const lessonCount = isImmigration ? 61 : 18;
+  const landingPath = isImmigration ? '/immigration' : '/dashboard';
+
+  const bullets = isImmigration
+    ? `<li>📚 61 leçons, du Module 0 jusqu'au départ</li>
+      <li>📄 Tous les modèles : CV Lebenslauf, lettres Anschreiben, emails</li>
+      <li>🔗 Liens, portails officiels &amp; contacts utiles</li>
+      <li>🔄 Mises à jour des lois et des seuils</li>`
+    : `<li>📚 18 leçons vidéo</li>
       <li>📖 Glossaire 150 termes médicaux trilingue</li>
       <li>📄 4 templates CV + lettres de motivation Allemagne</li>
-      <li>🎯 Guide Anerkennung + Méthode prospection 30 chaînes</li>
+      <li>🎯 Guide Anerkennung + Méthode prospection 30 chaînes</li>`;
+
+  const subject = `🎓 Bienvenue chez Aurel Academy — tes ${lessonCount} leçons t'attendent`;
+  const html = shell(`
+    <h1 style="margin:0 0 12px;font-size:24px;color:${INK};">Bienvenue ${esc(name)} !</h1>
+    <p style="margin:0 0 16px;">Ton accès à la formation <strong>${esc(courseName)}</strong> est activé. Tu peux dès maintenant attaquer tes ${lessonCount} leçons et débloquer tes 7 ressources premium :</p>
+    <ul style="padding-left:20px;color:#475569;font-size:14px;">
+      ${bullets}
     </ul>
-    ${btn(url + '/dashboard', '🚀 Accéder à ma formation')}
+    ${btn(url + landingPath, '🚀 Accéder à ma formation')}
     <p style="margin:24px 0 0;color:#475569;font-size:13px;">Une question ? Réponds à cet email ou écris-moi sur <a href="${esc(wa)}" style="color:${ORANGE};">WhatsApp</a>.</p>
     <p style="margin:6px 0 0;color:#1A1A1A;font-style:italic;">— Aurel</p>
   `, vars);
-  const text = `Bienvenue ${name} ! Ton accès Aurel Academy est activé. ${url}/dashboard`;
+  const text = `Bienvenue ${name} ! Ton accès Aurel Academy est activé. ${url}${landingPath}`;
   return { subject, html, text };
 }
 
