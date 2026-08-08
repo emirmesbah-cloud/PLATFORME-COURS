@@ -159,20 +159,43 @@ export function welcomeEmail(vars: TemplateVars): { subject: string; html: strin
 export function reminderInactiveEmail(vars: TemplateVars): { subject: string; html: string; text: string } {
   const name = vars.first_name ?? 'l\'ami';
   const url  = vars.app_url ?? APP_URL_DEFAULT;
-  const lessonText = vars.next_lesson_number
+
+  // Même règle que welcomeEmail : absent = 'pflege', donc l'email Pflege
+  // existant est rendu à l'identique pour tout appelant qui ne passe rien.
+  const isImmigration = vars.course === 'immigration';
+  const path = isImmigration ? '/immigration' : '/lecons';
+
+  // Les leçons Immigration n'ont ni numéro ni titre en base (immigration_lessons
+  // ne stocke que slug/vidéo/published — les titres vivent dans le front). On ne
+  // nomme donc une leçon précise que pour Pflege, plutôt que d'en inventer une.
+  const lessonText = !isImmigration && vars.next_lesson_number
     ? `<strong>leçon ${esc(vars.next_lesson_number)}${vars.next_lesson_title ? ` — « ${esc(vars.next_lesson_title)} »` : ''}</strong>`
     : 'tes leçons';
+
+  // percentage_complete peut être absent (Immigration sans leçon publiée) :
+  // dans ce cas on ne montre pas un "0%" qui serait faux et décourageant.
+  const pct = vars.percentage_complete;
+  const progressLine = typeof pct === 'number'
+    ? `<p>Ça fait <strong>une semaine</strong> qu'on ne t'a pas vu sur la plateforme. Tu en es à <strong>${esc(pct)}%</strong> de ta formation.</p>`
+    : `<p>Ça fait <strong>une semaine</strong> qu'on ne t'a pas vu sur la plateforme.</p>`;
+
+  const hookLine = isImmigration
+    ? `<p>Le visa, le dossier, le départ — tout ça commence par te remettre devant ${lessonText}.</p>`
+    : `<p>L'Allemagne, la Pflegeheim, le contrat — tout ça commence par te remettre devant ${lessonText}.</p>`;
+
   // SHERLOCK R14 — H7 : stripCrlf sur `name` (= vars.first_name, user input).
-  const subject = `${stripCrlf(name)}, où en es-tu dans ta formation Pflege ?`;
+  const subject = isImmigration
+    ? `${stripCrlf(name)}, où en es-tu dans ton programme Immigration ?`
+    : `${stripCrlf(name)}, où en es-tu dans ta formation Pflege ?`;
   const html = shell(`
     <h1 style="margin:0 0 12px;font-size:22px;color:${INK};">Bonjour ${esc(name)},</h1>
-    <p>Ça fait <strong>une semaine</strong> qu'on ne t'a pas vu sur la plateforme. Tu en es à <strong>${esc(vars.percentage_complete ?? 0)}%</strong> de ta formation.</p>
-    <p>L'Allemagne, la Pflegeheim, le contrat — tout ça commence par te remettre devant ${lessonText}.</p>
-    ${btn(url + '/lecons', '👉 Reprendre ma formation')}
+    ${progressLine}
+    ${hookLine}
+    ${btn(url + path, '👉 Reprendre ma formation')}
     <p style="margin:24px 0 0;color:#475569;font-size:13px;">Pas de pression. Mais 20 minutes par jour suffisent pour finir avant la fin du mois.</p>
     <p style="margin:6px 0 0;color:#1A1A1A;font-style:italic;">— Aurel</p>
   `, vars);
-  const text = `${name}, on ne t'a pas vu depuis 7 jours. Reprends ta formation : ${url}/lecons`;
+  const text = `${name}, on ne t'a pas vu depuis 7 jours. Reprends ta formation : ${url}${path}`;
   return { subject, html, text };
 }
 

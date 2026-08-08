@@ -64,7 +64,7 @@ serve(async (req) => {
   // dans l'email pour permettre le 1-click-unsubscribe.
   const { data: candidates, error: candErr } = await admin
     .from('profiles')
-    .select('id, email, first_name, last_login_at, activated_at, email_opt_out_token, email_opt_out_marketing, revoked_at')
+    .select('id, email, first_name, course_access, last_login_at, activated_at, email_opt_out_token, email_opt_out_marketing, revoked_at')
     .eq('is_admin', false)
     .eq('email_opt_out_marketing', false)
     .is('revoked_at', null)
@@ -101,40 +101,67 @@ serve(async (req) => {
         .maybeSingle();
       if (cert) { skipped++; continue; }
 
-      // Get progress summary for percentage
-      const { count: completedCount } = await admin
-        .from('lesson_progress')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', u.id)
-        .eq('completed', true);
-      const { count: totalCount } = await admin
-        .from('lessons')
-        .select('id', { count: 'exact', head: true })
-        .eq('is_published', true);
-      const pct = totalCount && totalCount > 0
-        ? Math.round(((completedCount ?? 0) / totalCount) * 100)
-        : 0;
+      // Le cours du student décide QUELLES tables lire. Sans ce branchement, un
+      // étudiant Immigration était mesuré sur les tables Pflege : progression
+      // toujours 0%, "prochaine leçon" = une leçon Pflege, et un bouton vers
+      // /lecons qu'il ne peut même pas ouvrir (course isolation RLS).
+      const isImmigration = u.course_access === 'immigration';
 
-      // Find next uncompleted lesson
-      const { data: nextLesson } = await admin
-        .from('lessons')
-        .select('lesson_number, title, id')
-        .eq('is_published', true)
-        .order('lesson_number', { ascending: true });
-
+      let pct: number | null = null;
       let nextLessonNumber: number | null = null;
       let nextLessonTitle:  string | null = null;
-      if (nextLesson) {
-        const { data: doneLessonIds } = await admin
-          .from('lesson_progress')
-          .select('lesson_id')
+
+      if (isImmigration) {
+        // immigration_progress est indexé par lesson_slug (pas d'id de leçon),
+        // et immigration_lessons ne stocke ni numéro ni titre — donc on calcule
+        // seulement un pourcentage, jamais un "next lesson" nommé.
+        const { count: doneCount } = await admin
+          .from('immigration_progress')
+          .select('id', { count: 'exact', head: true })
           .eq('user_id', u.id)
           .eq('completed', true);
-        const doneSet = new Set((doneLessonIds ?? []).map((r: { lesson_id: string }) => r.lesson_id));
-        const next = nextLesson.find((l) => !doneSet.has(l.id));
-        if (next) {
-          nextLessonNumber = next.lesson_number;
-          nextLessonTitle  = next.title;
+        const { count: publishedCount } = await admin
+          .from('immigration_lessons')
+          .select('lesson_slug', { count: 'exact', head: true })
+          .eq('is_published', true);
+        // Aucune leçon publiée => pas de pourcentage honnête à afficher. On
+        // laisse `pct` à null : le template omet alors la ligne de progression.
+        if (publishedCount && publishedCount > 0) {
+          pct = Math.round(((doneCount ?? 0) / publishedCount) * 100);
+        }
+      } else {
+        const { count: completedCount } = await admin
+          .from('lesson_progress')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', u.id)
+          .eq('completed', true);
+        const { count: totalCount } = await admin
+          .from('lessons')
+          .select('id', { count: 'exact', head: true })
+          .eq('is_published', true);
+        pct = totalCount && totalCount > 0
+          ? Math.round(((completedCount ?? 0) / totalCount) * 100)
+          : 0;
+
+        // Find next uncompleted lesson
+        const { data: nextLesson } = await admin
+          .from('lessons')
+          .select('lesson_number, title, id')
+          .eq('is_published', true)
+          .order('lesson_number', { ascending: true });
+
+        if (nextLesson) {
+          const { data: doneLessonIds } = await admin
+            .from('lesson_progress')
+            .select('lesson_id')
+            .eq('user_id', u.id)
+            .eq('completed', true);
+          const doneSet = new Set((doneLessonIds ?? []).map((r: { lesson_id: string }) => r.lesson_id));
+          const next = nextLesson.find((l) => !doneSet.has(l.id));
+          if (next) {
+            nextLessonNumber = next.lesson_number;
+            nextLessonTitle  = next.title;
+          }
         }
       }
 
@@ -151,7 +178,11 @@ serve(async (req) => {
           user_id: u.id,
           vars: {
             first_name: u.first_name,
-            percentage_complete: pct,
+            // Cours lu sur le profile (posé à l'activation par le code) : c'est
+            // lui qui choisit la copie et le lien du mail.
+            course: isImmigration ? 'immigration' : 'pflege',
+            // Omis si null pour que le template n'affiche pas un faux "0%".
+            ...(pct !== null ? { percentage_complete: pct } : {}),
             next_lesson_number: nextLessonNumber,
             next_lesson_title: nextLessonTitle,
             // GDPR : 1-click unsubscribe link, token-gated public RPC.
