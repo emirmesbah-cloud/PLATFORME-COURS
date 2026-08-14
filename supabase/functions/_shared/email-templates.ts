@@ -200,20 +200,36 @@ export function reminderInactiveEmail(vars: TemplateVars): { subject: string; ht
 }
 
 // ─── Template 3 : Cap des 50% ───────────────────────────────────────────────
+// NOTE : aucun expéditeur ne déclenche ce type aujourd'hui (rien n'appelle
+// send-email avec email_type='milestone_50' — seul le libellé admin et la page
+// unsubscribe le mentionnent). On le rend quand même course-aware pour qu'il
+// soit correct le jour où il sera branché, plutôt que de laisser une mine.
 export function milestone50Email(vars: TemplateVars): { subject: string; html: string; text: string } {
   const name = vars.first_name ?? 'à toi';
   const url  = vars.app_url ?? APP_URL_DEFAULT;
+  const isImmigration = vars.course === 'immigration';
+
   const subject = '🔥 Tu as franchi la moitié du chemin';
-  const html = shell(`
-    <h1 style="margin:0 0 12px;font-size:24px;color:${ORANGE};">50% atteints, ${esc(name)} 🔥</h1>
-    <p>Tu viens de passer la moitié de la formation Deutsch für Pflegekräfte. Mention spéciale, c'est là que la majorité abandonne.</p>
+
+  // Immigration : les ressources sont sur la page d'accueil du programme, il
+  // n'existe pas de route /bonus séparée (cf. routes.tsx) — d'où un seul bouton.
+  const body = isImmigration
+    ? `<p>Tu viens de passer la moitié du programme <strong>Immigration en Allemagne pour Algériens</strong>. Mention spéciale, c'est là que la majorité abandonne.</p>
+    <p>Maintenant attaque la deuxième moitié — c'est là que ton dossier et tes démarches prennent une forme concrète.</p>
+    <p style="margin:16px 0;color:#475569;font-size:14px;"><strong>Conseil pratique :</strong> exploite tes <strong>7 ressources</strong> en parallèle. Les modèles (CV Lebenslauf, lettre Anschreiben) et les portails officiels sont ce qui te fait gagner le plus de temps.</p>
+    ${btn(url + '/immigration', '👉 Continuer ma formation')}`
+    : `<p>Tu viens de passer la moitié de la formation Deutsch für Pflegekräfte. Mention spéciale, c'est là que la majorité abandonne.</p>
     <p>Maintenant attaque la deuxième moitié — c'est là que les modules Entretien et Anerkennung font la différence.</p>
     <p style="margin:16px 0;color:#475569;font-size:14px;"><strong>Conseil pratique :</strong> exploite tes <strong>7 bonus</strong> en parallèle. Le glossaire 150 termes et le guide Anerkennung sont LE truc qui te démarque en entretien.</p>
     ${btn(url + '/lecons', '👉 Continuer ma formation')}
-    ${btn(url + '/bonus', 'Voir mes 7 bonus', 'teal')}
+    ${btn(url + '/bonus', 'Voir mes 7 bonus', 'teal')}`;
+
+  const html = shell(`
+    <h1 style="margin:0 0 12px;font-size:24px;color:${ORANGE};">50% atteints, ${esc(name)} 🔥</h1>
+    ${body}
     <p style="margin:24px 0 0;color:#1A1A1A;font-style:italic;">— Aurel</p>
   `, vars);
-  const text = `${name}, tu as franchi 50% de ta formation. Continue : ${url}/lecons`;
+  const text = `${name}, tu as franchi 50% de ta formation. Continue : ${url}${isImmigration ? '/immigration' : '/lecons'}`;
   return { subject, html, text };
 }
 
