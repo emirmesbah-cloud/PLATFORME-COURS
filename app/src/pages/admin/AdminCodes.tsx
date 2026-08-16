@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Copy, KeyRound, MessageSquare, Search, Filter, Check } from 'lucide-react';
+import { Loader2, Copy, KeyRound, MessageSquare, Search, Filter, Check, Download, Files } from 'lucide-react';
 import { fetchAdminCodes, rpcAdminGenerateCodes, queryKeys } from '@/lib/queries';
 import type { ActivationCode } from '@/lib/types';
 import { useToast } from '@/components/ui/Toast';
@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { courseLabel, tierLabel, tierPrice, formatDate, formatDateTime, cn } from '@/lib/utils';
 import type { Course, Tier } from '@/lib/types';
+import type { ActivationDocumentMode } from '@/components/features/ActivationCodesPDF';
 
 export function AdminCodes() {
   const qc = useQueryClient();
@@ -22,6 +23,7 @@ export function AdminCodes() {
   const [generatedTier, setGeneratedTier] = useState<Tier>('autonome');
   const [generatedCourse, setGeneratedCourse] = useState<Course>('pflege');
   const [copyState, setCopyState] = useState<'idle' | 'codes' | 'whatsapp'>('idle');
+  const [pdfBusyMode, setPdfBusyMode] = useState<ActivationDocumentMode | null>(null);
 
   // Filters
   const [filterCourse, setFilterCourse] = useState<'all' | Course>('all');
@@ -139,6 +141,59 @@ ${codes.map((c) => `• ${c}`).join('\n')}
     }
   }
 
+  async function downloadActivationDocuments(mode: ActivationDocumentMode) {
+    if (!generated?.length || pdfBusyMode) return;
+    if (mode === 'full' && generatedCourse !== 'immigration') return;
+
+    setPdfBusyMode(mode);
+    try {
+      // Keep the fairly large PDF renderer and QR encoder out of the initial
+      // admin bundle. They are downloaded only when the admin requests a PDF.
+      const [{ pdf }, QRCode, { ActivationCodesPDF }] = await Promise.all([
+        import('@react-pdf/renderer'),
+        import('qrcode'),
+        import('@/components/features/ActivationCodesPDF'),
+      ]);
+      const qrOptions = {
+        errorCorrectionLevel: 'M' as const,
+        margin: 1,
+        width: 320,
+        color: { dark: '#101827', light: '#FFFFFF' },
+      };
+      const activationQr = await QRCode.toDataURL('https://app.aurel-academy.com/activate', qrOptions);
+      const telegramQr = generatedCourse === 'immigration'
+        ? await QRCode.toDataURL('https://t.me/+u9xT5AbqazwxODg0', qrOptions)
+        : undefined;
+      const blob = await pdf(
+        <ActivationCodesPDF
+          codes={generated}
+          course={generatedCourse}
+          tier={generatedTier}
+          mode={mode}
+          activationQr={activationQr}
+          telegramQr={telegramQr}
+        />,
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const date = new Date().toISOString().slice(0, 10);
+      const format = mode === 'full' ? 'dossiers-complets' : 'fiches-activation';
+      anchor.href = url;
+      anchor.download = `aurel-${generatedCourse}-${format}-${generated.length}-codes-${date}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      toast.success(`PDF prêt : ${generated.length} document(s).`, 'Téléchargement lancé');
+    } catch (error) {
+      console.error('Activation PDF generation failed', error);
+      toast.error('Le PDF n’a pas pu être créé. Réessaie dans quelques secondes.', 'Erreur PDF');
+    } finally {
+      setPdfBusyMode(null);
+    }
+  }
+
   const codes = codesQ.data ?? [];
   const tierLabelFor = (t: string) => tierLabel(t);
 
@@ -146,7 +201,7 @@ ${codes.map((c) => `• ${c}`).join('\n')}
     <div className="space-y-8">
       <header>
         <h1 className="text-3xl font-bold text-aurel-ink">Codes d'activation</h1>
-        <p className="mt-1 text-slate-600">Génère et envoie les codes par WhatsApp après paiement.</p>
+        <p className="mt-1 text-slate-600">Génère les codes puis choisis : copie simple, message WhatsApp ou documents PDF prêts à imprimer.</p>
       </header>
 
       {/* Section générer */}
@@ -332,12 +387,51 @@ ${codes.map((c) => `• ${c}`).join('\n')}
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <button onClick={() => copyToClipboard(codesText, 'codes')} className="btn-outline">
                   {copyState === 'codes' ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-                  Copier les codes
+                  Codes seuls
                 </button>
                 <button onClick={() => copyToClipboard(waText, 'whatsapp')} className="btn-secondary">
                   {copyState === 'whatsapp' ? <Check className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
-                  Copier message WhatsApp
+                  Message WhatsApp
                 </button>
+              </div>
+
+              <div className="rounded-xl border border-aurel-orange/25 bg-aurel-orange-soft/50 p-4">
+                <div className="mb-3 flex items-start gap-3">
+                  <Files className="mt-0.5 h-5 w-5 flex-none text-aurel-orange" />
+                  <div>
+                    <h3 className="font-bold text-aurel-ink">Documents PDF</h3>
+                    <p className="mt-0.5 text-xs leading-relaxed text-slate-600">
+                      Un seul fichier organisé, avec une fiche ou un dossier distinct pour chacun des {generated.length} codes.
+                    </p>
+                  </div>
+                </div>
+                <div className={cn('grid gap-2', generatedCourse === 'immigration' ? 'sm:grid-cols-2' : 'grid-cols-1')}>
+                  <button
+                    type="button"
+                    disabled={pdfBusyMode !== null}
+                    onClick={() => downloadActivationDocuments('quick')}
+                    className="btn-outline bg-white"
+                  >
+                    {pdfBusyMode === 'quick' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                    Fiches rapides · 1 page/code
+                  </button>
+                  {generatedCourse === 'immigration' ? (
+                    <button
+                      type="button"
+                      disabled={pdfBusyMode !== null}
+                      onClick={() => downloadActivationDocuments('full')}
+                      className="btn-primary"
+                    >
+                      {pdfBusyMode === 'full' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      Dossiers complets · 4 pages/code
+                    </button>
+                  ) : null}
+                </div>
+                {generatedCourse === 'immigration' ? (
+                  <p className="mt-2 text-[11px] text-slate-500">Le dossier complet reprend la fiche technique et le règlement de ton modèle d’impression.</p>
+                ) : (
+                  <p className="mt-2 text-[11px] text-slate-500">La fiche Pflege contient le QR d’activation, le code personnel et les instructions d’accès.</p>
+                )}
               </div>
 
               <details className="rounded-lg border border-slate-200 p-3 text-sm text-slate-600">
