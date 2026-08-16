@@ -36,6 +36,7 @@ import type {
   QuizQuestion, QuizSubmissionResult, QuizLessonStatus,
   Payment, PaymentMethod, PaymentCurrency, AccountingStats, Course,
   WebinarGroup, WebinarGroupSlug,
+  DeliveryOrder, DeliveryMode, EcomWilaya, EcomCommune, EcomStopdesk,
 } from './types';
 
 // SHERLOCK R14 — H10 : profile shape côté admin inclut revoked_at + reason
@@ -73,6 +74,12 @@ export const queryKeys = {
   // Accounting
   adminPayments: (filters?: unknown) => ['admin', 'payments', filters] as const,
   adminAccountingStats: ['admin', 'accounting_stats'] as const,
+  // Delivery
+  adminDeliveryOrders: ['admin', 'delivery_orders'] as const,
+  ecomConnection: ['admin', 'ecom', 'connection'] as const,
+  ecomWilayas: ['admin', 'ecom', 'wilayas'] as const,
+  ecomCommunes: (wilayaId: number) => ['admin', 'ecom', 'communes', wilayaId] as const,
+  ecomStopdesks: (wilayaId: number) => ['admin', 'ecom', 'stopdesks', wilayaId] as const,
 };
 
 // ── Lessons ────────────────────────────────────────────────────
@@ -764,4 +771,127 @@ export async function cancelPayment(paymentId: string): Promise<{ ok: boolean; e
     await logAdminAction('payment_cancelled', 'payment', paymentId);
   }
   return res;
+}
+
+// ============================================================================
+// E-com Delivery order ledger (mig 20260817000050)
+// ============================================================================
+
+export interface CreateDeliveryOrderInput {
+  customer_name: string;
+  mobile_1: string;
+  mobile_2?: string | null;
+  wilaya_id: number;
+  wilaya_name: string;
+  commune?: string | null;
+  delivery_mode: DeliveryMode;
+  stopdesk_code?: string | null;
+  address?: string | null;
+  course: Course;
+  article: string;
+  ecom_ref_article?: string | null;
+  quantity: number;
+  cod_amount: number;
+  supplier_notes?: string | null;
+  activation_code_id?: string | null;
+}
+
+export async function fetchDeliveryOrders(): Promise<DeliveryOrder[]> {
+  const { data, error } = await withQueryTimeout(
+    supabase
+      .from('delivery_orders')
+      .select('*, activation_code:activation_codes(code)')
+      .order('created_at', { ascending: false })
+      .limit(500),
+    15000,
+    'fetchDeliveryOrders',
+  );
+  if (error) throw error;
+  return (data ?? []) as never;
+}
+
+export async function createDeliveryOrder(input: CreateDeliveryOrderInput): Promise<DeliveryOrder> {
+  const { data, error } = await supabase
+    .from('delivery_orders')
+    .insert({
+      ...input,
+      mobile_2: input.mobile_2 || null,
+      commune: input.delivery_mode === 'domicile' ? input.commune || null : null,
+      stopdesk_code: input.delivery_mode === 'stopdesk' ? input.stopdesk_code || null : null,
+      address: input.address || null,
+      supplier_notes: input.supplier_notes || null,
+      ecom_ref_article: input.ecom_ref_article || null,
+      activation_code_id: input.activation_code_id || null,
+    })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as DeliveryOrder;
+}
+
+type EcomBridgeResponse<T = unknown> = {
+  ok: boolean;
+  error?: string;
+  detail?: unknown;
+} & T;
+
+async function invokeEcom<T = unknown>(body: Record<string, unknown>): Promise<EcomBridgeResponse<T>> {
+  const { data, error } = await supabase.functions.invoke('ecom-delivery', { body });
+  if (error) {
+    let message = error.message;
+    const context = (error as { context?: { json?: () => Promise<unknown> } }).context;
+    if (context?.json) {
+      try {
+        const detail = await context.json() as { error?: string };
+        if (detail?.error) message = detail.error;
+      } catch { /* The response body may already have been consumed. */ }
+    }
+    throw new Error(message);
+  }
+  const result = data as EcomBridgeResponse<T>;
+  if (!result?.ok) throw new Error(result?.error || 'ECOM_REQUEST_FAILED');
+  return result;
+}
+
+export async function fetchEcomConnection() {
+  return invokeEcom<{
+    connected: boolean;
+    account_name: string | null;
+    stock: boolean;
+    webhook_ready: boolean;
+  }>({ action: 'connection' });
+}
+
+export async function configureEcomWebhook() {
+  return invokeEcom<{ webhook_ready: boolean }>({ action: 'configure-webhook' });
+}
+
+export async function fetchEcomWilayas(): Promise<EcomWilaya[]> {
+  const result = await invokeEcom<{ items: EcomWilaya[] }>({ action: 'wilayas' });
+  return result.items;
+}
+
+export async function fetchEcomCommunes(wilayaId: number): Promise<EcomCommune[]> {
+  const result = await invokeEcom<{ items: EcomCommune[] }>({ action: 'communes', wilaya_id: wilayaId });
+  return result.items.filter((item) => item.livrable);
+}
+
+export async function fetchEcomStopdesks(wilayaId: number): Promise<EcomStopdesk[]> {
+  const result = await invokeEcom<{ items: EcomStopdesk[] }>({ action: 'stopdesks', wilaya_id: wilayaId });
+  return result.items;
+}
+
+export async function syncDeliveryOrder(orderId: string): Promise<DeliveryOrder> {
+  const result = await invokeEcom<{ order: DeliveryOrder }>({ action: 'sync', order_id: orderId });
+  return result.order;
+}
+
+export async function refreshDeliveryOrder(orderId: string): Promise<DeliveryOrder> {
+  const result = await invokeEcom<{ order: DeliveryOrder }>({ action: 'refresh', order_id: orderId });
+  return result.order;
+}
+
+export async function confirmDeliveryOrder(orderId: string): Promise<DeliveryOrder> {
+  const result = await invokeEcom<{ order: DeliveryOrder }>({ action: 'confirm', order_id: orderId });
+  return result.order;
 }

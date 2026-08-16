@@ -254,6 +254,71 @@ export interface AccountingStats {
   monthly:    { month: string; dzd: number; eur: number; count: number }[];
 }
 
+// ── E-com Delivery orders (mig 20260817000050) ────────────────
+export type DeliveryMode = 'domicile' | 'stopdesk';
+export type DeliverySyncStatus = 'draft' | 'syncing' | 'synced' | 'failed';
+
+export interface DeliveryOrder {
+  id: string;
+  external_reference: string;
+  customer_name: string;
+  mobile_1: string;
+  mobile_2: string | null;
+  wilaya_id: number;
+  wilaya_name: string;
+  commune: string | null;
+  delivery_mode: DeliveryMode;
+  stopdesk_code: string | null;
+  address: string | null;
+  course: Course;
+  article: string;
+  ecom_ref_article: string | null;
+  quantity: number;
+  cod_amount: number;
+  supplier_notes: string | null;
+  activation_code_id: string | null;
+  sync_status: DeliverySyncStatus;
+  ecom_tracking: string | null;
+  ecom_parcel_id: number | null;
+  ecom_situation: string | null;
+  ecom_logistics_state: string | null;
+  ecom_delivery_fee: number | null;
+  ecom_confirmed: boolean;
+  ecom_collected: boolean;
+  ecom_recovered: boolean;
+  last_error: string | null;
+  last_synced_at: string | null;
+  last_event_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  activation_code?: { code: string } | null;
+}
+
+export interface EcomWilaya {
+  id: number;
+  libelle: string;
+  domicile: boolean;
+  stopdesk: boolean;
+}
+
+export interface EcomCommune {
+  id: number;
+  id_wilaya: number;
+  commune: string;
+  code_postal: number | null;
+  livrable: boolean;
+}
+
+export interface EcomStopdesk {
+  id: number;
+  id_wilaya: number;
+  nom_bureau: string;
+  code_stopdesk: string;
+  adresse: string | null;
+  commune: string | null;
+}
+
 export interface AdvancedAnalytics {
   ok: true;
   acquisition: { day: string; tier: string; new_students: number }[] | null;

@@ -90,3 +90,13 @@ verify_jwt = true
 # JWT-required at the gateway; the function ALSO re-verifies via getUser and
 # checks course entitlement (course_access) + revoked_at server-side.
 verify_jwt = true
+
+[functions.ecom-delivery]
+# Admin-only bridge. The function re-verifies the caller and keeps E-com API
+# credentials in server secrets, never in the Vite/browser bundle.
+verify_jwt = true
+
+[functions.ecom-webhook]
+# Public callback from E-com Delivery. Protected by HMAC-SHA256 signature,
+# timestamp freshness and idempotent event IDs.
+verify_jwt = false

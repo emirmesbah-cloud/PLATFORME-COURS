@@ -65,6 +65,7 @@ const AdminFeedback  = lazyNamed(() => import('@/pages/admin/AdminFeedback'),   
 const AdminEmails    = lazyNamed(() => import('@/pages/admin/AdminEmails'),     'AdminEmails');
 const AdminAudit     = lazyNamed(() => import('@/pages/admin/AdminAudit'),      'AdminAudit');
 const AdminWebinarGroups = lazyNamed(() => import('@/pages/admin/AdminWebinarGroups'), 'AdminWebinarGroups');
+const AdminDeliveryOrders = lazyNamed(() => import('@/pages/admin/AdminDeliveryOrders'), 'AdminDeliveryOrders');
 
 // Public unsubscribe page — lazy too, rarement utilisée et pas dans le
 // flow auth principal.
@@ -155,6 +156,7 @@ export const routes: RouteObject[] = [
       { path: 'immigration-quiz', element: <L><AdminImmigrationQuiz /></L> },
       { path: 'bonus',            element: <L><AdminBonus /></L> },
       { path: 'comptabilite', element: <L><AdminAccounting /></L> },
+      { path: 'commandes',    element: <L><AdminDeliveryOrders /></L> },
       { path: 'analytics',   element: <L><AdminAnalytics /></L> },
       { path: 'feedback',    element: <L><AdminFeedback /></L> },
       { path: 'emails',      element: <L><AdminEmails /></L> },
