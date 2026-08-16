@@ -48,11 +48,10 @@ jobs:
           done
           if [ "$missing" -gt 0 ]; then exit 1; fi
 
-      - name: Install postgres client
+      - name: Prepare PostgreSQL 17 client
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y postgresql-client
-          pg_dump --version
+          docker pull postgres:17-alpine
+          docker run --rm postgres:17-alpine pg_dump --version
 
       - name: Run pg_dump
         env:
@@ -72,18 +71,26 @@ jobs:
           OUT="aurel-backup-$STAMP.sql"
 
           echo "→ Dump du schéma public + auth.users (data + structure)..."
-          pg_dump \
-            --host="$HOST" \
-            --port="$PORT" \
-            --username="$USER" \
-            --dbname="$DB" \
-            --schema=public \
-            --schema=auth \
-            --no-owner \
-            --no-privileges \
-            --clean --if-exists \
-            --quote-all-identifiers \
-            --file="$OUT"
+          # Use the same PostgreSQL major as Supabase. Ubuntu's default client
+          # is currently v16 and refuses to dump the production v17 server.
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e PGPASSWORD \
+            -v "$PWD:/backup" \
+            -w /backup \
+            postgres:17-alpine \
+            pg_dump \
+              --host="$HOST" \
+              --port="$PORT" \
+              --username="$USER" \
+              --dbname="$DB" \
+              --schema=public \
+              --schema=auth \
+              --no-owner \
+              --no-privileges \
+              --clean --if-exists \
+              --quote-all-identifiers \
+              --file="$OUT"
 
           # Compress
           gzip -9 "$OUT"
