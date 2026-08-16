@@ -48,7 +48,7 @@
    ```
 3. Test direct DB (si tu as `psql` local) :
    ```bash
-   psql "postgresql://postgres.dvrqtqghgaxhhgkoihcj:<password>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres" -c "SELECT 1;"
+   psql "postgresql://postgres.dvrqtqghgaxhhgkoihcj:<password>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres" -c "SELECT 1;"
    ```
 
 ### Étape 2 — Si incident Supabase confirmé
@@ -82,7 +82,7 @@
 5. Restore :
    ```bash
    gunzip aurel-backup-*.sql.gz
-   psql "postgresql://postgres.<NEW_REF>:<NEW_PWD>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres" < aurel-backup-*.sql
+   psql "postgresql://postgres.<NEW_REF>:<NEW_PWD>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres" < aurel-backup-*.sql
    ```
 6. Update les secrets GitHub + Cloudflare Pages env vars vers le nouveau projet
 7. Redeploy frontend (push commit vide)

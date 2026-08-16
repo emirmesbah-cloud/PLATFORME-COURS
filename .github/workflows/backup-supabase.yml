@@ -61,9 +61,9 @@ jobs:
         run: |
           set -e
           # Connection string Supabase pooler (production-grade, recommandé pour pg_dump)
-          # Format : postgresql://postgres.<project-ref>:<password>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres
+          # Format : postgresql://postgres.<project-ref>:<password>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres
           # On utilise le mode session pooler (port 5432) — compatible pg_dump.
-          HOST="aws-0-eu-central-1.pooler.supabase.com"
+          HOST="aws-1-eu-central-1.pooler.supabase.com"
           USER="postgres.${SUPABASE_PROJECT_REF}"
           DB="postgres"
           PORT="5432"
@@ -110,6 +110,6 @@ jobs:
           echo "### Restore" >> $GITHUB_STEP_SUMMARY
           echo '1. Download artifact from this run' >> $GITHUB_STEP_SUMMARY
           echo '2. \`gunzip aurel-backup-*.sql.gz\`' >> $GITHUB_STEP_SUMMARY
-          echo '3. \`psql "postgresql://postgres.<ref>:<pwd>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres" < aurel-backup-*.sql\`' >> $GITHUB_STEP_SUMMARY
+          echo '3. \`psql "postgresql://postgres.<ref>:<pwd>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres" < aurel-backup-*.sql\`' >> $GITHUB_STEP_SUMMARY
           echo '' >> $GITHUB_STEP_SUMMARY
           echo '⚠️ Test restores periodically on a staging project.' >> $GITHUB_STEP_SUMMARY
