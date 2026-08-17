@@ -1039,6 +1039,12 @@ export async function assignWebinarLeadCloser(leadId: string, closerName: string
   if (error) throw error;
 }
 
+export async function assignWebinarLeadsCloser(leadIds: string[], closerName: string): Promise<void> {
+  if (leadIds.length === 0) return;
+  const { error } = await supabase.from('webinar_leads').update({ closer_name: closerName.trim() }).in('id', leadIds);
+  if (error) throw error;
+}
+
 export async function fetchWebinarLead(leadId: string): Promise<WebinarLead | null> {
   const { data, error } = await supabase
     .from('webinar_leads')
