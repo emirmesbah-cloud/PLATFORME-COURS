@@ -23,7 +23,7 @@ function cors(origin: string | null) {
   return {
     'Access-Control-Allow-Origin': origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://app.aurel-academy.com',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Vary': 'Origin',
   };
 }
@@ -58,7 +58,23 @@ async function ecom(path: string, init: RequestInit = {}) {
     try { data = raw ? JSON.parse(raw) : null; }
     catch { data = raw.slice(0, 500); }
     if (!response.ok) {
-      throw new EcomError(`ECOM_HTTP_${response.status}`, response.status, data);
+      const apiError = data && typeof data === 'object' && 'error' in data
+        ? (data as { error?: { message?: unknown; code?: unknown; details?: unknown } }).error
+        : null;
+      const baseMessage = typeof apiError?.message === 'string'
+        ? apiError.message.slice(0, 300)
+        : typeof apiError?.code === 'string'
+          ? apiError.code.slice(0, 100)
+          : `ECOM_HTTP_${response.status}`;
+      const detailText = typeof apiError?.details === 'string'
+        ? apiError.details
+        : apiError?.details
+          ? JSON.stringify(apiError.details)
+          : '';
+      const safeMessage = detailText
+        ? `${baseMessage} — ${detailText.slice(0, 300)}`
+        : baseMessage;
+      throw new EcomError(safeMessage, response.status, data);
     }
     return data;
   } catch (error) {
