@@ -94,6 +94,31 @@ function normalizePhone(value: unknown) {
   return raw;
 }
 
+async function resolveDeliverableCommune(wilayaId: number, commune: unknown) {
+  if (!Number.isInteger(wilayaId) || wilayaId < 1 || wilayaId > 58) {
+    throw new EcomError('ECOM_WILAYA_INVALID', 422);
+  }
+  const requested = String(commune ?? '').normalize('NFKC').trim();
+  const items = await ecom(`/communes?id_wilaya=${wilayaId}`) as Array<{
+    commune?: unknown;
+    livrable?: unknown;
+  }>;
+  const match = items.find((item) => item.livrable === true && String(item.commune ?? '').normalize('NFKC').trim() === requested);
+  if (!match) throw new EcomError('ECOM_COMMUNE_INVALID', 422);
+  return String(match.commune).trim();
+}
+
+async function resolveDomicileWilaya(wilayaId: number) {
+  const items = await ecom('/wilayas') as Array<{
+    id?: unknown;
+    libelle?: unknown;
+    domicile?: unknown;
+  }>;
+  const match = items.find((item) => Number(item.id) === wilayaId && item.domicile === true);
+  if (!match) throw new EcomError('ECOM_WILAYA_INVALID', 422);
+  return String(match.libelle ?? '').trim();
+}
+
 serve(async (req) => {
   const CORS = cors(req.headers.get('origin'));
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -124,7 +149,13 @@ serve(async (req) => {
     .maybeSingle();
   if (!profile?.is_admin || profile.revoked_at) return json({ ok: false, error: 'FORBIDDEN' }, 403);
 
-  let payload: { action?: string; order_id?: string; wilaya_id?: number };
+  let payload: {
+    action?: string;
+    order_id?: string;
+    wilaya_id?: number;
+    commune?: string;
+    address?: string | null;
+  };
   try { payload = await req.json(); }
   catch { return json({ ok: false, error: 'INVALID_JSON' }, 400); }
 
@@ -192,6 +223,33 @@ serve(async (req) => {
       .maybeSingle();
     if (orderError || !order) return json({ ok: false, error: 'ORDER_NOT_FOUND' }, 404);
 
+    if (payload.action === 'update-destination') {
+      if (order.ecom_tracking) return json({ ok: false, error: 'ORDER_ALREADY_SYNCED' }, 409);
+      const wilayaId = Number(payload.wilaya_id);
+      const [wilayaName, commune] = await Promise.all([
+        resolveDomicileWilaya(wilayaId),
+        resolveDeliverableCommune(wilayaId, payload.commune),
+      ]);
+      const address = String(payload.address ?? '').normalize('NFKC').trim().slice(0, 250) || null;
+      const { data: saved, error: saveError } = await admin
+        .from('delivery_orders')
+        .update({
+          wilaya_id: wilayaId,
+          wilaya_name: wilayaName,
+          commune,
+          delivery_mode: 'domicile',
+          stopdesk_code: null,
+          address,
+          sync_status: 'draft',
+          last_error: null,
+        })
+        .eq('id', orderId)
+        .select('*')
+        .single();
+      if (saveError) throw saveError;
+      return json({ ok: true, order: saved });
+    }
+
     if (payload.action === 'sync') {
       // Idempotence on the Aurel side: once a tracking exists we never create
       // a second E-com parcel for the same local order.
@@ -214,7 +272,10 @@ serve(async (req) => {
         confirmee: 0,
       };
       if (order.delivery_mode === 'stopdesk') parcel.code_stopdesk = order.stopdesk_code;
-      else parcel.commune = order.commune;
+      else {
+        await resolveDomicileWilaya(order.wilaya_id);
+        parcel.commune = await resolveDeliverableCommune(order.wilaya_id, order.commune);
+      }
       if (account.stock === true) {
         if (!order.ecom_ref_article) throw new EcomError('ECOM_REF_ARTICLE_REQUIRED', 422);
         parcel.ref_article = order.ecom_ref_article;

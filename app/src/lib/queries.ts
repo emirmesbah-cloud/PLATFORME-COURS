@@ -81,6 +81,8 @@ export const queryKeys = {
   ecomWilayas: ['admin', 'ecom', 'wilayas'] as const,
   ecomCommunes: (wilayaId: number) => ['admin', 'ecom', 'communes', wilayaId] as const,
   ecomStopdesks: (wilayaId: number) => ['admin', 'ecom', 'stopdesks', wilayaId] as const,
+  publicEcomWilayas: ['public', 'ecom', 'wilayas'] as const,
+  publicEcomCommunes: (wilayaId: number) => ['public', 'ecom', 'communes', wilayaId] as const,
   // Webinar CRM
   adminWebinarLeads: ['admin', 'webinar_leads'] as const,
   webinarLead: (leadId: string) => ['admin', 'webinar_lead', leadId] as const,
@@ -892,6 +894,22 @@ export async function syncDeliveryOrder(orderId: string): Promise<DeliveryOrder>
   return result.order;
 }
 
+export async function updateDeliveryOrderDestination(input: {
+  orderId: string;
+  wilayaId: number;
+  commune: string;
+  address: string | null;
+}): Promise<DeliveryOrder> {
+  const result = await invokeEcom<{ order: DeliveryOrder }>({
+    action: 'update-destination',
+    order_id: input.orderId,
+    wilaya_id: input.wilayaId,
+    commune: input.commune,
+    address: input.address,
+  });
+  return result.order;
+}
+
 export async function refreshDeliveryOrder(orderId: string): Promise<DeliveryOrder> {
   const result = await invokeEcom<{ order: DeliveryOrder }>({ action: 'refresh', order_id: orderId });
   return result.order;
@@ -944,8 +962,8 @@ export interface WebinarLeadSubmission {
   website?: string;
 }
 
-export async function submitWebinarLead(input: WebinarLeadSubmission): Promise<{ already_registered?: boolean }> {
-  const { data, error } = await supabase.functions.invoke('webinar-lead', { body: input });
+async function invokePublicWebinar<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('webinar-lead', { body });
   if (error) {
     let message = error.message;
     const context = (error as { context?: { json?: () => Promise<unknown> } }).context;
@@ -957,8 +975,23 @@ export async function submitWebinarLead(input: WebinarLeadSubmission): Promise<{
     }
     throw new Error(message);
   }
-  const result = data as { ok?: boolean; error?: string; already_registered?: boolean };
+  const result = data as { ok?: boolean; error?: string } & T;
   if (!result?.ok) throw new Error(result?.error || 'SUBMISSION_FAILED');
+  return result;
+}
+
+export async function fetchPublicEcomWilayas(): Promise<EcomWilaya[]> {
+  const result = await invokePublicWebinar<{ items: EcomWilaya[] }>({ action: 'wilayas' });
+  return result.items;
+}
+
+export async function fetchPublicEcomCommunes(wilayaId: number): Promise<EcomCommune[]> {
+  const result = await invokePublicWebinar<{ items: EcomCommune[] }>({ action: 'communes', wilaya_id: wilayaId });
+  return result.items;
+}
+
+export async function submitWebinarLead(input: WebinarLeadSubmission): Promise<{ already_registered?: boolean }> {
+  const result = await invokePublicWebinar<{ already_registered?: boolean }>({ ...input });
   return { already_registered: result.already_registered };
 }
 

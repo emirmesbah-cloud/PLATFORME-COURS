@@ -7,6 +7,10 @@ import { reportError } from '../_shared/sentry.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const ECOM_API_KEY = Deno.env.get('ECOM_API_KEY') ?? '';
+const ECOM_API_TOKEN = Deno.env.get('ECOM_API_TOKEN') ?? '';
+const ECOM_BASE_URL = 'https://ecom-dz.com/api_v2';
+const CATALOG_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const ALLOWED_ORIGINS = new Set([
   'https://app.aurel-academy.com',
   'http://localhost:5173',
@@ -34,6 +38,69 @@ function normalizePhone(value: unknown) {
   return phone.replace(/\D/g, '');
 }
 
+type CatalogAdmin = ReturnType<typeof createClient>;
+
+async function fetchEcomCatalog(path: string) {
+  if (!ECOM_API_KEY || !ECOM_API_TOKEN) throw new Error('ECOM_NOT_CONFIGURED');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch(`${ECOM_BASE_URL}${path}`, {
+      signal: controller.signal,
+      headers: {
+        'X-API-Key': ECOM_API_KEY,
+        'X-API-Token': ECOM_API_TOKEN,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!response.ok) throw new Error(`ECOM_CATALOG_${response.status}`);
+    const data = await response.json();
+    if (!Array.isArray(data)) throw new Error('ECOM_CATALOG_INVALID');
+    return data as Record<string, unknown>[];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getCatalog(admin: CatalogAdmin, kind: 'wilayas' | 'communes', wilayaId?: number) {
+  const cacheKey = kind === 'wilayas' ? 'wilayas' : `communes:${wilayaId}`;
+  const { data: cached } = await admin
+    .from('ecom_location_cache')
+    .select('payload, updated_at')
+    .eq('cache_key', cacheKey)
+    .maybeSingle();
+  if (cached?.updated_at
+    && Date.now() - new Date(cached.updated_at).getTime() < CATALOG_TTL_MS
+    && Array.isArray(cached.payload)) {
+    return cached.payload as Record<string, unknown>[];
+  }
+
+  const raw = await fetchEcomCatalog(kind === 'wilayas' ? '/wilayas' : `/communes?id_wilaya=${wilayaId}`);
+  const payload = kind === 'wilayas'
+    ? raw.map((item) => ({
+      id: Number(item.id),
+      libelle: clean(item.libelle, 80),
+      domicile: item.domicile === true,
+      stopdesk: item.stopdesk === true,
+    })).filter((item) => Number.isInteger(item.id) && item.id > 0 && item.libelle && item.domicile)
+    : raw.map((item) => ({
+      id: Number(item.id),
+      id_wilaya: Number(item.id_wilaya),
+      commune: clean(item.commune, 100),
+      code_postal: item.code_postal == null ? null : Number(item.code_postal),
+      livrable: item.livrable === true,
+    })).filter((item) => Number.isInteger(item.id) && item.commune && item.livrable);
+
+  const { error: cacheError } = await admin.from('ecom_location_cache').upsert({
+    cache_key: cacheKey,
+    kind,
+    payload,
+    updated_at: new Date().toISOString(),
+  });
+  if (cacheError) throw cacheError;
+  return payload;
+}
+
 async function sha256(value: string) {
   const bytes = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -57,27 +124,41 @@ serve(async (req) => {
   // Honeypot. Bots see a success response, but nothing is stored.
   if (clean(payload.website, 200)) return json({ ok: true });
 
+  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const action = clean(payload.action, 30);
+  try {
+    if (action === 'wilayas') {
+      return json({ ok: true, items: await getCatalog(admin, 'wilayas') });
+    }
+    if (action === 'communes') {
+      const id = Number(payload.wilaya_id);
+      if (!Number.isInteger(id) || id < 1 || id > 69) return json({ ok: false, error: 'WILAYA_INVALID' }, 422);
+      return json({ ok: true, items: await getCatalog(admin, 'communes', id) });
+    }
+  } catch (error) {
+    await reportError(error, { function: 'webinar-lead-catalog', extra: { action } });
+    return json({ ok: false, error: 'CATALOG_UNAVAILABLE' }, 503);
+  }
+
   const fullName = clean(payload.full_name, 100);
   const phoneRaw = clean(payload.phone, 30);
   const phoneNormalized = normalizePhone(payload.phone);
   const email = clean(payload.email, 254).toLowerCase();
   const attendedLive = payload.attended_live === true;
   const wilayaId = Number(payload.wilaya_id);
-  const wilayaName = clean(payload.wilaya_name, 80);
   const commune = clean(payload.commune, 100);
   const address = clean(payload.address, 200);
 
   if (fullName.length < 2) return json({ ok: false, error: 'NAME_REQUIRED' }, 422);
   if (!/^0[5-7]\d{8}$/.test(phoneNormalized)) return json({ ok: false, error: 'PHONE_INVALID' }, 422);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, error: 'EMAIL_INVALID' }, 422);
-  if (!Number.isInteger(wilayaId) || wilayaId < 1 || wilayaId > 69 || !wilayaName) {
+  if (!Number.isInteger(wilayaId) || wilayaId < 1 || wilayaId > 69) {
     return json({ ok: false, error: 'WILAYA_INVALID' }, 422);
   }
   if (!commune || !address) return json({ ok: false, error: 'ADDRESS_REQUIRED' }, 422);
-
-  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
 
   try {
     const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
@@ -102,6 +183,13 @@ serve(async (req) => {
       updated_at: now.toISOString(),
     });
 
+    const wilayas = await getCatalog(admin, 'wilayas');
+    const selectedWilaya = wilayas.find((item) => Number(item.id) === wilayaId);
+    if (!selectedWilaya) return json({ ok: false, error: 'WILAYA_INVALID' }, 422);
+    const communes = await getCatalog(admin, 'communes', wilayaId);
+    const selectedCommune = communes.find((item) => String(item.commune) === commune && item.livrable === true);
+    if (!selectedCommune) return json({ ok: false, error: 'COMMUNE_INVALID' }, 422);
+
     // A double-click or network retry must not create duplicate call records.
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: existing } = await admin
@@ -121,8 +209,8 @@ serve(async (req) => {
       email,
       attended_live: attendedLive,
       wilaya_id: wilayaId,
-      wilaya_name: wilayaName,
-      commune,
+      wilaya_name: String(selectedWilaya.libelle),
+      commune: String(selectedCommune.commune),
       address,
       status: attendedLive ? 'to_call' : 'new',
       source: 'youtube_live',

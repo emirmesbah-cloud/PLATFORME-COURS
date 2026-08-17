@@ -3,12 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle, CheckCircle2, Clock3, Loader2, PackagePlus,
-  RefreshCw, RotateCw, Send, Truck,
+  Pencil, RefreshCw, RotateCw, Send, Truck,
 } from 'lucide-react';
 import {
   configureEcomWebhook, confirmDeliveryOrder, createDeliveryOrder, fetchDeliveryOrders,
   fetchEcomCommunes, fetchEcomConnection, fetchEcomStopdesks,
   fetchEcomWilayas, fetchWebinarLead, queryKeys, refreshDeliveryOrder, syncDeliveryOrder,
+  updateDeliveryOrderDestination,
 } from '@/lib/queries';
 import type { Course, DeliveryMode, DeliveryOrder } from '@/lib/types';
 import { Modal } from '@/components/ui/Modal';
@@ -45,6 +46,9 @@ function friendlyError(error: unknown) {
   const labels: Record<string, string> = {
     ECOM_NOT_CONFIGURED: "La connexion E-com n'est pas encore configurée côté serveur.",
     ECOM_REF_ARTICLE_REQUIRED: 'Ce compte utilise le stock E-com : ajoute la référence produit.',
+    ECOM_WILAYA_INVALID: "Cette wilaya n'est pas disponible pour la livraison à domicile chez E-com.",
+    ECOM_COMMUNE_INVALID: 'La commune ne correspond pas à la wilaya ou elle n’est pas livrable chez E-com.',
+    ORDER_ALREADY_SYNCED: 'Cette commande possède déjà un tracking et ne peut plus être modifiée ici.',
     ECOM_TIMEOUT: "E-com n'a pas répondu à temps. La commande reste enregistrée : vérifie avant de renvoyer.",
     ORDER_NOT_SYNCED: "Cette commande n'a pas encore de tracking E-com.",
     WEBHOOK_NOT_CONFIGURED: "Le secret de signature E-com n'est pas configuré côté serveur.",
@@ -62,6 +66,11 @@ export function AdminDeliveryOrders() {
   const [busyOrder, setBusyOrder] = useState<string | null>(null);
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
   const [sourceLeadId, setSourceLeadId] = useState<string | null>(null);
+  const [editingDestination, setEditingDestination] = useState<DeliveryOrder | null>(null);
+  const [correctionWilayaId, setCorrectionWilayaId] = useState(0);
+  const [correctionCommune, setCorrectionCommune] = useState('');
+  const [correctionAddress, setCorrectionAddress] = useState('');
+  const [savingCorrection, setSavingCorrection] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const prefillHandledRef = useRef<string | null>(null);
   const requestedLeadId = searchParams.get('lead') ?? '';
@@ -89,6 +98,12 @@ export function AdminDeliveryOrders() {
     queryKey: queryKeys.ecomStopdesks(form.wilayaId),
     queryFn: () => fetchEcomStopdesks(form.wilayaId),
     enabled: modalOpen && form.wilayaId > 0 && form.deliveryMode === 'stopdesk',
+    staleTime: 24 * 60 * 60_000,
+  });
+  const correctionCommunesQ = useQuery({
+    queryKey: queryKeys.ecomCommunes(correctionWilayaId),
+    queryFn: () => fetchEcomCommunes(correctionWilayaId),
+    enabled: !!editingDestination && correctionWilayaId > 0,
     staleTime: 24 * 60 * 60_000,
   });
   const leadQ = useQuery({
@@ -139,7 +154,10 @@ export function AdminDeliveryOrders() {
     if (!form.customerName.trim()) return 'Le nom du client est obligatoire.';
     if (!/^0[5-7]\d{8}$/.test(form.mobile1.replace(/\s/g, ''))) return 'Téléphone attendu : 0555123456.';
     if (!selectedWilaya) return 'Choisis une wilaya.';
-    if (form.deliveryMode === 'domicile' && !form.commune) return 'Choisis une commune livrable.';
+    if (form.deliveryMode === 'domicile'
+      && !communesQ.data?.some((item) => item.livrable && item.commune === form.commune)) {
+      return 'Choisis une commune livrable dans la liste E-com.';
+    }
     if (form.deliveryMode === 'stopdesk' && !form.stopdeskCode) return 'Choisis un bureau stopdesk.';
     if (connectionQ.data?.stock && !form.refArticle.trim()) return 'La référence article E-com est obligatoire pour ce compte stock.';
     if (!Number.isFinite(form.amount) || form.amount < 0) return 'Le montant à encaisser est invalide.';
@@ -230,6 +248,40 @@ export function AdminDeliveryOrders() {
     }
   }
 
+  function openDestinationCorrection(order: DeliveryOrder) {
+    setEditingDestination(order);
+    setCorrectionWilayaId(order.wilaya_id);
+    setCorrectionCommune(order.commune ?? '');
+    setCorrectionAddress(order.address ?? '');
+  }
+
+  async function saveDestinationCorrection() {
+    if (!editingDestination) return;
+    const validCommune = correctionCommunesQ.data?.some(
+      (item) => item.livrable && item.commune === correctionCommune,
+    );
+    if (!correctionWilayaId || !validCommune) {
+      toast.error('Choisis une wilaya et une commune livrable dans les listes E-com.');
+      return;
+    }
+    setSavingCorrection(true);
+    try {
+      await updateDeliveryOrderDestination({
+        orderId: editingDestination.id,
+        wilayaId: correctionWilayaId,
+        commune: correctionCommune,
+        address: correctionAddress.trim() || null,
+      });
+      toast.success('Destination corrigée. Vérifie-la puis clique sur Envoyer.');
+      setEditingDestination(null);
+      await qc.invalidateQueries({ queryKey: queryKeys.adminDeliveryOrders });
+    } catch (error) {
+      toast.error(friendlyError(error), 'Correction impossible');
+    } finally {
+      setSavingCorrection(false);
+    }
+  }
+
   const orders = ordersQ.data ?? [];
 
   return (
@@ -313,9 +365,16 @@ export function AdminDeliveryOrders() {
                         <td className="px-4 py-3">
                           <div className="flex justify-end gap-1">
                             {!order.ecom_tracking ? (
-                              <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" disabled={busyOrder === order.id} onClick={() => runOrderAction(order, 'sync')}>
-                                {busyOrder === order.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Envoyer
-                              </button>
+                              <>
+                                {order.delivery_mode === 'domicile' && (
+                                  <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" disabled={busyOrder === order.id} onClick={() => openDestinationCorrection(order)}>
+                                    <Pencil className="h-3.5 w-3.5" /> Corriger
+                                  </button>
+                                )}
+                                <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" disabled={busyOrder === order.id} onClick={() => runOrderAction(order, 'sync')}>
+                                  {busyOrder === order.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Envoyer
+                                </button>
+                              </>
                             ) : (
                               <>
                                 <button type="button" aria-label="Actualiser le statut" title="Actualiser le statut" className="btn-outline px-2.5 py-1.5" disabled={busyOrder === order.id} onClick={() => runOrderAction(order, 'refresh')}>
@@ -405,6 +464,39 @@ export function AdminDeliveryOrders() {
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button type="button" className="btn-outline" disabled={!!submitting} onClick={() => submit(false)}>{submitting === 'draft' && <Loader2 className="h-4 w-4 animate-spin" />} Enregistrer brouillon</button>
             <button type="button" className="btn-primary" disabled={!!submitting || !connectionQ.data?.connected} onClick={() => submit(true)}>{submitting === 'sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Enregistrer et envoyer à E-com</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!editingDestination} onClose={() => !savingCorrection && setEditingDestination(null)} title="Corriger la destination" maxWidth="max-w-xl">
+        <div className="space-y-5">
+          <div className="rounded-card-sm border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Sélectionne les valeurs exactes proposées par E-com. La commande ne sera pas renvoyée automatiquement.
+          </div>
+          <Field label="Wilaya E-com *">
+            <select className="input" value={correctionWilayaId}
+              onChange={(e) => { setCorrectionWilayaId(Number(e.target.value)); setCorrectionCommune(''); }}
+              disabled={wilayasQ.isLoading}>
+              <option value={0}>Choisir la wilaya</option>
+              {(wilayasQ.data ?? []).filter((item) => item.domicile).map((wilaya) => (
+                <option key={wilaya.id} value={wilaya.id}>{wilaya.id.toString().padStart(2, '0')} — {wilaya.libelle}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Commune livrable E-com *">
+            <select className="input" value={correctionCommune}
+              onChange={(e) => setCorrectionCommune(e.target.value)}
+              disabled={!correctionWilayaId || correctionCommunesQ.isLoading}>
+              <option value="">{correctionCommunesQ.isLoading ? 'Chargement…' : 'Choisir la commune'}</option>
+              {(correctionCommunesQ.data ?? []).map((item) => <option key={item.id} value={item.commune}>{item.commune}</option>)}
+            </select>
+          </Field>
+          <Field label="Adresse"><input className="input" maxLength={250} value={correctionAddress} onChange={(e) => setCorrectionAddress(e.target.value)} /></Field>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-outline" disabled={savingCorrection} onClick={() => setEditingDestination(null)}>Annuler</button>
+            <button type="button" className="btn-primary" disabled={savingCorrection} onClick={saveDestinationCorrection}>
+              {savingCorrection ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Enregistrer la correction
+            </button>
           </div>
         </div>
       </Modal>

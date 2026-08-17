@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react';
-import { CheckCircle2, Loader2, MapPin, Radio, ShieldCheck } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { CheckCircle2, Loader2, Radio, ShieldCheck } from 'lucide-react';
 import { AurelLogo } from '@/components/features/AurelLogo';
-import { submitWebinarLead } from '@/lib/queries';
+import {
+  fetchPublicEcomCommunes, fetchPublicEcomWilayas, queryKeys, submitWebinarLead,
+} from '@/lib/queries';
 import { trackEvent } from '@/lib/pixel';
-import { WILAYA_OPTIONS } from '@/lib/wilayas';
 
 type FormState = {
   fullName: string;
@@ -26,6 +28,8 @@ const ERRORS: Record<string, string> = {
   PHONE_INVALID: 'Entre un numéro WhatsApp algérien valide, par exemple 0555123456.',
   EMAIL_INVALID: 'Entre une adresse email valide.',
   WILAYA_INVALID: 'Choisis ta wilaya.',
+  COMMUNE_INVALID: 'Choisis une commune livrable dans la liste.',
+  CATALOG_UNAVAILABLE: 'Les communes sont temporairement indisponibles. Réessaie dans un instant.',
   ADDRESS_REQUIRED: 'Entre ta commune et ton adresse de livraison.',
   RATE_LIMITED: 'Trop de tentatives. Réessaie dans une heure.',
   SUBMISSION_FAILED: "L'inscription n'a pas pu être enregistrée. Réessaie dans un instant.",
@@ -37,6 +41,19 @@ export function WebinarRegistrationPage() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submittingRef = useRef(false);
+  const wilayasQ = useQuery({
+    queryKey: queryKeys.publicEcomWilayas,
+    queryFn: fetchPublicEcomWilayas,
+    staleTime: 24 * 60 * 60_000,
+    retry: 2,
+  });
+  const communesQ = useQuery({
+    queryKey: queryKeys.publicEcomCommunes(form.wilayaId),
+    queryFn: () => fetchPublicEcomCommunes(form.wilayaId),
+    enabled: form.wilayaId > 0,
+    staleTime: 24 * 60 * 60_000,
+    retry: 2,
+  });
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -46,8 +63,10 @@ export function WebinarRegistrationPage() {
       setError('Remplis tous les champs obligatoires.');
       return;
     }
-    const wilaya = WILAYA_OPTIONS.find((item) => item.id === form.wilayaId);
+    const wilaya = wilayasQ.data?.find((item) => item.id === form.wilayaId);
     if (!wilaya) { setError('Choisis ta wilaya.'); return; }
+    const commune = communesQ.data?.find((item) => item.commune === form.commune && item.livrable);
+    if (!commune) { setError('Choisis une commune livrable dans la liste.'); return; }
 
     submittingRef.current = true;
     setSubmitting(true);
@@ -59,8 +78,8 @@ export function WebinarRegistrationPage() {
         email: form.email,
         attended_live: form.attended,
         wilaya_id: wilaya.id,
-        wilaya_name: wilaya.name,
-        commune: form.commune,
+        wilaya_name: wilaya.libelle,
+        commune: commune.commune,
         address: form.address,
         website: form.website,
       });
@@ -114,12 +133,21 @@ export function WebinarRegistrationPage() {
               <Field label="Numéro WhatsApp *"><input className="input" inputMode="tel" autoComplete="tel" maxLength={30} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="0555123456" /></Field>
               <Field label="Adresse email *"><input className="input" type="email" autoComplete="email" maxLength={254} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="nom@gmail.com" /></Field>
               <Field label="Wilaya de livraison *">
-                <select className="input" value={form.wilayaId} onChange={(e) => setForm({ ...form, wilayaId: Number(e.target.value) })}>
-                  <option value={0}>Choisir la wilaya</option>
-                  {WILAYA_OPTIONS.map((wilaya) => <option key={wilaya.id} value={wilaya.id}>{wilaya.label}</option>)}
+                <select className="input" value={form.wilayaId}
+                  onChange={(e) => setForm({ ...form, wilayaId: Number(e.target.value), commune: '' })}
+                  disabled={wilayasQ.isLoading || wilayasQ.isError}>
+                  <option value={0}>{wilayasQ.isLoading ? 'Chargement des wilayas…' : wilayasQ.isError ? 'Wilayas indisponibles' : 'Choisir la wilaya'}</option>
+                  {(wilayasQ.data ?? []).map((wilaya) => <option key={wilaya.id} value={wilaya.id}>{wilaya.id.toString().padStart(2, '0')} — {wilaya.libelle}</option>)}
                 </select>
               </Field>
-              <Field label="Commune de livraison *"><input className="input" maxLength={100} value={form.commune} onChange={(e) => setForm({ ...form, commune: e.target.value })} placeholder="Ta commune" /></Field>
+              <Field label="Commune de livraison *">
+                <select className="input" value={form.commune}
+                  onChange={(e) => setForm({ ...form, commune: e.target.value })}
+                  disabled={!form.wilayaId || communesQ.isLoading || communesQ.isError}>
+                  <option value="">{!form.wilayaId ? "Choisis d'abord la wilaya" : communesQ.isLoading ? 'Chargement des communes…' : communesQ.isError ? 'Communes indisponibles' : 'Choisir la commune'}</option>
+                  {(communesQ.data ?? []).map((item) => <option key={item.id} value={item.commune}>{item.commune}</option>)}
+                </select>
+              </Field>
               <Field label="Adresse de livraison *"><input className="input" autoComplete="street-address" maxLength={200} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Quartier, rue, repère…" /></Field>
             </div>
 
