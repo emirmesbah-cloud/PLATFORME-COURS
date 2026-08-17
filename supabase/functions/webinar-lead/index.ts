@@ -184,6 +184,23 @@ serve(async (req) => {
   }
   if (!commune || !address) return json({ ok: false, error: 'ADDRESS_REQUIRED' }, 422);
 
+  // Duplicate guard (the exemption computed above finally does something): one
+  // registration per phone number for the public, so a prospect who submits
+  // twice never becomes two leads and two 38 000 DZD draft orders, and a closer
+  // never calls the same person twice. Admin testers are exempt so they can
+  // re-submit the same identity freely. A repeat is treated as success WITHOUT
+  // creating a second row — the visitor still proceeds to the WhatsApp group.
+  if (!isAdminTester) {
+    const { data: existingLead } = await admin
+      .from('webinar_leads')
+      .select('id')
+      .eq('phone_normalized', phoneNormalized)
+      .limit(1);
+    if (existingLead && existingLead.length > 0) {
+      return json({ ok: true, duplicate: true });
+    }
+  }
+
   try {
     const wilayas = await getCatalog(admin, 'wilayas');
     const selectedWilaya = wilayas.find((item) => Number(item.id) === wilayaId);
