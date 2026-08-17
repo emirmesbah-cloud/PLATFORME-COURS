@@ -53,7 +53,7 @@ export function AdminGuard({ children }: { children: ReactNode }) {
     // Fire the "not admin" toast only when we have DB confirmation that
     // user is NOT admin. Otherwise we'd show a false-positive toast during
     // stub→cache transition for legitimate admins.
-    if (!isLoading && session && profile && profileSource === 'db' && !isAdmin) {
+    if (!isLoading && session && profile && profileSource === 'db' && !isAdmin && profile.staff_role !== 'closer') {
       toast.error('Accès refusé. Cet espace est réservé aux administrateurs.', 'Accès refusé');
     }
   }, [isLoading, session, profile, profileSource, isAdmin, toast]);
@@ -79,7 +79,11 @@ export function AdminGuard({ children }: { children: ReactNode }) {
 
   // From here, profile is from 'cache' or 'db'. isAdmin already trusts both
   // (R20). If admin → render. If not admin → redirect to dashboard.
-  if (!isAdmin) return <Navigate to="/dashboard" replace />;
+  const isCloser = profile.staff_role === 'closer' && profile.staff_permissions?.includes('prospects');
+  if (!isAdmin && !isCloser) return <Navigate to="/dashboard" replace />;
+  if (isCloser && location.pathname !== '/admin/prospects' && location.pathname !== '/admin/security') {
+    return <Navigate to="/admin/prospects" replace />;
+  }
 
   return <>{children}</>;
 }

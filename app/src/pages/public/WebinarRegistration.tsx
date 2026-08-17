@@ -4,7 +4,7 @@ import { CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
 import { AurelLogo } from '@/components/features/AurelLogo';
 import { useAuth } from '@/hooks/useAuth';
 import {
-  fetchPublicEcomCommunes, fetchPublicEcomWilayas, queryKeys, submitWebinarLead,
+  fetchPublicEcomCommunes, fetchPublicEcomWilayas, fetchWebinarFormSettings, queryKeys, submitWebinarLead,
 } from '@/lib/queries';
 import { trackEvent } from '@/lib/pixel';
 
@@ -16,12 +16,13 @@ type FormState = {
   wilayaId: number;
   commune: string;
   address: string;
+  extraAnswers: Record<string, string>;
   website: string;
 };
 
 const EMPTY_FORM: FormState = {
   fullName: '', phone: '', email: '', attended: null,
-  wilayaId: 0, commune: '', address: '', website: '',
+  wilayaId: 0, commune: '', address: '', extraAnswers: {}, website: '',
 };
 
 const ERRORS: Record<string, string> = {
@@ -49,6 +50,12 @@ export function WebinarRegistrationPage() {
     staleTime: 24 * 60 * 60_000,
     retry: 2,
   });
+  const settingsQ = useQuery({
+    queryKey: [...queryKeys.webinarFormSettings, 'public'],
+    queryFn: () => fetchWebinarFormSettings(true),
+    staleTime: 60_000,
+  });
+  const settings = settingsQ.data;
   const communesQ = useQuery({
     queryKey: queryKeys.publicEcomCommunes(form.wilayaId),
     queryFn: () => fetchPublicEcomCommunes(form.wilayaId),
@@ -84,6 +91,7 @@ export function WebinarRegistrationPage() {
         commune: commune.commune,
         address: form.address,
         website: form.website,
+        extra_answers: form.extraAnswers,
       });
       trackEvent('Lead', { content_name: 'Inscription après webinar', content_category: 'Webinar' });
       setSuccess(true);
@@ -124,12 +132,14 @@ export function WebinarRegistrationPage() {
         )}
         <section className="card mt-7 overflow-hidden">
           <header className="border-b border-zinc-100 px-6 py-6 text-center md:px-8">
-            <p className="text-xs font-semibold uppercase tracking-wider text-aurel-orange">Formulaire après le webinar</p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-zinc-950">Tes informations</h1>
-            <p className="mt-2 text-sm text-zinc-600">Simple et rapide — environ 1 minute.</p>
+            {settings?.image_url && <img src={settings.image_url} alt="" className="mx-auto mb-4 max-h-40 rounded-card-sm object-cover" />}
+            <p className="text-xs font-semibold uppercase tracking-wider text-aurel-orange">{settings?.eyebrow ?? 'Formulaire après le webinar'}</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-zinc-950">{settings?.title ?? 'Tes informations'}</h1>
+            <p className="mt-2 text-sm text-zinc-600">{settings?.description ?? 'Simple et rapide — environ 1 minute.'}</p>
           </header>
 
           <form onSubmit={submit} className="space-y-8 p-6 md:p-8">
+            {(settings?.sections ?? []).map((section) => <div key={section.id} className="rounded-card-sm bg-aurel-orange-soft p-4"><div className="font-semibold text-aurel-orange-dark">{section.title}</div>{section.description && <p className="mt-1 text-sm text-zinc-600">{section.description}</p>}</div>)}
             <div className="space-y-6">
               <Field label="Nom complet *"><input className="input" autoComplete="name" maxLength={100} value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder="Ton nom et prénom" /></Field>
               <Field label="Numéro WhatsApp *"><input className="input" inputMode="tel" autoComplete="tel" maxLength={30} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="0555123456" /></Field>
@@ -160,6 +170,8 @@ export function WebinarRegistrationPage() {
                 <AttendanceChoice checked={form.attended === false} label="Non, pas encore" onClick={() => setForm({ ...form, attended: false })} />
               </div>
             </fieldset>
+
+            {(settings?.extra_fields ?? []).length > 0 && <div className="space-y-6 border-t border-zinc-100 pt-7">{settings!.extra_fields.map((field) => <Field key={field.id} label={`${field.label}${field.required ? ' *' : ''}`}>{field.type === 'textarea' ? <textarea className="input min-h-24" required={field.required} value={form.extraAnswers[field.id] ?? ''} onChange={(e) => setForm({ ...form, extraAnswers: { ...form.extraAnswers, [field.id]: e.target.value } })} /> : field.type === 'select' ? <select className="input" required={field.required} value={form.extraAnswers[field.id] ?? ''} onChange={(e) => setForm({ ...form, extraAnswers: { ...form.extraAnswers, [field.id]: e.target.value } })}><option value="">Choisir</option>{(field.options ?? []).map((option) => <option key={option}>{option}</option>)}</select> : <input className="input" required={field.required} value={form.extraAnswers[field.id] ?? ''} onChange={(e) => setForm({ ...form, extraAnswers: { ...form.extraAnswers, [field.id]: e.target.value } })} />}</Field>)}</div>}
 
             <div className="absolute -left-[9999px]" aria-hidden="true">
               <label>Website<input tabIndex={-1} autoComplete="off" value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} /></label>

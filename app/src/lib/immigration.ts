@@ -248,6 +248,12 @@ export interface ImmigrationLessonMedia {
   lesson_slug: string;
   vdocipher_video_id: string | null;
   is_published: boolean;
+  title?: string | null;
+  module_slug?: string | null;
+  lesson_number_label?: string | null;
+  duration_label?: string | null;
+  order_index?: number | null;
+  is_custom?: boolean;
 }
 
 /** Student : video id + publish state for ONE lesson (null row = no video yet). */
@@ -269,9 +275,29 @@ export async function fetchImmigrationLessonMedia(lessonSlug: string): Promise<I
 export async function adminFetchAllImmigrationLessons(): Promise<ImmigrationLessonMedia[]> {
   const { data, error } = await supabase
     .from('immigration_lessons')
-    .select('lesson_slug, vdocipher_video_id, is_published');
+    .select('lesson_slug, vdocipher_video_id, is_published, title, module_slug, lesson_number_label, duration_label, order_index, is_custom')
+    .order('order_index', { ascending: true, nullsFirst: false });
   if (error) throw error;
   return (data ?? []) as ImmigrationLessonMedia[];
+}
+
+export async function fetchCustomImmigrationLessons(admin = false): Promise<ImmigrationLessonMedia[]> {
+  let query = supabase.from('immigration_lessons')
+    .select('lesson_slug, vdocipher_video_id, is_published, title, module_slug, lesson_number_label, duration_label, order_index, is_custom')
+    .eq('is_custom', true)
+    .order('order_index', { ascending: true, nullsFirst: false });
+  if (!admin) query = query.eq('is_published', true);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as ImmigrationLessonMedia[];
+}
+
+export async function adminCreateImmigrationLesson(input: {
+  lesson_slug: string; title: string; module_slug: string; lesson_number_label: string;
+  duration_label: string; order_index: number; vdocipher_video_id: string | null; is_published: boolean;
+}) {
+  const { error } = await supabase.from('immigration_lessons').insert({ ...input, is_custom: true });
+  if (error) throw error;
 }
 
 /** Admin : upsert a lesson's video id + publish flag. */

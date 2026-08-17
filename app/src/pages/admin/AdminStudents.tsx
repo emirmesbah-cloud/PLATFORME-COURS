@@ -51,7 +51,7 @@ export function AdminStudents() {
       toast.info('Aucun étudiant à exporter.');
       return;
     }
-    const headers = ['id', 'email', 'first_name', 'last_name', 'whatsapp', 'tier', 'diplome_algerien', 'activated_at', 'last_login_at'];
+    const headers = ['id', 'email', 'first_name', 'last_name', 'whatsapp', 'activation_code', 'tier', 'diplome_algerien', 'activated_at', 'last_login_at'];
     const rows = students.map((s) => headers.map((h) => csvEscape((s as never)[h])).join(','));
     const csv = headers.join(',') + '\n' + rows.join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -196,6 +196,7 @@ export function AdminStudents() {
                   <th className="px-4 py-3">Étudiant</th>
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">WhatsApp</th>
+                  <th className="px-4 py-3">Code utilisé</th>
                   <th className="px-4 py-3">Formule</th>
                   <th className="px-4 py-3">Cours</th>
                   <th className="px-4 py-3">Inscrit</th>
@@ -225,6 +226,7 @@ export function AdminStudents() {
                     </td>
                     <td className="px-4 py-3 text-slate-600">{s.email}</td>
                     <td className="px-4 py-3 text-slate-600">{s.whatsapp}</td>
+                    <td className="px-4 py-3 font-mono text-xs font-semibold text-aurel-orange-dark">{s.activation_code ?? '—'}</td>
                     <td className="px-4 py-3">
                       <span className={cn('badge', s.tier === 'accompagne' ? 'badge-teal' : 'badge-orange')}>
                         {tierLabel(s.tier)}

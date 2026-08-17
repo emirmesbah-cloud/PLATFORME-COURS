@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { courseLabel, tierLabel, tierPrice, formatDate, formatDateTime, cn } from '@/lib/utils';
 import type { Course, Tier } from '@/lib/types';
 import type { ActivationDocumentMode } from '@/components/features/ActivationCodesPDF';
+import { supabase } from '@/lib/supabase';
 
 export function AdminCodes() {
   const qc = useQueryClient();
@@ -20,6 +21,7 @@ export function AdminCodes() {
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [generated, setGenerated] = useState<string[] | null>(null);
+  const [documentReferences, setDocumentReferences] = useState<Record<string, number>>({});
   const [generatedTier, setGeneratedTier] = useState<Tier>('autonome');
   const [generatedCourse, setGeneratedCourse] = useState<Course>('pflege');
   const [copyState, setCopyState] = useState<'idle' | 'codes' | 'whatsapp'>('idle');
@@ -73,6 +75,7 @@ export function AdminCodes() {
         notes: trimmedNotes ?? null,
         created_at: now,
         created_by: 'admin-panel',
+        document_reference_number: null,
       }));
 
       // Update only the visible filter result. Updating every cached filter used
@@ -91,6 +94,12 @@ export function AdminCodes() {
       qc.invalidateQueries({ queryKey: queryKeys.adminStats });
 
       setGenerated(r.codes);
+      const { data: generatedRows, error: generatedRowsError } = await supabase
+        .from('activation_codes')
+        .select('code, document_reference_number')
+        .in('code', r.codes);
+      if (generatedRowsError) throw generatedRowsError;
+      setDocumentReferences(Object.fromEntries((generatedRows ?? []).map((row) => [row.code, row.document_reference_number])));
       setGeneratedTier(tier);
       setGeneratedCourse(course);
       setNotes('');
@@ -167,6 +176,7 @@ ${codes.map((c) => `• ${c}`).join('\n')}
       const blob = await pdf(
         <ActivationCodesPDF
           codes={generated}
+          documentReferences={documentReferences}
           course={generatedCourse}
           tier={generatedTier}
           mode={mode}

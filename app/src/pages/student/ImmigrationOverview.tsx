@@ -5,7 +5,7 @@ import { ArrowRight, ChevronDown, CheckCircle2, Circle, Play, Download, Layers, 
 import {
   IMMIGRATION_COURSE, IMMIGRATION_SECTIONS, IMMIGRATION_FLAT_LESSONS,
 } from '@/data/immigration-structure';
-import { fetchImmigrationStatus, getImmigrationModuleAccess, type ImmigrationLessonStatus } from '@/lib/immigration';
+import { fetchCustomImmigrationLessons, fetchImmigrationStatus, getImmigrationModuleAccess, type ImmigrationLessonStatus } from '@/lib/immigration';
 import { BonusCard } from '@/components/features/BonusCard';
 import { fetchBonusForCourse } from '@/lib/queries';
 import { cn } from '@/lib/utils';
@@ -31,6 +31,7 @@ export function ImmigrationOverview() {
     staleTime: 5 * 60 * 1000,
   });
   const bonuses = bonusQ.data ?? [];
+  const customQ = useQuery({ queryKey: ['immigration-custom-lessons', isAdmin], queryFn: () => fetchCustomImmigrationLessons(isAdmin), staleTime: 60_000 });
   const bySlug = new Map<string, ImmigrationLessonStatus>(status.map((s) => [s.lesson_slug, s]));
 
   const [openModules, setOpenModules] = useState<Set<string>>(
@@ -219,6 +220,8 @@ export function ImmigrationOverview() {
           })}
         </section>
       ))}
+
+      {(customQ.data ?? []).length > 0 && <section className="space-y-3"><div className="flex items-center gap-2"><Layers className="h-4 w-4 text-aurel-orange" /><h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-zinc-500">Nouvelles leçons</h2></div><div className="card overflow-hidden">{(customQ.data ?? []).map((lesson) => <Link key={lesson.lesson_slug} to={`/immigration/custom/${lesson.lesson_slug}`} className="group flex items-center gap-3 border-b border-zinc-100 px-5 py-3 last:border-b-0 hover:bg-zinc-50"><Circle className="h-4 w-4 text-zinc-300" /><span className="w-10 font-mono text-[11px] text-zinc-400">{lesson.lesson_number_label}</span><span className="flex-1 text-sm text-zinc-800">{lesson.title}</span><span className="font-mono text-[10px] text-zinc-400">{lesson.duration_label}</span><Play className="h-4 w-4 text-aurel-orange" /></Link>)}</div></section>}
 
       {/* Bonus */}
       <section className="space-y-3">

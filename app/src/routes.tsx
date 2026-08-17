@@ -31,6 +31,7 @@ import { ImmigrationLayout } from '@/components/layout/ImmigrationLayout';
 // Immigration course — lazy (separate course, not the existing Pflege path).
 const ImmigrationOverview     = lazyNamed(() => import('@/pages/student/ImmigrationOverview'),     'ImmigrationOverview');
 const ImmigrationLessonReader = lazyNamed(() => import('@/pages/student/ImmigrationLessonReader'), 'ImmigrationLessonReader');
+const ImmigrationCustomLessonReader = lazyNamed(() => import('@/pages/student/ImmigrationCustomLessonReader'), 'ImmigrationCustomLessonReader');
 
 // SHERLOCK R3 perf : code-split admin routes. Avant, les 9 admin pages +
 // recharts (utilisé uniquement dans AdminAnalytics) étaient bundle dans
@@ -67,6 +68,9 @@ const AdminAudit     = lazyNamed(() => import('@/pages/admin/AdminAudit'),      
 const AdminWebinarGroups = lazyNamed(() => import('@/pages/admin/AdminWebinarGroups'), 'AdminWebinarGroups');
 const AdminDeliveryOrders = lazyNamed(() => import('@/pages/admin/AdminDeliveryOrders'), 'AdminDeliveryOrders');
 const AdminWebinarLeads = lazyNamed(() => import('@/pages/admin/AdminWebinarLeads'), 'AdminWebinarLeads');
+const AdminSecurity = lazyNamed(() => import('@/pages/admin/AdminSecurity'), 'AdminSecurity');
+const AdminClosers = lazyNamed(() => import('@/pages/admin/AdminClosers'), 'AdminClosers');
+const AdminFormBuilder = lazyNamed(() => import('@/pages/admin/AdminFormBuilder'), 'AdminFormBuilder');
 
 // Public unsubscribe page — lazy too, rarement utilisée et pas dans le
 // flow auth principal.
@@ -126,6 +130,7 @@ export const routes: RouteObject[] = [
     children: [
       { index: true,                          element: <L><ImmigrationOverview /></L> },
       { path: 'profil',                       element: <StudentProfile /> },
+      { path: 'custom/:lessonSlug',           element: <L><ImmigrationCustomLessonReader /></L> },
       { path: ':moduleSlug/:lessonSlug',       element: <L><ImmigrationLessonReader /></L> },
     ],
   },
@@ -166,6 +171,9 @@ export const routes: RouteObject[] = [
       { path: 'emails',      element: <L><AdminEmails /></L> },
       { path: 'audit',       element: <L><AdminAudit /></L> },
       { path: 'webinar-groups', element: <L><AdminWebinarGroups /></L> },
+      { path: 'security', element: <L><AdminSecurity /></L> },
+      { path: 'closers', element: <L><AdminClosers /></L> },
+      { path: 'formulaire', element: <L><AdminFormBuilder /></L> },
     ],
   },
 

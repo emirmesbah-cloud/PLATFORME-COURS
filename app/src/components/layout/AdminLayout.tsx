@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, KeyRound, Users, BookOpen, Gift, Menu, X, ArrowLeft, LogOut,
   TrendingUp, Heart, Mail, Shield, AlertTriangle, GraduationCap, Wallet, Plane,
-  MessageCircle, Truck, ClipboardList,
+  MessageCircle, Truck, ClipboardList, UserRoundCheck, FilePenLine, LockKeyhole,
 } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
@@ -43,6 +43,8 @@ const NAV_GROUPS: { label: string; items: { to: string; label: string; icon: typ
     label: 'Gestion',
     items: [
       { to: '/admin/prospects',     label: 'Prospects',    icon: ClipboardList },
+      { to: '/admin/formulaire',    label: 'Formulaire',   icon: FilePenLine },
+      { to: '/admin/closers',       label: 'Closers',      icon: UserRoundCheck },
       { to: '/admin/commandes',    label: 'Commandes',    icon: Truck },
       { to: '/admin/comptabilite', label: 'Comptabilité', icon: Wallet, alertKey: 'pending' },
       { to: '/admin/analytics',    label: 'Analytics',    icon: TrendingUp },
@@ -50,6 +52,7 @@ const NAV_GROUPS: { label: string; items: { to: string; label: string; icon: typ
       { to: '/admin/emails',       label: 'Emails',       icon: Mail },
       { to: '/admin/webinar-groups', label: 'Groupes webinar', icon: MessageCircle },
       { to: '/admin/audit',        label: 'Audit',        icon: Shield },
+      { to: '/admin/security',     label: 'Sécurité',     icon: LockKeyhole },
     ],
   },
 ];
@@ -64,8 +67,13 @@ export function AdminLayout() {
     queryKey: queryKeys.adminAccountingStats,
     queryFn:  fetchAccountingStats,
     staleTime: 60 * 1000,
+    enabled: profile?.staff_role !== 'closer',
   });
   const pending = statsQ.data?.pending ?? 0;
+  const isCloser = profile?.staff_role === 'closer';
+  const visibleGroups = isCloser
+    ? [{ label: 'Gestion', items: NAV_GROUPS.flatMap((group) => group.items).filter((item) => item.to === '/admin/prospects' || item.to === '/admin/security') }]
+    : NAV_GROUPS;
 
   async function handleSignOut() { await signOut(); navigate('/login', { replace: true }); }
 
@@ -116,7 +124,7 @@ export function AdminLayout() {
 
           {/* Nav groups */}
           <nav className="flex-1 flex flex-col gap-0.5 overflow-y-auto">
-            {NAV_GROUPS.map((group) => (
+            {visibleGroups.map((group) => (
               <div key={group.label} className="mt-3 first:mt-0">
                 <div className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-zinc-500 font-medium">
                   {group.label}
@@ -179,7 +187,7 @@ export function AdminLayout() {
                   {profile?.first_name} {profile?.last_name}
                 </div>
                 <div className="font-mono text-[10px] uppercase tracking-wider text-aurel-orange">
-                  admin
+                  {isCloser ? 'closer' : 'admin'}
                 </div>
               </div>
               <button onClick={handleSignOut} className="hidden md:inline-flex h-7 w-7 items-center justify-center rounded-card-sm text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900" aria-label="Déconnexion">

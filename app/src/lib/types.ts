@@ -17,6 +17,8 @@ export interface Profile {
   is_admin: boolean;
   // Single-course gating : which course this student bought. Default 'pflege'.
   course_access?: Course;
+  staff_role?: 'student' | 'closer' | 'admin';
+  staff_permissions?: string[];
 }
 
 export interface Lesson {
@@ -67,6 +69,7 @@ export interface ActivationCode {
   created_at: string;
   created_by: string | null;
   notes: string | null;
+  document_reference_number: number | null;
 }
 
 export interface ProgressSummary {
@@ -293,7 +296,45 @@ export interface DeliveryOrder {
   created_by: string;
   created_at: string;
   updated_at: string;
+  deleted_from_ecom_at?: string | null;
+  deleted_from_ecom_event_id?: string | null;
   activation_code?: { code: string } | null;
+}
+
+export interface StaffMember {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  whatsapp: string | null;
+  role: 'closer';
+  permissions: string[];
+  tasks: string[];
+  auth_user_id: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebinarFormExtraField {
+  id: string;
+  label: string;
+  type: 'text' | 'textarea' | 'select';
+  required: boolean;
+  options?: string[];
+}
+
+export interface WebinarFormSettings {
+  id: boolean;
+  eyebrow: string;
+  title: string;
+  description: string;
+  image_url: string | null;
+  sections: { id: string; title: string; description: string }[];
+  extra_fields: WebinarFormExtraField[];
+  google_sheet_url: string | null;
+  backup_webhook_url?: string | null;
+  updated_at: string;
 }
 
 // ── Webinar prospect CRM (mig 20260817000051) ─────────────────

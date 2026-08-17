@@ -78,14 +78,20 @@ serve(async (req) => {
 
   const occurredAt = payload.date ? new Date(String(payload.date)) : new Date(timestamp * 1000);
   const safeOccurredAt = Number.isNaN(occurredAt.getTime()) ? new Date() : occurredAt;
+  const eventText = `${payload.event ?? ''} ${payload.action ?? ''} ${payload.situation ?? ''} ${payload.etat_logistique ?? ''}`.toLowerCase();
+  const deletedFromEcom = payload.deleted === true || /supprim|delete|removed/.test(eventText);
   const { data: updated, error: updateError } = await admin
     .from('delivery_orders')
     .update({
-      ecom_situation: payload.situation ? String(payload.situation).slice(0, 200) : null,
+      ecom_situation: deletedFromEcom ? 'Supprimée depuis E-com' : payload.situation ? String(payload.situation).slice(0, 200) : null,
       ecom_logistics_state: payload.etat_logistique ? String(payload.etat_logistique).slice(0, 200) : null,
       last_event_at: safeOccurredAt.toISOString(),
       last_synced_at: new Date().toISOString(),
       last_error: null,
+      ...(deletedFromEcom ? {
+        deleted_from_ecom_at: safeOccurredAt.toISOString(),
+        deleted_from_ecom_event_id: eventId,
+      } : {}),
     })
     .eq('ecom_tracking', tracking)
     .select('id, webinar_lead_id');

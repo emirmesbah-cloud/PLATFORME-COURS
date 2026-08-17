@@ -6,6 +6,7 @@ export type ActivationDocumentMode = 'quick' | 'full';
 
 interface Props {
   codes: string[];
+  documentReferences: Record<string, number>;
   course: Course;
   tier: Tier;
   mode: ActivationDocumentMode;
@@ -112,8 +113,8 @@ const styles = StyleSheet.create({
   articleText: { color: '#334155', fontSize: 7.7, lineHeight: 1.42 },
 });
 
-function registrationReference(code: string, year: number) {
-  return `AA-${year}-${code.replace(/[^A-Z0-9]/gi, '').slice(-7).toUpperCase()}`;
+function registrationReference(referenceNumber: number, year: number) {
+  return `AA-${year}-${String(referenceNumber).padStart(4, '0')}`;
 }
 
 function CommonFooter({ pageLabel }: { pageLabel: string }) {
@@ -132,8 +133,9 @@ function ActivationPage({
   activationQr,
   telegramQr,
   generatedAt,
-}: Omit<Props, 'codes' | 'mode'> & { code: string; generatedAt: Date }) {
-  const reference = registrationReference(code, generatedAt.getFullYear());
+  referenceNumber,
+}: Omit<Props, 'codes' | 'mode' | 'documentReferences'> & { code: string; generatedAt: Date; referenceNumber: number }) {
+  const reference = registrationReference(referenceNumber, generatedAt.getFullYear());
   const immigration = course === 'immigration';
 
   return (
@@ -337,6 +339,7 @@ function RulesPage({ code, second }: { code: string; second?: boolean }) {
 
 export function ActivationCodesPDF({
   codes,
+  documentReferences,
   course,
   tier,
   mode,
@@ -357,6 +360,7 @@ export function ActivationCodesPDF({
         <DocumentPages
           key={code}
           code={code}
+          referenceNumber={documentReferences[code]}
           course={course}
           tier={tier}
           activationQr={activationQr}
@@ -377,10 +381,11 @@ function DocumentPages({
   telegramQr,
   generatedAt,
   fullDossier,
-}: Omit<Props, 'codes' | 'mode'> & { code: string; generatedAt: Date; fullDossier: boolean }) {
+  referenceNumber,
+}: Omit<Props, 'codes' | 'mode' | 'documentReferences'> & { code: string; generatedAt: Date; fullDossier: boolean; referenceNumber: number }) {
   return (
     <>
-      <ActivationPage code={code} course={course} tier={tier} activationQr={activationQr} telegramQr={telegramQr} generatedAt={generatedAt} />
+      <ActivationPage code={code} course={course} tier={tier} activationQr={activationQr} telegramQr={telegramQr} generatedAt={generatedAt} referenceNumber={referenceNumber} />
       {fullDossier ? (
         <>
           <ProgramSheet code={code} tier={tier} />

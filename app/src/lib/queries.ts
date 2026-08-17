@@ -38,6 +38,7 @@ import type {
   WebinarGroup, WebinarGroupSlug,
   DeliveryOrder, DeliveryMode, EcomWilaya, EcomCommune, EcomStopdesk,
   WebinarLead, WebinarLeadStatus,
+  StaffMember, WebinarFormSettings,
 } from './types';
 
 // SHERLOCK R14 — H10 : profile shape côté admin inclut revoked_at + reason
@@ -46,6 +47,7 @@ import type {
 export interface AdminStudentRow extends Profile {
   revoked_at: string | null;
   revoked_reason: string | null;
+  activation_code: string | null;
 }
 
 export const queryKeys = {
@@ -85,6 +87,8 @@ export const queryKeys = {
   publicEcomCommunes: (wilayaId: number) => ['public', 'ecom', 'communes', wilayaId] as const,
   // Webinar CRM
   adminWebinarLeads: ['admin', 'webinar_leads'] as const,
+  adminStaff: ['admin', 'staff'] as const,
+  webinarFormSettings: ['webinar_form_settings'] as const,
   adminSalesAnalytics: ['admin', 'sales_analytics'] as const,
   webinarLead: (leadId: string) => ['admin', 'webinar_lead', leadId] as const,
 };
@@ -326,7 +330,63 @@ export async function fetchAllStudents(
   if (!opts.includeRevoked) q = q.is('revoked_at', null);
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as AdminStudentRow[];
+  const profiles = (data ?? []) as (Profile & { revoked_at: string | null; revoked_reason: string | null })[];
+  if (profiles.length === 0) return [];
+  const ids = profiles.map((profile) => profile.id);
+  const { data: usedCodes, error: codeError } = await supabase
+    .from('activation_codes')
+    .select('code, used_by_user_id')
+    .in('used_by_user_id', ids);
+  if (codeError) throw codeError;
+  const byUser = new Map((usedCodes ?? []).map((row) => [row.used_by_user_id as string, row.code as string]));
+  return profiles.map((profile) => ({ ...profile, activation_code: byUser.get(profile.id) ?? null }));
+}
+
+export async function fetchStaffMembers(): Promise<StaffMember[]> {
+  const { data, error } = await supabase.from('staff_members').select('*').order('created_at');
+  if (error) throw error;
+  return (data ?? []) as StaffMember[];
+}
+
+export async function upsertStaffMember(input: Partial<StaffMember> & { first_name: string; email: string }) {
+  const payload = {
+    ...(input.id ? { id: input.id } : {}),
+    first_name: input.first_name.trim(),
+    last_name: (input.last_name ?? '').trim(),
+    email: input.email.trim().toLowerCase(),
+    whatsapp: input.whatsapp?.trim() || null,
+    permissions: input.permissions ?? ['prospects'],
+    tasks: input.tasks ?? [],
+    is_active: input.is_active ?? true,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase.from('staff_members').upsert(payload);
+  if (error) throw error;
+}
+
+export async function fetchWebinarFormSettings(publicView = false): Promise<WebinarFormSettings> {
+  if (publicView) {
+    const env = (import.meta as { env: Record<string, string> }).env;
+    const response = await fetch(`${env.VITE_SUPABASE_URL}/functions/v1/webinar-lead`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: env.VITE_SUPABASE_ANON_KEY },
+      body: JSON.stringify({ action: 'settings' }),
+    });
+    const body = await response.json();
+    if (!response.ok || !body?.ok) throw new Error(body?.error || 'SETTINGS_UNAVAILABLE');
+    return body.settings as WebinarFormSettings;
+  }
+  const { data, error } = await supabase.from('webinar_form_settings').select('*').eq('id', true).single();
+  if (error) throw error;
+  return data as WebinarFormSettings;
+}
+
+export async function saveWebinarFormSettings(settings: Partial<WebinarFormSettings>) {
+  const { error } = await supabase.from('webinar_form_settings').update({
+    ...settings,
+    updated_at: new Date().toISOString(),
+  }).eq('id', true);
+  if (error) throw error;
 }
 
 // SHERLOCK R14 — H9 : RPC admin_revoke_user(uuid, text). Signature dans
@@ -780,6 +840,11 @@ export async function cancelPayment(paymentId: string): Promise<{ ok: boolean; e
   return res;
 }
 
+export async function adminCreateLesson(input: Omit<Lesson, 'id' | 'created_at'>) {
+  const { error } = await supabase.from('lessons').insert(input);
+  if (error) throw error;
+}
+
 // ============================================================================
 // E-com Delivery order ledger (mig 20260817000050)
 // ============================================================================
@@ -989,6 +1054,7 @@ export interface WebinarLeadSubmission {
   commune: string;
   address: string;
   website?: string;
+  extra_answers?: Record<string, string>;
 }
 
 async function invokePublicWebinar<T>(body: Record<string, unknown>): Promise<T> {

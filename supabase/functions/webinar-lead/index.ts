@@ -142,6 +142,15 @@ serve(async (req) => {
 
   const action = clean(payload.action, 30);
   try {
+    if (action === 'settings') {
+      const { data: settings, error: settingsError } = await admin
+        .from('webinar_form_settings')
+        .select('id, eyebrow, title, description, image_url, sections, extra_fields, google_sheet_url, updated_at')
+        .eq('id', true)
+        .single();
+      if (settingsError) throw settingsError;
+      return json({ ok: true, settings });
+    }
     if (action === 'wilayas') {
       return json({ ok: true, items: await getCatalog(admin, 'wilayas') });
     }
@@ -183,20 +192,9 @@ serve(async (req) => {
     const selectedCommune = communes.find((item) => String(item.commune) === commune && item.livrable === true);
     if (!selectedCommune) return json({ ok: false, error: 'COMMUNE_INVALID' }, 422);
 
-    if (!isAdminTester) {
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { data: existing } = await admin
-        .from('webinar_leads')
-        .select('id')
-        .eq('phone_normalized', phoneNormalized)
-        .gte('created_at', since)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (existing) return json({ ok: true, already_registered: true });
-    }
-
-    const { error } = await admin.from('webinar_leads').insert({
+    const extraAnswers = payload.extra_answers && typeof payload.extra_answers === 'object'
+      ? payload.extra_answers as Record<string, unknown> : {};
+    const { data: inserted, error } = await admin.from('webinar_leads').insert({
       full_name: fullName,
       phone_raw: phoneRaw,
       phone_normalized: phoneNormalized,
@@ -209,8 +207,22 @@ serve(async (req) => {
       status: 'to_call',
       source: 'youtube_live',
       campaign: 'post_webinar',
-    });
+      extra_answers: extraAnswers,
+    }).select('id, created_at').single();
     if (error) throw error;
+    const { data: backupSettings } = await admin.from('webinar_form_settings')
+      .select('backup_webhook_url').eq('id', true).maybeSingle();
+    if (backupSettings?.backup_webhook_url) {
+      try {
+        const backupResponse = await fetch(String(backupSettings.backup_webhook_url), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead_id: inserted.id, created_at: inserted.created_at, full_name: fullName, phone: phoneNormalized, email, attended_live: attendedLive, wilaya: String(selectedWilaya.libelle), commune, address, extra_answers: extraAnswers }),
+        });
+        await admin.from('webinar_leads').update({ sheet_backup_status: backupResponse.ok ? 'saved' : `http_${backupResponse.status}`, sheet_backup_at: backupResponse.ok ? new Date().toISOString() : null }).eq('id', inserted.id);
+      } catch {
+        await admin.from('webinar_leads').update({ sheet_backup_status: 'failed' }).eq('id', inserted.id);
+      }
+    }
     return json({ ok: true });
   } catch (error) {
     await reportError(error, { function: 'webinar-lead' });

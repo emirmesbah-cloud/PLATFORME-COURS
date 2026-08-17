@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plane } from 'lucide-react';
+import { Loader2, Plane, Plus } from 'lucide-react';
 import {
   adminFetchAllImmigrationLessons, adminSetImmigrationLesson,
+  adminCreateImmigrationLesson,
   type ImmigrationLessonMedia,
 } from '@/lib/immigration';
 import { IMMIGRATION_SECTIONS } from '@/data/immigration-structure';
@@ -36,6 +37,14 @@ export function AdminImmigrationLessons() {
 
   const publishedCount = (mediaQ.data ?? []).filter((r) => r.is_published && r.vdocipher_video_id).length;
   const withVideo = (mediaQ.data ?? []).filter((r) => r.vdocipher_video_id).length;
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState({ lesson_slug: '', title: '', module_slug: 'module-11', lesson_number_label: '11.1', duration_label: '8–10 min', order_index: 1000, vdocipher_video_id: '', is_published: false });
+
+  async function createLesson() {
+    if (!draft.lesson_slug.trim() || !draft.title.trim()) return toast.error('Slug et titre obligatoires.');
+    if (!window.confirm(`Ajouter la leçon Immigration « ${draft.title} » ?`)) return;
+    try { await adminCreateImmigrationLesson({ ...draft, lesson_slug: draft.lesson_slug.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-'), title: draft.title.trim(), vdocipher_video_id: draft.vdocipher_video_id.trim() || null }); await qc.invalidateQueries({ queryKey: ['admin-immigration-lessons'] }); setAdding(false); toast.success('Leçon Immigration ajoutée.'); } catch (e) { toast.error(e instanceof Error ? e.message : 'Ajout impossible.'); }
+  }
 
   async function save(lessonSlug: string, videoId: string | null, published: boolean) {
     await adminSetImmigrationLesson(lessonSlug, videoId, published);
@@ -57,7 +66,10 @@ export function AdminImmigrationLessons() {
           <span className="font-mono font-semibold text-aurel-teal">{withVideo}</span> leçon(s) avec ID vidéo ·{' '}
           <span className="font-mono font-semibold text-green-600">{publishedCount}</span> publiée(s).
         </p>
+        <button className="btn-primary mt-4" onClick={() => setAdding(!adding)}><Plus className="h-4 w-4" /> Ajouter une leçon Immigration</button>
       </header>
+
+      {adding && <section className="card-padded grid gap-3 md:grid-cols-3"><input className="input" value={draft.lesson_number_label} onChange={(e) => setDraft({ ...draft, lesson_number_label: e.target.value })} placeholder="Numéro, ex. 11.1" /><input className="input md:col-span-2" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Titre" /><input className="input" value={draft.module_slug} onChange={(e) => setDraft({ ...draft, module_slug: e.target.value })} placeholder="Module, ex. module-11" /><input className="input" value={draft.lesson_slug} onChange={(e) => setDraft({ ...draft, lesson_slug: e.target.value })} placeholder="Lien/slug unique" /><input className="input" value={draft.duration_label} onChange={(e) => setDraft({ ...draft, duration_label: e.target.value })} placeholder="Durée" /><input className="input md:col-span-2" value={draft.vdocipher_video_id} onChange={(e) => setDraft({ ...draft, vdocipher_video_id: e.target.value })} placeholder="VDOCipher ID" /><label className="flex items-center gap-2"><input type="checkbox" checked={draft.is_published} onChange={(e) => setDraft({ ...draft, is_published: e.target.checked })} /> Publier immédiatement</label><div className="md:col-span-3 flex gap-2"><button className="btn-primary" onClick={createLesson}>Oui, ajouter</button><button className="btn-outline" onClick={() => setAdding(false)}>Non, annuler</button></div></section>}
 
       {IMMIGRATION_SECTIONS.map((section) => (
         <div key={section.slug} className="card overflow-hidden">
@@ -101,6 +113,8 @@ export function AdminImmigrationLessons() {
           </div>
         </div>
       ))}
+
+      {(mediaQ.data ?? []).filter((row) => row.is_custom).length > 0 && <div className="card overflow-hidden"><div className="border-b bg-aurel-orange-soft px-4 py-3 text-sm font-bold text-aurel-orange-dark">Leçons ajoutées récemment</div><div className="divide-y">{(mediaQ.data ?? []).filter((row) => row.is_custom).map((row) => <div key={row.lesson_slug} className="grid gap-2 p-4 md:grid-cols-[100px_1fr_240px]"><span className="font-mono text-xs text-slate-500">{row.lesson_number_label}</span><div><div className="font-semibold">{row.title}</div><div className="text-xs text-slate-500">{row.module_slug} · {row.duration_label}</div></div><span className={row.is_published ? 'text-sm text-green-600' : 'text-sm text-amber-600'}>{row.is_published ? 'Publiée' : 'Brouillon'}</span></div>)}</div></div>}
     </div>
   );
 }
