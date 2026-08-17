@@ -267,19 +267,30 @@ serve(async (req) => {
       extra_answers: extraAnswers,
     }).select('id, created_at').single();
     if (error) throw error;
-    const { data: backupSettings } = await admin.from('webinar_form_settings')
-      .select('backup_webhook_url').eq('id', true).maybeSingle();
-    if (backupSettings?.backup_webhook_url) {
+
+    // Sheet/webhook backup runs in the BACKGROUND so the visitor gets their
+    // "thank you" the moment the lead is saved, instead of waiting on a slow
+    // external webhook (Google Apps Script can take several seconds). The lead
+    // is already in the database — the sheet is only a mirror — so deferring it
+    // is safe; a failed backup just records sheet_backup_status='failed'.
+    const waitUntil = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil
+      ?? ((p: Promise<unknown>) => { p.catch(() => {}); });
+    const leadId = inserted.id;
+    waitUntil((async () => {
       try {
+        const { data: backupSettings } = await admin.from('webinar_form_settings')
+          .select('backup_webhook_url').eq('id', true).maybeSingle();
+        if (!backupSettings?.backup_webhook_url) return;
         const backupResponse = await fetch(String(backupSettings.backup_webhook_url), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lead_id: inserted.id, created_at: inserted.created_at, full_name: fullName, phone: phoneNormalized, email, attended_live: attendedLive, wilaya: String(selectedWilaya.libelle), commune, address, extra_answers: extraAnswers }),
+          body: JSON.stringify({ lead_id: leadId, created_at: inserted.created_at, full_name: fullName, phone: phoneNormalized, email, attended_live: attendedLive, wilaya: String(selectedWilaya.libelle), commune, address, extra_answers: extraAnswers }),
         });
-        await admin.from('webinar_leads').update({ sheet_backup_status: backupResponse.ok ? 'saved' : `http_${backupResponse.status}`, sheet_backup_at: backupResponse.ok ? new Date().toISOString() : null }).eq('id', inserted.id);
+        await admin.from('webinar_leads').update({ sheet_backup_status: backupResponse.ok ? 'saved' : `http_${backupResponse.status}`, sheet_backup_at: backupResponse.ok ? new Date().toISOString() : null }).eq('id', leadId);
       } catch {
-        await admin.from('webinar_leads').update({ sheet_backup_status: 'failed' }).eq('id', inserted.id);
+        await admin.from('webinar_leads').update({ sheet_backup_status: 'failed' }).eq('id', leadId).then(() => {}, () => {});
       }
-    }
+    })());
+
     return json({ ok: true });
   } catch (error) {
     await reportError(error, { function: 'webinar-lead' });

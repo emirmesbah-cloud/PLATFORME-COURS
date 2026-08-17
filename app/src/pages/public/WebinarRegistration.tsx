@@ -124,13 +124,6 @@ export function WebinarRegistrationPage() {
       <div className="mx-auto max-w-xl px-4 py-7 md:py-10">
         <AurelLogo className="justify-center" />
         <section className="card mt-7 overflow-hidden">
-          <header className="border-b border-zinc-100 px-6 py-6 text-center md:px-8">
-            {settings?.image_url && <img src={settings.image_url} alt="" className="mx-auto mb-4 max-h-40 rounded-card-sm object-cover" />}
-            <p className="text-xs font-semibold uppercase tracking-wider text-aurel-orange">{settings?.eyebrow ?? 'Formulaire après le webinar'}</p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-zinc-950">{settings?.title ?? 'Tes informations'}</h1>
-            <p className="mt-2 text-sm text-zinc-600">{settings?.description ?? 'Simple et rapide — environ 1 minute.'}</p>
-          </header>
-
           <form onSubmit={submit} className="space-y-8 p-6 md:p-8">
             {(settings?.sections ?? []).map((section) => <div key={section.id} className="rounded-card-sm bg-aurel-orange-soft p-4"><div className="font-semibold text-aurel-orange-dark">{section.title}</div>{section.description && <p className="mt-1 text-sm text-zinc-600">{section.description}</p>}</div>)}
             <div className="space-y-6">
