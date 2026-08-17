@@ -147,7 +147,10 @@ serve(async (req) => {
   const phoneRaw = clean(payload.phone, 30);
   const phoneNormalized = normalizePhone(payload.phone);
   const email = clean(payload.email, 254).toLowerCase();
-  const attendedLive = payload.attended_live === true;
+  if (typeof payload.attended_live !== 'boolean') {
+    return json({ ok: false, error: 'ATTENDANCE_REQUIRED' }, 422);
+  }
+  const attendedLive = payload.attended_live;
   const wilayaId = Number(payload.wilaya_id);
   const commune = clean(payload.commune, 100);
   const address = clean(payload.address, 200);
@@ -159,6 +162,11 @@ serve(async (req) => {
     return json({ ok: false, error: 'WILAYA_INVALID' }, 422);
   }
   if (!commune || !address) return json({ ok: false, error: 'ADDRESS_REQUIRED' }, 422);
+
+  // Only people who actually watched the webinar enter the closer CRM.
+  // We still validate the submitted form so the public experience remains
+  // predictable, but we intentionally store no personal data for "not yet".
+  if (!attendedLive) return json({ ok: true, not_eligible: true });
 
   try {
     const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
@@ -212,7 +220,7 @@ serve(async (req) => {
       wilaya_name: String(selectedWilaya.libelle),
       commune: String(selectedCommune.commune),
       address,
-      status: attendedLive ? 'to_call' : 'new',
+      status: 'to_call',
       source: 'youtube_live',
       campaign: 'post_webinar',
     });

@@ -382,3 +382,15 @@ export interface AdvancedAnalytics {
     id: string; first_name: string; last_name: string; email: string; tier: string; days_to_complete: number;
   }[] | null;
 }
+
+export interface SalesAnalytics {
+  ok: true;
+  prospects: {
+    total: number; to_contact: number; not_interested: number; converted: number; conversion_rate: number;
+  };
+  orders: {
+    total: number; waiting: number; sent: number; failed: number; delivered: number; returned: number; cod_total: number;
+  };
+  prospect_status: { status: WebinarLeadStatus; n: number }[];
+  orders_by_day: { day: string; n: number; amount: number }[];
+}

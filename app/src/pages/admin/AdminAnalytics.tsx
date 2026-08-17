@@ -3,8 +3,8 @@ import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, Cell,
 } from 'recharts';
-import { TrendingUp, Users, Clock, CheckCircle2, Star, Activity } from 'lucide-react';
-import { fetchAdvancedAnalytics, queryKeys } from '@/lib/queries';
+import { TrendingUp, Users, Clock, CheckCircle2, Star, Activity, PackageCheck, PhoneCall } from 'lucide-react';
+import { fetchAdvancedAnalytics, fetchSalesAnalytics, queryKeys } from '@/lib/queries';
 import { initials, formatSeconds, tierLabel } from '@/lib/utils';
 
 const ORANGE = '#F97316';
@@ -17,6 +17,7 @@ export function AdminAnalytics() {
     queryKey: queryKeys.adminAnalytics,
     queryFn: fetchAdvancedAnalytics,
   });
+  const salesQ = useQuery({ queryKey: queryKeys.adminSalesAnalytics, queryFn: fetchSalesAnalytics });
 
   // SHERLOCK R22 : non-blocking render. Page chrome + skeleton KPIs visible
   // immediately, real data fades in when the (heavy) RPC returns.
@@ -55,6 +56,20 @@ export function AdminAnalytics() {
         <h1 className="text-3xl font-bold text-aurel-ink">Analytics avancées</h1>
         <p className="mt-1 text-slate-600">Vue détaillée de l'engagement, du funnel et de la satisfaction.</p>
       </header>
+
+      {salesQ.data && <section className="space-y-4">
+        <h2 className="text-xs font-bold uppercase tracking-widest text-aurel-orange">Prospects & commandes</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <KPI icon={Users} label="Prospects webinar" value={salesQ.data.prospects.total.toString()} sub="Ont vu le webinar" />
+          <KPI icon={PhoneCall} label="À contacter" value={salesQ.data.prospects.to_contact.toString()} sub="Appels et rappels" />
+          <KPI icon={PackageCheck} label="Commandes" value={salesQ.data.orders.total.toString()} sub={`${salesQ.data.orders.waiting} en attente d'envoi`} />
+          <KPI icon={TrendingUp} label="Conversion" value={`${salesQ.data.prospects.conversion_rate}%`} sub={`${salesQ.data.prospects.converted} prospect(s) converti(s)`} />
+        </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="card-padded"><h3 className="mb-1 text-lg font-bold text-aurel-ink">État des prospects</h3><p className="mb-4 text-xs text-slate-500">Répartition actuelle du travail des closers.</p><ResponsiveContainer width="100%" height={240}><BarChart data={salesQ.data.prospect_status}><CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" /><XAxis dataKey="status" stroke={SLATE} fontSize={10} /><YAxis stroke={SLATE} fontSize={11} allowDecimals={false} /><Tooltip /><Bar dataKey="n" name="Prospects" fill={ORANGE} /></BarChart></ResponsiveContainer></div>
+          <div className="card-padded"><h3 className="mb-1 text-lg font-bold text-aurel-ink">Commandes — 30 jours</h3><p className="mb-4 text-xs text-slate-500">Volume créé par jour.</p><ResponsiveContainer width="100%" height={240}><AreaChart data={salesQ.data.orders_by_day}><CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" /><XAxis dataKey="day" stroke={SLATE} fontSize={10} /><YAxis stroke={SLATE} fontSize={11} allowDecimals={false} /><Tooltip /><Area type="monotone" dataKey="n" name="Commandes" stroke={TEAL} fill={TEAL} fillOpacity={0.2} /></AreaChart></ResponsiveContainer></div>
+        </div>
+      </section>}
 
       {/* SECTION 1 — Engagement KPIs */}
       <section>

@@ -85,6 +85,7 @@ export const queryKeys = {
   publicEcomCommunes: (wilayaId: number) => ['public', 'ecom', 'communes', wilayaId] as const,
   // Webinar CRM
   adminWebinarLeads: ['admin', 'webinar_leads'] as const,
+  adminSalesAnalytics: ['admin', 'sales_analytics'] as const,
   webinarLead: (leadId: string) => ['admin', 'webinar_lead', leadId] as const,
 };
 
@@ -837,6 +838,42 @@ export async function createDeliveryOrder(input: CreateDeliveryOrderInput): Prom
   return data as DeliveryOrder;
 }
 
+export async function updateDeliveryOrder(orderId: string, input: CreateDeliveryOrderInput): Promise<DeliveryOrder> {
+  const { data, error } = await supabase
+    .from('delivery_orders')
+    .update({
+      ...input,
+      mobile_2: input.mobile_2 || null,
+      commune: input.delivery_mode === 'domicile' ? input.commune || null : null,
+      stopdesk_code: input.delivery_mode === 'stopdesk' ? input.stopdesk_code || null : null,
+      address: input.address || null,
+      supplier_notes: input.supplier_notes || null,
+      ecom_ref_article: input.ecom_ref_article || null,
+      activation_code_id: input.activation_code_id || null,
+      webinar_lead_id: input.webinar_lead_id || null,
+      sync_status: 'draft',
+      last_error: null,
+    })
+    .eq('id', orderId)
+    .is('ecom_tracking', null)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as DeliveryOrder;
+}
+
+export async function deleteDeliveryOrder(orderId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('delivery_orders')
+    .delete()
+    .eq('id', orderId)
+    .is('ecom_tracking', null)
+    .select('id')
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error('ORDER_ALREADY_SYNCED');
+}
+
 type EcomBridgeResponse<T = unknown> = {
   ok: boolean;
   error?: string;
@@ -931,6 +968,7 @@ export async function fetchWebinarLeads(): Promise<WebinarLead[]> {
     supabase
       .from('webinar_leads')
       .select(LEAD_WITH_DELIVERY)
+      .eq('attended_live', true)
       .order('created_at', { ascending: false })
       .limit(2000),
     15000,
@@ -990,9 +1028,9 @@ export async function fetchPublicEcomCommunes(wilayaId: number): Promise<EcomCom
   return result.items;
 }
 
-export async function submitWebinarLead(input: WebinarLeadSubmission): Promise<{ already_registered?: boolean }> {
-  const result = await invokePublicWebinar<{ already_registered?: boolean }>({ ...input });
-  return { already_registered: result.already_registered };
+export async function submitWebinarLead(input: WebinarLeadSubmission): Promise<{ already_registered?: boolean; not_eligible?: boolean }> {
+  const result = await invokePublicWebinar<{ already_registered?: boolean; not_eligible?: boolean }>({ ...input });
+  return { already_registered: result.already_registered, not_eligible: result.not_eligible };
 }
 
 export async function logWebinarCall(input: {
@@ -1011,4 +1049,36 @@ export async function logWebinarCall(input: {
   });
   if (error) throw error;
   return data as WebinarLead;
+}
+
+export async function confirmWebinarPurchase(input: {
+  leadId: string;
+  closerName: string;
+  note?: string | null;
+}): Promise<{ ok: true; order_id: string; created: boolean }> {
+  const { data, error } = await supabase.rpc('admin_confirm_webinar_purchase', {
+    p_lead_id: input.leadId,
+    p_closer_name: input.closerName,
+    p_note: input.note || null,
+  });
+  if (error) throw error;
+  return data as { ok: true; order_id: string; created: boolean };
+}
+
+export async function deleteWebinarLead(leadId: string): Promise<void> {
+  const { data, error } = await supabase.rpc('admin_delete_webinar_lead', { p_lead_id: leadId });
+  if (error) throw error;
+  const result = data as { ok?: boolean; error?: string };
+  if (!result?.ok) throw new Error(result?.error || 'LEAD_DELETE_FAILED');
+}
+
+export async function fetchSalesAnalytics(): Promise<import('./types').SalesAnalytics | null> {
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('admin_get_sales_analytics'),
+    15000,
+    'fetchSalesAnalytics',
+  );
+  if (error) throw error;
+  const result = data as import('./types').SalesAnalytics;
+  return result?.ok ? result : null;
 }

@@ -3,13 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle, CheckCircle2, Clock3, Loader2, PackagePlus,
-  Pencil, RefreshCw, RotateCw, Send, Truck,
+  Pencil, RefreshCw, RotateCw, Send, Trash2, Truck,
 } from 'lucide-react';
 import {
   configureEcomWebhook, confirmDeliveryOrder, createDeliveryOrder, fetchDeliveryOrders,
   fetchEcomCommunes, fetchEcomConnection, fetchEcomStopdesks,
   fetchEcomWilayas, fetchWebinarLead, queryKeys, refreshDeliveryOrder, syncDeliveryOrder,
-  updateDeliveryOrderDestination,
+  deleteDeliveryOrder, updateDeliveryOrder, updateDeliveryOrderDestination,
 } from '@/lib/queries';
 import type { Course, DeliveryMode, DeliveryOrder } from '@/lib/types';
 import { Modal } from '@/components/ui/Modal';
@@ -64,6 +64,11 @@ export function AdminDeliveryOrders() {
   const [form, setForm] = useState<OrderForm>(initialForm);
   const [submitting, setSubmitting] = useState<'draft' | 'sync' | null>(null);
   const [busyOrder, setBusyOrder] = useState<string | null>(null);
+  const [editingOrder, setEditingOrder] = useState<DeliveryOrder | null>(null);
+  const [deletingOrder, setDeletingOrder] = useState<DeliveryOrder | null>(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [confirmingBulk, setConfirmingBulk] = useState(false);
+  const [bulkSending, setBulkSending] = useState(false);
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
   const [sourceLeadId, setSourceLeadId] = useState<string | null>(null);
   const [editingDestination, setEditingDestination] = useState<DeliveryOrder | null>(null);
@@ -136,8 +141,16 @@ export function AdminDeliveryOrders() {
 
   function resetAndOpen() {
     setForm(initialForm);
+    setEditingOrder(null);
     setSourceLeadId(null);
     setSearchParams({}, { replace: true });
+    setModalOpen(true);
+  }
+
+  function openEdit(order: DeliveryOrder) {
+    if (order.ecom_tracking) { toast.error('Une commande déjà envoyée à E-com ne peut plus être modifiée.'); return; }
+    setEditingOrder(order); setSourceLeadId(order.webinar_lead_id);
+    setForm({ customerName: order.customer_name, mobile1: order.mobile_1, mobile2: order.mobile_2 ?? '', wilayaId: order.wilaya_id, commune: order.commune ?? '', deliveryMode: order.delivery_mode, stopdeskCode: order.stopdesk_code ?? '', address: order.address ?? '', course: order.course, article: order.article, refArticle: order.ecom_ref_article ?? '', quantity: order.quantity, amount: Number(order.cod_amount), notes: order.supplier_notes ?? '' });
     setModalOpen(true);
   }
 
@@ -169,7 +182,7 @@ export function AdminDeliveryOrders() {
     if (invalid) { toast.error(invalid, 'Commande incomplète'); return; }
     setSubmitting(sendToEcom ? 'sync' : 'draft');
     try {
-      const order = await createDeliveryOrder({
+      const input = {
         customer_name: form.customerName.trim(),
         mobile_1: form.mobile1.trim(),
         mobile_2: form.mobile2.trim() || null,
@@ -186,7 +199,8 @@ export function AdminDeliveryOrders() {
         cod_amount: form.amount,
         supplier_notes: form.notes.trim() || null,
         webinar_lead_id: sourceLeadId,
-      });
+      };
+      const order = editingOrder ? await updateDeliveryOrder(editingOrder.id, input) : await createDeliveryOrder(input);
       if (sendToEcom) {
         try {
           const synced = await syncDeliveryOrder(order.id);
@@ -195,9 +209,10 @@ export function AdminDeliveryOrders() {
           toast.error(friendlyError(error), 'Commande enregistrée, envoi E-com échoué');
         }
       } else {
-        toast.success('Brouillon enregistré. Tu pourras l’envoyer à E-com plus tard.');
+        toast.success(editingOrder ? 'Commande modifiée.' : 'Brouillon enregistré. Tu pourras l’envoyer à E-com plus tard.');
       }
       setModalOpen(false);
+      setEditingOrder(null);
       await qc.invalidateQueries({ queryKey: queryKeys.adminDeliveryOrders });
       await qc.invalidateQueries({ queryKey: queryKeys.adminWebinarLeads });
       setSearchParams({}, { replace: true });
@@ -206,6 +221,26 @@ export function AdminDeliveryOrders() {
     } finally {
       setSubmitting(null);
     }
+  }
+
+  async function sendSelected() {
+    const ids = Array.from(selectedOrderIds);
+    if (!ids.length) return;
+    setBulkSending(true); let success = 0; let failed = 0;
+    for (const id of ids) {
+      try { await syncDeliveryOrder(id); success += 1; } catch { failed += 1; }
+    }
+    setBulkSending(false); setConfirmingBulk(false); setSelectedOrderIds(new Set());
+    toast.success(`${success} commande(s) envoyée(s)${failed ? ` · ${failed} échec(s) à vérifier` : ''}.`);
+    await qc.invalidateQueries({ queryKey: queryKeys.adminDeliveryOrders });
+  }
+
+  async function approveDeleteOrder() {
+    if (!deletingOrder) return;
+    setBusyOrder(deletingOrder.id);
+    try { await deleteDeliveryOrder(deletingOrder.id); toast.success('Commande supprimée.'); setDeletingOrder(null); await Promise.all([qc.invalidateQueries({ queryKey: queryKeys.adminDeliveryOrders }), qc.invalidateQueries({ queryKey: queryKeys.adminWebinarLeads }), qc.invalidateQueries({ queryKey: queryKeys.adminSalesAnalytics })]); }
+    catch (error) { toast.error(friendlyError(error), 'Suppression impossible'); }
+    finally { setBusyOrder(null); }
   }
 
   async function runOrderAction(order: DeliveryOrder, action: 'sync' | 'refresh' | 'confirm') {
@@ -283,6 +318,10 @@ export function AdminDeliveryOrders() {
   }
 
   const orders = ordersQ.data ?? [];
+  const sendableOrders = orders.filter((order) => !order.ecom_tracking && order.sync_status !== 'syncing');
+  const allSendableSelected = sendableOrders.length > 0 && sendableOrders.every((order) => selectedOrderIds.has(order.id));
+  function toggleAllSendable() { setSelectedOrderIds(allSendableSelected ? new Set() : new Set(sendableOrders.map((order) => order.id))); }
+  function toggleOrder(id: string) { setSelectedOrderIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; }); }
 
   return (
     <div className="space-y-6">
@@ -328,11 +367,11 @@ export function AdminDeliveryOrders() {
       </div>
 
       <section className="card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-zinc-200 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 p-5">
           <h2 className="text-lg font-bold text-aurel-ink">Commandes ({orders.length})</h2>
-          <button type="button" className="btn-ghost" onClick={() => ordersQ.refetch()} disabled={ordersQ.isFetching}>
+          <div className="flex flex-wrap gap-2"><button type="button" className="btn-primary" disabled={!selectedOrderIds.size || bulkSending || !connectionQ.data?.connected} onClick={() => setConfirmingBulk(true)}><Send className="h-4 w-4" /> Envoyer la sélection ({selectedOrderIds.size})</button><button type="button" className="btn-ghost" onClick={() => ordersQ.refetch()} disabled={ordersQ.isFetching}>
             <RefreshCw className={cn('h-4 w-4', ordersQ.isFetching && 'animate-spin')} /> Actualiser
-          </button>
+          </button></div>
         </div>
         {ordersQ.isLoading ? <Spinner label="Chargement des commandes…" />
           : ordersQ.isError ? <div className="p-8 text-center text-red-600">Impossible de charger les commandes.</div>
@@ -346,7 +385,7 @@ export function AdminDeliveryOrders() {
                 <table className="w-full min-w-[980px] text-sm">
                   <thead className="bg-zinc-50 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
                     <tr>
-                      <th className="px-4 py-3">Client</th><th className="px-4 py-3">Destination</th>
+                      <th className="px-4 py-3"><input type="checkbox" aria-label="Sélectionner toutes les commandes à envoyer" checked={allSendableSelected} onChange={toggleAllSendable} /></th><th className="px-4 py-3">Client</th><th className="px-4 py-3">Destination</th>
                       <th className="px-4 py-3">Produit</th><th className="px-4 py-3">À encaisser</th>
                       <th className="px-4 py-3">Tracking</th><th className="px-4 py-3">Statut</th>
                       <th className="px-4 py-3">Créée</th><th className="px-4 py-3 text-right">Actions</th>
@@ -355,6 +394,7 @@ export function AdminDeliveryOrders() {
                   <tbody className="divide-y divide-zinc-100">
                     {orders.map((order) => (
                       <tr key={order.id} className="align-top hover:bg-zinc-50/70">
+                        <td className="px-4 py-3"><input type="checkbox" aria-label={`Sélectionner ${order.customer_name}`} disabled={!!order.ecom_tracking || order.sync_status === 'syncing'} checked={selectedOrderIds.has(order.id)} onChange={() => toggleOrder(order.id)} /></td>
                         <td className="px-4 py-3"><div className="font-semibold text-zinc-900">{order.customer_name}</div><div className="text-xs text-zinc-500">{order.mobile_1}</div></td>
                         <td className="px-4 py-3"><div>{order.wilaya_name}</div><div className="text-xs text-zinc-500">{order.delivery_mode === 'stopdesk' ? `Stopdesk ${order.stopdesk_code}` : order.commune}</div></td>
                         <td className="px-4 py-3"><span className={cn('badge', order.course === 'immigration' ? 'badge-teal' : 'badge-orange')}>{courseLabel(order.course)}</span><div className="mt-1 text-xs text-zinc-500">× {order.quantity}</div></td>
@@ -366,11 +406,8 @@ export function AdminDeliveryOrders() {
                           <div className="flex justify-end gap-1">
                             {!order.ecom_tracking ? (
                               <>
-                                {order.delivery_mode === 'domicile' && (
-                                  <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" disabled={busyOrder === order.id} onClick={() => openDestinationCorrection(order)}>
-                                    <Pencil className="h-3.5 w-3.5" /> Corriger
-                                  </button>
-                                )}
+                                <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" disabled={busyOrder === order.id} onClick={() => openEdit(order)}><Pencil className="h-3.5 w-3.5" /> Modifier</button>
+                                <button type="button" aria-label="Supprimer la commande" className="btn-outline px-2.5 py-1.5 text-red-600" disabled={busyOrder === order.id} onClick={() => setDeletingOrder(order)}><Trash2 className="h-3.5 w-3.5" /></button>
                                 <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" disabled={busyOrder === order.id} onClick={() => runOrderAction(order, 'sync')}>
                                   {busyOrder === order.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Envoyer
                                 </button>
@@ -397,7 +434,7 @@ export function AdminDeliveryOrders() {
             )}
       </section>
 
-      <Modal open={modalOpen} onClose={() => !submitting && setModalOpen(false)} title="Nouvelle commande" maxWidth="max-w-3xl">
+      <Modal open={modalOpen} onClose={() => !submitting && setModalOpen(false)} title={editingOrder ? 'Modifier la commande' : 'Nouvelle commande'} maxWidth="max-w-3xl">
         <div className="space-y-5">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Nom complet *"><input className="input" maxLength={60} value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} placeholder="Nom du destinataire" /></Field>
@@ -462,11 +499,14 @@ export function AdminDeliveryOrders() {
           </div>
 
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <button type="button" className="btn-outline" disabled={!!submitting} onClick={() => submit(false)}>{submitting === 'draft' && <Loader2 className="h-4 w-4 animate-spin" />} Enregistrer brouillon</button>
-            <button type="button" className="btn-primary" disabled={!!submitting || !connectionQ.data?.connected} onClick={() => submit(true)}>{submitting === 'sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Enregistrer et envoyer à E-com</button>
+            <button type="button" className="btn-outline" disabled={!!submitting} onClick={() => submit(false)}>{submitting === 'draft' && <Loader2 className="h-4 w-4 animate-spin" />} {editingOrder ? 'Enregistrer les modifications' : 'Enregistrer brouillon'}</button>
+            {!editingOrder && <button type="button" className="btn-primary" disabled={!!submitting || !connectionQ.data?.connected} onClick={() => submit(true)}>{submitting === 'sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Enregistrer et envoyer à E-com</button>}
           </div>
         </div>
       </Modal>
+
+      <Modal open={confirmingBulk} onClose={() => !bulkSending && setConfirmingBulk(false)} title="Confirmer l'envoi" maxWidth="max-w-md"><p className="text-zinc-700">Cette action est-elle confirmée ?</p><p className="mt-2 text-sm text-zinc-500">{selectedOrderIds.size} commande(s) seront envoyées vers E-com Delivery.</p><div className="mt-6 flex justify-end gap-2"><button className="btn-outline" disabled={bulkSending} onClick={() => setConfirmingBulk(false)}>Non</button><button className="btn-primary" disabled={bulkSending} onClick={sendSelected}>{bulkSending && <Loader2 className="h-4 w-4 animate-spin" />} Oui, envoyer</button></div></Modal>
+      <Modal open={!!deletingOrder} onClose={() => !busyOrder && setDeletingOrder(null)} title="Supprimer la commande ?" maxWidth="max-w-md"><p className="text-zinc-700">Supprimer la commande brouillon de <strong>{deletingOrder?.customer_name}</strong> ?</p><p className="mt-2 text-sm text-zinc-500">Une commande déjà envoyée à E-com ne peut pas être supprimée ici.</p><div className="mt-6 flex justify-end gap-2"><button className="btn-outline" disabled={!!busyOrder} onClick={() => setDeletingOrder(null)}>Non</button><button className="btn-primary bg-red-600 hover:bg-red-700" disabled={!!busyOrder} onClick={approveDeleteOrder}>{busyOrder && <Loader2 className="h-4 w-4 animate-spin" />} Oui, supprimer</button></div></Modal>
 
       <Modal open={!!editingDestination} onClose={() => !savingCorrection && setEditingDestination(null)} title="Corriger la destination" maxWidth="max-w-xl">
         <div className="space-y-5">

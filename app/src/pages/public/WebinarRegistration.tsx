@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CheckCircle2, Loader2, Radio, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
 import { AurelLogo } from '@/components/features/AurelLogo';
 import {
   fetchPublicEcomCommunes, fetchPublicEcomWilayas, queryKeys, submitWebinarLead,
@@ -39,6 +39,7 @@ export function WebinarRegistrationPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [notEligible, setNotEligible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const wilayasQ = useQuery({
@@ -72,7 +73,7 @@ export function WebinarRegistrationPage() {
     setSubmitting(true);
     setError(null);
     try {
-      await submitWebinarLead({
+      const result = await submitWebinarLead({
         full_name: form.fullName,
         phone: form.phone,
         email: form.email,
@@ -83,7 +84,10 @@ export function WebinarRegistrationPage() {
         address: form.address,
         website: form.website,
       });
-      trackEvent('Lead', { content_name: 'Inscription après webinar', content_category: 'Webinar' });
+      setNotEligible(result.not_eligible === true);
+      if (!result.not_eligible) {
+        trackEvent('Lead', { content_name: 'Inscription après webinar', content_category: 'Webinar' });
+      }
       setSuccess(true);
     } catch (submissionError) {
       const code = submissionError instanceof Error ? submissionError.message : 'SUBMISSION_FAILED';
@@ -101,14 +105,13 @@ export function WebinarRegistrationPage() {
           <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-green-50 text-green-600">
             <CheckCircle2 className="h-8 w-8" />
           </div>
-          <h1 className="mt-5 text-3xl font-bold tracking-tight text-zinc-950">Inscription enregistrée</h1>
+          <h1 className="mt-5 text-3xl font-bold tracking-tight text-zinc-950">Merci pour ta réponse</h1>
           <p className="mt-3 leading-relaxed text-zinc-600">
-            Merci {form.fullName.split(' ')[0]}. Tes informations sont maintenant chez Aurel Academy.
-            {form.attended ? ' Notre équipe pourra te contacter pour finaliser ta demande.' : ' Nous avons bien enregistré ta demande.'}
+            {notEligible
+              ? `Merci ${form.fullName.split(' ')[0]}. Regarde d'abord le webinar, puis reviens remplir ce formulaire si tu souhaites passer commande.`
+              : `Merci ${form.fullName.split(' ')[0]}. Notre équipe pourra maintenant te contacter pour finaliser ta demande.`}
           </p>
-          <div className="mt-6 rounded-card-sm bg-aurel-orange-soft p-4 text-sm text-aurel-orange-dark">
-            Garde ton téléphone et WhatsApp disponibles pour notre équipe.
-          </div>
+          {!notEligible && <div className="mt-6 rounded-card-sm bg-aurel-orange-soft p-4 text-sm text-aurel-orange-dark">Garde ton téléphone et WhatsApp disponibles pour notre équipe.</div>}
         </section>
       </main>
     );
@@ -116,19 +119,17 @@ export function WebinarRegistrationPage() {
 
   return (
     <main className="min-h-screen bg-zinc-50">
-      <div className="mx-auto max-w-3xl px-4 py-8 md:py-12">
+      <div className="mx-auto max-w-xl px-4 py-7 md:py-10">
         <AurelLogo className="justify-center" />
         <section className="card mt-7 overflow-hidden">
-          <header className="border-b border-orange-100 bg-gradient-to-br from-orange-50 to-white px-6 py-7 md:px-9 md:py-9">
-            <div className="eyebrow-orange flex items-center gap-2"><Radio className="h-4 w-4" /> Après le webinar</div>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-zinc-950 md:text-4xl">Finalise ta demande</h1>
-            <p className="mt-3 max-w-xl leading-relaxed text-zinc-600">
-              Remplis tes informations une seule fois. L'équipe Aurel suivra ensuite ton dossier directement jusqu'à la confirmation et la livraison.
-            </p>
+          <header className="border-b border-zinc-100 px-6 py-6 text-center md:px-8">
+            <p className="text-xs font-semibold uppercase tracking-wider text-aurel-orange">Formulaire après le webinar</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-zinc-950">Tes informations</h1>
+            <p className="mt-2 text-sm text-zinc-600">Simple et rapide — environ 1 minute.</p>
           </header>
 
-          <form onSubmit={submit} className="space-y-6 p-6 md:p-9">
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <form onSubmit={submit} className="space-y-5 p-6 md:p-8">
+            <div className="space-y-4">
               <Field label="Nom complet *"><input className="input" autoComplete="name" maxLength={100} value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder="Ton nom et prénom" /></Field>
               <Field label="Numéro WhatsApp *"><input className="input" inputMode="tel" autoComplete="tel" maxLength={30} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="0555123456" /></Field>
               <Field label="Adresse email *"><input className="input" type="email" autoComplete="email" maxLength={254} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="nom@gmail.com" /></Field>
@@ -153,7 +154,7 @@ export function WebinarRegistrationPage() {
 
             <fieldset>
               <legend className="label">As-tu vu le webinar de ce soir ? *</legend>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
                 <AttendanceChoice checked={form.attended === true} label="Oui, j'ai vu le webinar" onClick={() => setForm({ ...form, attended: true })} />
                 <AttendanceChoice checked={form.attended === false} label="Non, pas encore" onClick={() => setForm({ ...form, attended: false })} />
               </div>
