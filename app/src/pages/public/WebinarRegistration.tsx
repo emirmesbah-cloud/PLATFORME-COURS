@@ -39,7 +39,6 @@ export function WebinarRegistrationPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [notEligible, setNotEligible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const wilayasQ = useQuery({
@@ -73,7 +72,7 @@ export function WebinarRegistrationPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const result = await submitWebinarLead({
+      await submitWebinarLead({
         full_name: form.fullName,
         phone: form.phone,
         email: form.email,
@@ -84,10 +83,7 @@ export function WebinarRegistrationPage() {
         address: form.address,
         website: form.website,
       });
-      setNotEligible(result.not_eligible === true);
-      if (!result.not_eligible) {
-        trackEvent('Lead', { content_name: 'Inscription après webinar', content_category: 'Webinar' });
-      }
+      trackEvent('Lead', { content_name: 'Inscription après webinar', content_category: 'Webinar' });
       setSuccess(true);
     } catch (submissionError) {
       const code = submissionError instanceof Error ? submissionError.message : 'SUBMISSION_FAILED';
@@ -107,11 +103,9 @@ export function WebinarRegistrationPage() {
           </div>
           <h1 className="mt-5 text-3xl font-bold tracking-tight text-zinc-950">Merci pour ta réponse</h1>
           <p className="mt-3 leading-relaxed text-zinc-600">
-            {notEligible
-              ? `Merci ${form.fullName.split(' ')[0]}. Regarde d'abord le webinar, puis reviens remplir ce formulaire si tu souhaites passer commande.`
-              : `Merci ${form.fullName.split(' ')[0]}. Notre équipe pourra maintenant te contacter pour finaliser ta demande.`}
+            Merci {form.fullName.split(' ')[0]}. Notre équipe pourra maintenant te contacter pour finaliser ta demande.
           </p>
-          {!notEligible && <div className="mt-6 rounded-card-sm bg-aurel-orange-soft p-4 text-sm text-aurel-orange-dark">Garde ton téléphone et WhatsApp disponibles pour notre équipe.</div>}
+          <div className="mt-6 rounded-card-sm bg-aurel-orange-soft p-4 text-sm text-aurel-orange-dark">Garde ton téléphone et WhatsApp disponibles pour notre équipe.</div>
         </section>
       </main>
     );
@@ -128,8 +122,8 @@ export function WebinarRegistrationPage() {
             <p className="mt-2 text-sm text-zinc-600">Simple et rapide — environ 1 minute.</p>
           </header>
 
-          <form onSubmit={submit} className="space-y-5 p-6 md:p-8">
-            <div className="space-y-4">
+          <form onSubmit={submit} className="space-y-8 p-6 md:p-8">
+            <div className="space-y-6">
               <Field label="Nom complet *"><input className="input" autoComplete="name" maxLength={100} value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder="Ton nom et prénom" /></Field>
               <Field label="Numéro WhatsApp *"><input className="input" inputMode="tel" autoComplete="tel" maxLength={30} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="0555123456" /></Field>
               <Field label="Adresse email *"><input className="input" type="email" autoComplete="email" maxLength={254} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="nom@gmail.com" /></Field>
@@ -182,7 +176,7 @@ export function WebinarRegistrationPage() {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label><span className="label">{label}</span>{children}</label>;
+  return <label className="block space-y-2"><span className="label">{label}</span>{children}</label>;
 }
 
 function AttendanceChoice({ checked, label, onClick }: { checked: boolean; label: string; onClick: () => void }) {

@@ -968,7 +968,6 @@ export async function fetchWebinarLeads(): Promise<WebinarLead[]> {
     supabase
       .from('webinar_leads')
       .select(LEAD_WITH_DELIVERY)
-      .eq('attended_live', true)
       .order('created_at', { ascending: false })
       .limit(2000),
     15000,
@@ -1060,6 +1059,24 @@ export async function confirmWebinarPurchase(input: {
     p_lead_id: input.leadId,
     p_closer_name: input.closerName,
     p_note: input.note || null,
+  });
+  if (error) throw error;
+  return data as { ok: true; order_id: string; created: boolean };
+}
+
+export async function logWebinarCallWithOrder(input: {
+  leadId: string;
+  status: WebinarLeadStatus;
+  closerName: string;
+  note?: string | null;
+  nextFollowUpAt?: string | null;
+}): Promise<{ ok: true; order_id: string; created: boolean }> {
+  const { data, error } = await supabase.rpc('admin_log_webinar_call_with_order', {
+    p_lead_id: input.leadId,
+    p_status: input.status,
+    p_closer_name: input.closerName,
+    p_note: input.note || null,
+    p_next_follow_up_at: input.nextFollowUpAt || null,
   });
   if (error) throw error;
   return data as { ok: true; order_id: string; created: boolean };

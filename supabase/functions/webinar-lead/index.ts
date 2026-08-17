@@ -101,12 +101,6 @@ async function getCatalog(admin: CatalogAdmin, kind: 'wilayas' | 'communes', wil
   return payload;
 }
 
-async function sha256(value: string) {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
 serve(async (req) => {
   const headers = cors(req.headers.get('origin'));
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -163,34 +157,7 @@ serve(async (req) => {
   }
   if (!commune || !address) return json({ ok: false, error: 'ADDRESS_REQUIRED' }, 422);
 
-  // Only people who actually watched the webinar enter the closer CRM.
-  // We still validate the submitted form so the public experience remains
-  // predictable, but we intentionally store no personal data for "not yet".
-  if (!attendedLive) return json({ ok: true, not_eligible: true });
-
   try {
-    const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || req.headers.get('cf-connecting-ip')
-      || 'unknown';
-    const keyHash = await sha256(`${SUPABASE_SERVICE_ROLE_KEY.slice(-24)}:${forwarded}`);
-    const now = new Date();
-    const { data: rate } = await admin
-      .from('webinar_lead_rate_limits')
-      .select('window_started_at, request_count')
-      .eq('key_hash', keyHash)
-      .maybeSingle();
-    const windowStart = rate?.window_started_at ? new Date(rate.window_started_at) : null;
-    const withinWindow = !!windowStart && now.getTime() - windowStart.getTime() < 60 * 60 * 1000;
-    if (withinWindow && Number(rate?.request_count ?? 0) >= 10) {
-      return json({ ok: false, error: 'RATE_LIMITED' }, 429);
-    }
-    await admin.from('webinar_lead_rate_limits').upsert({
-      key_hash: keyHash,
-      window_started_at: withinWindow ? windowStart!.toISOString() : now.toISOString(),
-      request_count: withinWindow ? Number(rate?.request_count ?? 0) + 1 : 1,
-      updated_at: now.toISOString(),
-    });
-
     const wilayas = await getCatalog(admin, 'wilayas');
     const selectedWilaya = wilayas.find((item) => Number(item.id) === wilayaId);
     if (!selectedWilaya) return json({ ok: false, error: 'WILAYA_INVALID' }, 422);

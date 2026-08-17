@@ -222,6 +222,10 @@ export default defineConfig({
     // change to OUR code only invalidates index.js, not the vendor chunks.
     // Also enables HTTP/2 multiplexed download.
     rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        webinarForm: path.resolve(__dirname, 'inscription-webinar/index.html'),
+      },
       output: {
         manualChunks: {
           'vendor-react':    ['react', 'react-dom', 'react-router-dom'],
