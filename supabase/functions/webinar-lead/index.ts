@@ -184,6 +184,46 @@ serve(async (req) => {
   }
   if (!commune || !address) return json({ ok: false, error: 'ADDRESS_REQUIRED' }, 422);
 
+  // Per-IP volume cap (public only; admin testers exempt). Stops one connection
+  // from flooding the form with fake orders — each submission otherwise creates
+  // a lead AND a 38 000 DZD draft order. Fixed window, keyed by a HASH of the IP
+  // so the raw address is never stored (see webinar_lead_rate_limits). Tunable:
+  // RL_MAX submissions per RL_WINDOW_MS.
+  const RL_MAX = 5;
+  const RL_WINDOW_MS = 60 * 60_000; // 1 hour
+  if (!isAdminTester) {
+    try {
+      const ipRaw = req.headers.get('cf-connecting-ip')?.trim()
+        || req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
+      if (ipRaw) {
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`webinar-lead:${ipRaw}`));
+        const keyHash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+        const nowIso = new Date().toISOString();
+        const { data: bucket } = await admin
+          .from('webinar_lead_rate_limits')
+          .select('window_started_at, request_count')
+          .eq('key_hash', keyHash)
+          .maybeSingle();
+        const fresh = !bucket || (Date.now() - new Date(bucket.window_started_at as string).getTime()) >= RL_WINDOW_MS;
+        if (!fresh && (bucket!.request_count as number) >= RL_MAX) {
+          // RATE_LIMITED matches the message the registration form already shows.
+          return json({ ok: false, error: 'RATE_LIMITED' }, 429);
+        }
+        if (fresh) {
+          await admin.from('webinar_lead_rate_limits')
+            .upsert({ key_hash: keyHash, window_started_at: nowIso, request_count: 1, updated_at: nowIso });
+        } else {
+          await admin.from('webinar_lead_rate_limits')
+            .update({ request_count: (bucket!.request_count as number) + 1, updated_at: nowIso })
+            .eq('key_hash', keyHash);
+        }
+      }
+    } catch (rlErr) {
+      // Fail open: a limiter outage must never block a real registration.
+      console.warn('[webinar-lead] rate limit unavailable; failing open', rlErr);
+    }
+  }
+
   // Duplicate guard (the exemption computed above finally does something): one
   // registration per phone number for the public, so a prospect who submits
   // twice never becomes two leads and two 38 000 DZD draft orders, and a closer

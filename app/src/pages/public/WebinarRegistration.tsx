@@ -2,7 +2,6 @@ import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
 import { AurelLogo } from '@/components/features/AurelLogo';
-import { useAuth } from '@/hooks/useAuth';
 import {
   fetchPublicEcomCommunes, fetchPublicEcomWilayas, fetchWebinarFormSettings, queryKeys, submitWebinarLead,
 } from '@/lib/queries';
@@ -38,7 +37,6 @@ const ERRORS: Record<string, string> = {
 };
 
 export function WebinarRegistrationPage() {
-  const { profile } = useAuth();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -125,11 +123,6 @@ export function WebinarRegistrationPage() {
     <main className="min-h-screen bg-zinc-50">
       <div className="mx-auto max-w-xl px-4 py-7 md:py-10">
         <AurelLogo className="justify-center" />
-        {profile?.is_admin && (
-          <div className="mt-5 rounded-card-sm border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-medium text-emerald-800">
-            Mode test administrateur actif — mêmes nom, email, téléphone et IP autorisés sans limite.
-          </div>
-        )}
         <section className="card mt-7 overflow-hidden">
           <header className="border-b border-zinc-100 px-6 py-6 text-center md:px-8">
             {settings?.image_url && <img src={settings.image_url} alt="" className="mx-auto mb-4 max-h-40 rounded-card-sm object-cover" />}
