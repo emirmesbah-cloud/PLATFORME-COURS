@@ -24,12 +24,22 @@ const GROUP_META: Record<WebinarGroupSlug, { title: string; pageUrl: string; des
   },
 };
 
+// Accepts EITHER a bare group code ("just paste the code") OR a full invite
+// link. For a link we take the LAST path segment, so both the current
+// chat.whatsapp.com/<code> and the legacy chat.whatsapp.com/invite/<code> forms
+// work. Returns the validated code, or null.
 function parseWhatsAppGroupCode(value: string): string | null {
+  const raw = value.trim();
+  const CODE = /^[A-Za-z0-9_-]{10,100}$/;
+
+  if (CODE.test(raw)) return raw; // bare code pasted directly
+
   try {
-    const url = new URL(value.trim());
+    const url = new URL(raw);
     if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'chat.whatsapp.com') return null;
-    const code = url.pathname.split('/').filter(Boolean)[0] ?? '';
-    return /^[A-Za-z0-9_-]{10,100}$/.test(code) ? code : null;
+    const segs = url.pathname.split('/').filter(Boolean);
+    const code = segs[segs.length - 1] ?? '';
+    return CODE.test(code) ? code : null;
   } catch {
     return null;
   }
@@ -94,7 +104,7 @@ function GroupCard({ group }: { group: WebinarGroup }) {
 
   async function save() {
     if (!parsedCode) {
-      toast.error('Colle un lien qui commence par https://chat.whatsapp.com/', 'Lien invalide');
+      toast.error('Colle le lien WhatsApp (https://chat.whatsapp.com/…) ou directement le code du groupe.', 'Lien invalide');
       return;
     }
     if (!changed || saving) return;
@@ -126,17 +136,17 @@ function GroupCard({ group }: { group: WebinarGroup }) {
         <input
           id={`group-${group.slug}`}
           className="input font-mono"
-          type="url"
+          type="text"
           inputMode="url"
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="https://chat.whatsapp.com/..."
+          placeholder="https://chat.whatsapp.com/… ou le code du groupe"
         />
         {input.trim() && !parsedCode && (
-          <p className="field-error">Ce lien WhatsApp n'est pas valide.</p>
+          <p className="field-error">Colle un lien WhatsApp valide, ou directement le code du groupe.</p>
         )}
       </div>
 
