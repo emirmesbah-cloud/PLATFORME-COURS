@@ -119,6 +119,33 @@ async function resolveDomicileWilaya(wilayaId: number) {
   return String(match.libelle ?? '').trim();
 }
 
+function isDeletedParcel(detail: Record<string, unknown>) {
+  const status = `${String(detail.situation ?? '')} ${String(detail.etat_logistique ?? '')}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  return status.includes('supprim');
+}
+
+async function deleteEcomParcel(tracking: string) {
+  const path = `/colis/${encodeURIComponent(tracking)}`;
+  let detail: Record<string, unknown>;
+  try {
+    detail = await ecom(path) as Record<string, unknown>;
+  } catch (error) {
+    // A missing parcel is already deleted on E-com, so local cleanup is safe.
+    if (error instanceof EcomError && error.status === 404) {
+      return { already_deleted: true };
+    }
+    throw error;
+  }
+  if (isDeletedParcel(detail)) return { already_deleted: true };
+
+  // E-com API v2 accepts deletion only while the parcel is still editable.
+  await ecom(path, { method: 'DELETE' });
+  return { already_deleted: false };
+}
+
 serve(async (req) => {
   const CORS = cors(req.headers.get('origin'));
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -152,6 +179,7 @@ serve(async (req) => {
   let payload: {
     action?: string;
     order_id?: string;
+    lead_id?: string;
     wilaya_id?: number;
     commune?: string;
     address?: string | null;
@@ -212,6 +240,41 @@ serve(async (req) => {
       return json({ ok: true, items: await ecom(`/stopdesks?id_wilaya=${id}`) });
     }
 
+    if (payload.action === 'delete-lead') {
+      const leadId = String(payload.lead_id ?? '');
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadId)) {
+        return json({ ok: false, error: 'INVALID_LEAD_ID' }, 400);
+      }
+      const { data: lead, error: leadError } = await admin
+        .from('webinar_leads')
+        .select('id')
+        .eq('id', leadId)
+        .maybeSingle();
+      if (leadError || !lead) return json({ ok: false, error: 'LEAD_NOT_FOUND' }, 404);
+
+      const { data: linkedOrders, error: ordersError } = await admin
+        .from('delivery_orders')
+        .select('id, ecom_tracking')
+        .eq('webinar_lead_id', leadId);
+      if (ordersError) throw ordersError;
+
+      // Do not remove anything locally until every linked E-com parcel has
+      // accepted deletion (or is already absent/deleted there).
+      for (const linkedOrder of linkedOrders ?? []) {
+        if (linkedOrder.ecom_tracking) await deleteEcomParcel(linkedOrder.ecom_tracking);
+      }
+      if (linkedOrders?.length) {
+        const { error: deleteOrdersError } = await admin
+          .from('delivery_orders')
+          .delete()
+          .eq('webinar_lead_id', leadId);
+        if (deleteOrdersError) throw deleteOrdersError;
+      }
+      const { error: deleteLeadError } = await admin.from('webinar_leads').delete().eq('id', leadId);
+      if (deleteLeadError) throw deleteLeadError;
+      return json({ ok: true, deleted_orders: linkedOrders?.length ?? 0 });
+    }
+
     const orderId = String(payload.order_id ?? '');
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)) {
       return json({ ok: false, error: 'INVALID_ORDER_ID' }, 400);
@@ -222,6 +285,13 @@ serve(async (req) => {
       .eq('id', orderId)
       .maybeSingle();
     if (orderError || !order) return json({ ok: false, error: 'ORDER_NOT_FOUND' }, 404);
+
+    if (payload.action === 'delete-order') {
+      if (order.ecom_tracking) await deleteEcomParcel(order.ecom_tracking);
+      const { error: deleteError } = await admin.from('delivery_orders').delete().eq('id', orderId);
+      if (deleteError) throw deleteError;
+      return json({ ok: true, deleted_from_ecom: Boolean(order.ecom_tracking) });
+    }
 
     if (payload.action === 'update-destination') {
       if (order.ecom_tracking) return json({ ok: false, error: 'ORDER_ALREADY_SYNCED' }, 409);

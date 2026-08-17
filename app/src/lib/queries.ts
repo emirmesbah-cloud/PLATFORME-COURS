@@ -863,15 +863,7 @@ export async function updateDeliveryOrder(orderId: string, input: CreateDelivery
 }
 
 export async function deleteDeliveryOrder(orderId: string): Promise<void> {
-  const { data, error } = await supabase
-    .from('delivery_orders')
-    .delete()
-    .eq('id', orderId)
-    .is('ecom_tracking', null)
-    .select('id')
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) throw new Error('ORDER_ALREADY_SYNCED');
+  await invokeEcom({ action: 'delete-order', order_id: orderId });
 }
 
 type EcomBridgeResponse<T = unknown> = {
@@ -1083,10 +1075,7 @@ export async function logWebinarCallWithOrder(input: {
 }
 
 export async function deleteWebinarLead(leadId: string): Promise<void> {
-  const { data, error } = await supabase.rpc('admin_delete_webinar_lead', { p_lead_id: leadId });
-  if (error) throw error;
-  const result = data as { ok?: boolean; error?: string };
-  if (!result?.ok) throw new Error(result?.error || 'LEAD_DELETE_FAILED');
+  await invokeEcom({ action: 'delete-lead', lead_id: leadId });
 }
 
 export async function fetchSalesAnalytics(): Promise<import('./types').SalesAnalytics | null> {
