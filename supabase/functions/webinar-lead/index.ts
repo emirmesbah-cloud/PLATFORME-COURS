@@ -129,14 +129,20 @@ serve(async (req) => {
   const authHeader = req.headers.get('authorization') ?? '';
   if (authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice('Bearer '.length);
-    const { data: authData } = await admin.auth.getUser(token);
-    if (authData.user) {
-      const { data: testerProfile } = await admin
-        .from('profiles')
-        .select('is_admin, revoked_at')
-        .eq('id', authData.user.id)
-        .maybeSingle();
-      isAdminTester = testerProfile?.is_admin === true && !testerProfile.revoked_at;
+    // Only a logged-in admin sends a real user JWT (starts with "eyJ"). Anonymous
+    // visitors send the publishable anon key, which can never resolve to a user —
+    // so skip the auth-server round-trip for them. Every public submit is faster,
+    // and under a big burst the auth service isn't hit once per registration.
+    if (token.startsWith('eyJ')) {
+      const { data: authData } = await admin.auth.getUser(token);
+      if (authData.user) {
+        const { data: testerProfile } = await admin
+          .from('profiles')
+          .select('is_admin, revoked_at')
+          .eq('id', authData.user.id)
+          .maybeSingle();
+        isAdminTester = testerProfile?.is_admin === true && !testerProfile.revoked_at;
+      }
     }
   }
 
