@@ -122,6 +122,24 @@ serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  // Connected Aurel admins get an unrestricted test mode: they may reuse the
+  // same identity/phone as often as needed. Anonymous visitors keep the
+  // duplicate guard so the public production endpoint cannot be flooded.
+  let isAdminTester = false;
+  const authHeader = req.headers.get('authorization') ?? '';
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice('Bearer '.length);
+    const { data: authData } = await admin.auth.getUser(token);
+    if (authData.user) {
+      const { data: testerProfile } = await admin
+        .from('profiles')
+        .select('is_admin, revoked_at')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+      isAdminTester = testerProfile?.is_admin === true && !testerProfile.revoked_at;
+    }
+  }
+
   const action = clean(payload.action, 30);
   try {
     if (action === 'wilayas') {
@@ -165,17 +183,18 @@ serve(async (req) => {
     const selectedCommune = communes.find((item) => String(item.commune) === commune && item.livrable === true);
     if (!selectedCommune) return json({ ok: false, error: 'COMMUNE_INVALID' }, 422);
 
-    // A double-click or network retry must not create duplicate call records.
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: existing } = await admin
-      .from('webinar_leads')
-      .select('id')
-      .eq('phone_normalized', phoneNormalized)
-      .gte('created_at', since)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (existing) return json({ ok: true, already_registered: true });
+    if (!isAdminTester) {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: existing } = await admin
+        .from('webinar_leads')
+        .select('id')
+        .eq('phone_normalized', phoneNormalized)
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existing) return json({ ok: true, already_registered: true });
+    }
 
     const { error } = await admin.from('webinar_leads').insert({
       full_name: fullName,
