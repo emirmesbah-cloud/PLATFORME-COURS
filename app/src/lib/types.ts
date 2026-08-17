@@ -277,6 +277,7 @@ export interface DeliveryOrder {
   cod_amount: number;
   supplier_notes: string | null;
   activation_code_id: string | null;
+  webinar_lead_id: string | null;
   sync_status: DeliverySyncStatus;
   ecom_tracking: string | null;
   ecom_parcel_id: number | null;
@@ -293,6 +294,46 @@ export interface DeliveryOrder {
   created_at: string;
   updated_at: string;
   activation_code?: { code: string } | null;
+}
+
+// ── Webinar prospect CRM (mig 20260817000051) ─────────────────
+export type WebinarLeadStatus =
+  | 'new' | 'to_call' | 'nrp' | 'callback' | 'not_interested'
+  | 'confirmed' | 'in_delivery' | 'delivered' | 'returned';
+
+export interface WebinarLead {
+  id: string;
+  full_name: string;
+  phone_raw: string;
+  phone_normalized: string;
+  email: string;
+  attended_live: boolean;
+  wilaya_id: number;
+  wilaya_name: string;
+  commune: string;
+  address: string;
+  source: string;
+  campaign: string;
+  status: WebinarLeadStatus;
+  closer_name: string | null;
+  call_count: number;
+  last_call_at: string | null;
+  next_follow_up_at: string | null;
+  latest_call_note: string | null;
+  created_at: string;
+  updated_at: string;
+  delivery_orders?: Pick<DeliveryOrder, 'id' | 'ecom_tracking' | 'ecom_situation'>[];
+}
+
+export interface WebinarLeadActivity {
+  id: string;
+  lead_id: string;
+  activity_type: 'submitted' | 'call' | 'status' | 'delivery';
+  status: WebinarLeadStatus | null;
+  note: string | null;
+  metadata: Record<string, unknown>;
+  created_by: string | null;
+  created_at: string;
 }
 
 export interface EcomWilaya {

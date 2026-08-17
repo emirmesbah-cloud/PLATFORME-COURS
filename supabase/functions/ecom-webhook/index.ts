@@ -88,12 +88,39 @@ serve(async (req) => {
       last_error: null,
     })
     .eq('ecom_tracking', tracking)
-    .select('id');
+    .select('id, webinar_lead_id');
 
   if (updateError) {
     await admin.from('ecom_webhook_events').update({ processing_error: updateError.message }).eq('event_id', eventId);
     await reportError(updateError, { function: 'ecom-webhook', extra: { event_id: eventId, tracking } });
     return json({ ok: false, error: 'ORDER_UPDATE_FAILED' }, 500);
+  }
+
+  const situationId = Number(payload.id_situation);
+  const leadStatus = situationId === 7
+    ? 'delivered'
+    : [5, 6, 18].includes(situationId)
+      ? 'returned'
+      : null;
+  const leadIds = (updated ?? [])
+    .map((order) => order.webinar_lead_id as string | null)
+    .filter((id): id is string => Boolean(id));
+  if (leadStatus && leadIds.length > 0) {
+    const { error: leadError } = await admin
+      .from('webinar_leads')
+      .update({ status: leadStatus })
+      .in('id', leadIds);
+    if (leadError) {
+      await reportError(leadError, { function: 'ecom-webhook', extra: { event_id: eventId, tracking } });
+    } else {
+      await admin.from('webinar_lead_activities').insert(leadIds.map((leadId) => ({
+        lead_id: leadId,
+        activity_type: 'delivery',
+        status: leadStatus,
+        note: payload.situation ? String(payload.situation).slice(0, 200) : leadStatus,
+        metadata: { event_id: eventId, tracking, id_situation: situationId },
+      })));
+    }
   }
 
   await admin.from('ecom_webhook_events').update({ processed_at: new Date().toISOString() }).eq('event_id', eventId);

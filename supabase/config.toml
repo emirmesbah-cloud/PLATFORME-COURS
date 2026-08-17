@@ -100,3 +100,8 @@ verify_jwt = true
 # Public callback from E-com Delivery. Protected by HMAC-SHA256 signature,
 # timestamp freshness and idempotent event IDs.
 verify_jwt = false
+
+[functions.webinar-lead]
+# Public post-webinar form. Validated, throttled and written with service_role;
+# no anonymous table INSERT policy is exposed.
+verify_jwt = false

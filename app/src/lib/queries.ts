@@ -37,6 +37,7 @@ import type {
   Payment, PaymentMethod, PaymentCurrency, AccountingStats, Course,
   WebinarGroup, WebinarGroupSlug,
   DeliveryOrder, DeliveryMode, EcomWilaya, EcomCommune, EcomStopdesk,
+  WebinarLead, WebinarLeadStatus,
 } from './types';
 
 // SHERLOCK R14 — H10 : profile shape côté admin inclut revoked_at + reason
@@ -80,6 +81,9 @@ export const queryKeys = {
   ecomWilayas: ['admin', 'ecom', 'wilayas'] as const,
   ecomCommunes: (wilayaId: number) => ['admin', 'ecom', 'communes', wilayaId] as const,
   ecomStopdesks: (wilayaId: number) => ['admin', 'ecom', 'stopdesks', wilayaId] as const,
+  // Webinar CRM
+  adminWebinarLeads: ['admin', 'webinar_leads'] as const,
+  webinarLead: (leadId: string) => ['admin', 'webinar_lead', leadId] as const,
 };
 
 // ── Lessons ────────────────────────────────────────────────────
@@ -794,6 +798,7 @@ export interface CreateDeliveryOrderInput {
   cod_amount: number;
   supplier_notes?: string | null;
   activation_code_id?: string | null;
+  webinar_lead_id?: string | null;
 }
 
 export async function fetchDeliveryOrders(): Promise<DeliveryOrder[]> {
@@ -822,6 +827,7 @@ export async function createDeliveryOrder(input: CreateDeliveryOrderInput): Prom
       supplier_notes: input.supplier_notes || null,
       ecom_ref_article: input.ecom_ref_article || null,
       activation_code_id: input.activation_code_id || null,
+      webinar_lead_id: input.webinar_lead_id || null,
     })
     .select('*')
     .single();
@@ -894,4 +900,82 @@ export async function refreshDeliveryOrder(orderId: string): Promise<DeliveryOrd
 export async function confirmDeliveryOrder(orderId: string): Promise<DeliveryOrder> {
   const result = await invokeEcom<{ order: DeliveryOrder }>({ action: 'confirm', order_id: orderId });
   return result.order;
+}
+
+// ============================================================================
+// Webinar prospect CRM (mig 20260817000051)
+// ============================================================================
+
+const LEAD_WITH_DELIVERY = '*, delivery_orders!delivery_orders_webinar_lead_id_fkey(id,ecom_tracking,ecom_situation)';
+
+export async function fetchWebinarLeads(): Promise<WebinarLead[]> {
+  const { data, error } = await withQueryTimeout(
+    supabase
+      .from('webinar_leads')
+      .select(LEAD_WITH_DELIVERY)
+      .order('created_at', { ascending: false })
+      .limit(2000),
+    15000,
+    'fetchWebinarLeads',
+  );
+  if (error) throw error;
+  return (data ?? []) as never;
+}
+
+export async function fetchWebinarLead(leadId: string): Promise<WebinarLead | null> {
+  const { data, error } = await supabase
+    .from('webinar_leads')
+    .select(LEAD_WITH_DELIVERY)
+    .eq('id', leadId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as never;
+}
+
+export interface WebinarLeadSubmission {
+  full_name: string;
+  phone: string;
+  email: string;
+  attended_live: boolean;
+  wilaya_id: number;
+  wilaya_name: string;
+  commune: string;
+  address: string;
+  website?: string;
+}
+
+export async function submitWebinarLead(input: WebinarLeadSubmission): Promise<{ already_registered?: boolean }> {
+  const { data, error } = await supabase.functions.invoke('webinar-lead', { body: input });
+  if (error) {
+    let message = error.message;
+    const context = (error as { context?: { json?: () => Promise<unknown> } }).context;
+    if (context?.json) {
+      try {
+        const detail = await context.json() as { error?: string };
+        if (detail.error) message = detail.error;
+      } catch { /* response body may already be consumed */ }
+    }
+    throw new Error(message);
+  }
+  const result = data as { ok?: boolean; error?: string; already_registered?: boolean };
+  if (!result?.ok) throw new Error(result?.error || 'SUBMISSION_FAILED');
+  return { already_registered: result.already_registered };
+}
+
+export async function logWebinarCall(input: {
+  leadId: string;
+  status: WebinarLeadStatus;
+  closerName: string;
+  note?: string | null;
+  nextFollowUpAt?: string | null;
+}): Promise<WebinarLead> {
+  const { data, error } = await supabase.rpc('admin_log_webinar_call', {
+    p_lead_id: input.leadId,
+    p_status: input.status,
+    p_closer_name: input.closerName,
+    p_note: input.note || null,
+    p_next_follow_up_at: input.nextFollowUpAt || null,
+  });
+  if (error) throw error;
+  return data as WebinarLead;
 }

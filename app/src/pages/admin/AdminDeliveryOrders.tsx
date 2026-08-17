@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle, CheckCircle2, Clock3, Loader2, PackagePlus,
@@ -7,7 +8,7 @@ import {
 import {
   configureEcomWebhook, confirmDeliveryOrder, createDeliveryOrder, fetchDeliveryOrders,
   fetchEcomCommunes, fetchEcomConnection, fetchEcomStopdesks,
-  fetchEcomWilayas, queryKeys, refreshDeliveryOrder, syncDeliveryOrder,
+  fetchEcomWilayas, fetchWebinarLead, queryKeys, refreshDeliveryOrder, syncDeliveryOrder,
 } from '@/lib/queries';
 import type { Course, DeliveryMode, DeliveryOrder } from '@/lib/types';
 import { Modal } from '@/components/ui/Modal';
@@ -60,6 +61,10 @@ export function AdminDeliveryOrders() {
   const [submitting, setSubmitting] = useState<'draft' | 'sync' | null>(null);
   const [busyOrder, setBusyOrder] = useState<string | null>(null);
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
+  const [sourceLeadId, setSourceLeadId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const prefillHandledRef = useRef<string | null>(null);
+  const requestedLeadId = searchParams.get('lead') ?? '';
 
   const ordersQ = useQuery({ queryKey: queryKeys.adminDeliveryOrders, queryFn: fetchDeliveryOrders });
   const connectionQ = useQuery({
@@ -86,6 +91,28 @@ export function AdminDeliveryOrders() {
     enabled: modalOpen && form.wilayaId > 0 && form.deliveryMode === 'stopdesk',
     staleTime: 24 * 60 * 60_000,
   });
+  const leadQ = useQuery({
+    queryKey: queryKeys.webinarLead(requestedLeadId),
+    queryFn: () => fetchWebinarLead(requestedLeadId),
+    enabled: /^[0-9a-f-]{36}$/i.test(requestedLeadId),
+  });
+
+  useEffect(() => {
+    const lead = leadQ.data;
+    if (!lead || prefillHandledRef.current === lead.id) return;
+    prefillHandledRef.current = lead.id;
+    setSourceLeadId(lead.id);
+    setForm({
+      ...initialForm,
+      customerName: lead.full_name,
+      mobile1: lead.phone_normalized,
+      wilayaId: lead.wilaya_id,
+      commune: lead.commune,
+      address: lead.address,
+      notes: `Prospect webinar · ${lead.email}`,
+    });
+    setModalOpen(true);
+  }, [leadQ.data]);
 
   const selectedWilaya = useMemo(
     () => wilayasQ.data?.find((item) => item.id === form.wilayaId),
@@ -94,6 +121,8 @@ export function AdminDeliveryOrders() {
 
   function resetAndOpen() {
     setForm(initialForm);
+    setSourceLeadId(null);
+    setSearchParams({}, { replace: true });
     setModalOpen(true);
   }
 
@@ -138,6 +167,7 @@ export function AdminDeliveryOrders() {
         quantity: form.quantity,
         cod_amount: form.amount,
         supplier_notes: form.notes.trim() || null,
+        webinar_lead_id: sourceLeadId,
       });
       if (sendToEcom) {
         try {
@@ -151,6 +181,8 @@ export function AdminDeliveryOrders() {
       }
       setModalOpen(false);
       await qc.invalidateQueries({ queryKey: queryKeys.adminDeliveryOrders });
+      await qc.invalidateQueries({ queryKey: queryKeys.adminWebinarLeads });
+      setSearchParams({}, { replace: true });
     } catch (error) {
       toast.error(friendlyError(error), 'Création impossible');
     } finally {

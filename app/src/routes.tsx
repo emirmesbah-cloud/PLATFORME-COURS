@@ -66,10 +66,12 @@ const AdminEmails    = lazyNamed(() => import('@/pages/admin/AdminEmails'),     
 const AdminAudit     = lazyNamed(() => import('@/pages/admin/AdminAudit'),      'AdminAudit');
 const AdminWebinarGroups = lazyNamed(() => import('@/pages/admin/AdminWebinarGroups'), 'AdminWebinarGroups');
 const AdminDeliveryOrders = lazyNamed(() => import('@/pages/admin/AdminDeliveryOrders'), 'AdminDeliveryOrders');
+const AdminWebinarLeads = lazyNamed(() => import('@/pages/admin/AdminWebinarLeads'), 'AdminWebinarLeads');
 
 // Public unsubscribe page — lazy too, rarement utilisée et pas dans le
 // flow auth principal.
 const UnsubscribePage = lazyNamed(() => import('@/pages/public/Unsubscribe'), 'UnsubscribePage');
+const WebinarRegistrationPage = lazyNamed(() => import('@/pages/public/WebinarRegistration'), 'WebinarRegistrationPage');
 
 // Wrapper pour Suspense fallback uniforme sur les routes lazy.
 // SHERLOCK R5 fix : ChunkErrorBoundary capture les ChunkLoadError quand
@@ -91,6 +93,7 @@ export const routes: RouteObject[] = [
   { path: '/forgot-password',   element: <ForgotPasswordPage /> },
   { path: '/reset-password',    element: <ResetPasswordPage /> },
   { path: '/unsubscribe',       element: <L><UnsubscribePage /></L> },
+  { path: '/inscription-webinar', element: <L><WebinarRegistrationPage /></L> },
 
   {
     path: '/',
@@ -157,6 +160,7 @@ export const routes: RouteObject[] = [
       { path: 'bonus',            element: <L><AdminBonus /></L> },
       { path: 'comptabilite', element: <L><AdminAccounting /></L> },
       { path: 'commandes',    element: <L><AdminDeliveryOrders /></L> },
+      { path: 'prospects',     element: <L><AdminWebinarLeads /></L> },
       { path: 'analytics',   element: <L><AdminAnalytics /></L> },
       { path: 'feedback',    element: <L><AdminFeedback /></L> },
       { path: 'emails',      element: <L><AdminEmails /></L> },
