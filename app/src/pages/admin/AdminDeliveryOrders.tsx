@@ -409,7 +409,7 @@ export function AdminDeliveryOrders() {
                     <tr>
                       <th className="px-4 py-3"><input type="checkbox" aria-label="Sélectionner toutes les commandes" checked={allSelectableSelected} onChange={toggleAllSelectable} /></th><th className="px-4 py-3">Client</th><th className="px-4 py-3">Destination</th>
                       <th className="px-4 py-3">Produit</th><th className="px-4 py-3">Note</th><th className="px-4 py-3">À encaisser</th>
-                      <th className="px-4 py-3">Tracking</th><th className="px-4 py-3">Statut</th>
+                      <th className="px-4 py-3">Tracking</th><th className="px-4 py-3">Statut E-com Delivery</th>
                       <th className="px-4 py-3">Créée</th><th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>

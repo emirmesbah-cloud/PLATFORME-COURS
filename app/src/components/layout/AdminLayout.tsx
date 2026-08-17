@@ -71,8 +71,10 @@ export function AdminLayout() {
   });
   const pending = statsQ.data?.pending ?? 0;
   const isCloser = profile?.staff_role === 'closer';
+  const permissionPath: Record<string, string> = { prospects: '/admin/prospects', formulaire: '/admin/formulaire', commandes: '/admin/commandes', codes: '/admin/codes' };
+  const closerPaths = new Set(['/admin/security', ...(profile?.staff_permissions ?? []).map((permission) => permissionPath[permission]).filter(Boolean)]);
   const visibleGroups = isCloser
-    ? [{ label: 'Gestion', items: NAV_GROUPS.flatMap((group) => group.items).filter((item) => item.to === '/admin/prospects' || item.to === '/admin/security') }]
+    ? [{ label: 'Accès attribués', items: NAV_GROUPS.flatMap((group) => group.items).filter((item) => closerPaths.has(item.to)) }]
     : NAV_GROUPS;
 
   async function handleSignOut() { await signOut(); navigate('/login', { replace: true }); }

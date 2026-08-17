@@ -79,9 +79,12 @@ export function AdminGuard({ children }: { children: ReactNode }) {
 
   // From here, profile is from 'cache' or 'db'. isAdmin already trusts both
   // (R20). If admin → render. If not admin → redirect to dashboard.
-  const isCloser = profile.staff_role === 'closer' && profile.staff_permissions?.includes('prospects');
+  const permissions = profile.staff_permissions ?? [];
+  const isCloser = profile.staff_role === 'closer' && permissions.length > 0;
   if (!isAdmin && !isCloser) return <Navigate to="/dashboard" replace />;
-  if (isCloser && location.pathname !== '/admin/prospects' && location.pathname !== '/admin/security') {
+  const permissionPath: Record<string, string> = { prospects: '/admin/prospects', formulaire: '/admin/formulaire', commandes: '/admin/commandes', codes: '/admin/codes' };
+  const allowedPaths = ['/admin/security', ...permissions.map((permission) => permissionPath[permission]).filter(Boolean)];
+  if (isCloser && !allowedPaths.includes(location.pathname)) {
     return <Navigate to="/admin/prospects" replace />;
   }
 

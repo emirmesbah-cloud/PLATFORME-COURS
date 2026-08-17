@@ -46,8 +46,8 @@ export function AdminCodes() {
 
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
-    if (count < 1 || count > 50) {
-      toast.error('Le nombre de codes doit être entre 1 et 50.', 'Valeur invalide');
+    if (count < 1 || count > 500) {
+      toast.error('Le nombre de codes doit être entre 1 et 500.', 'Valeur invalide');
       return;
     }
     setSubmitting(true);
@@ -275,7 +275,7 @@ ${codes.map((c) => `• ${c}`).join('\n')}
 
           <div>
             <label className="label">Nombre</label>
-            <input type="number" min={1} max={50} value={count}
+            <input type="number" min={1} max={500} value={count}
               onChange={(e) => {
                 // SHERLOCK R14 — H11 : parseInt('') = NaN, parseInt('abc') = NaN.
                 // Avant : NaN set dans le state, l'input affichait vide, le check
@@ -284,10 +284,10 @@ ${codes.map((c) => `• ${c}`).join('\n')}
                 // → la RPC échouait avec INVALID_COUNT côté SQL. Maintenant
                 // on clamp côté input pour rejet immédiat.
                 const n = parseInt(e.target.value, 10);
-                setCount(Number.isFinite(n) ? Math.max(1, Math.min(50, n)) : 1);
+                setCount(Number.isFinite(n) ? Math.max(1, Math.min(500, n)) : 1);
               }}
               className="input" />
-            <p className="mt-1 text-xs text-slate-400">Entre 1 et 50</p>
+            <p className="mt-1 text-xs text-slate-400">Entre 1 et 500 · le PDF contient automatiquement toutes les pages</p>
           </div>
 
           <div className="md:col-span-1">

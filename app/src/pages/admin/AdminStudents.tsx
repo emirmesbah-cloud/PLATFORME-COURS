@@ -111,7 +111,7 @@ export function AdminStudents() {
   async function handlePurge() {
     if (!purgeTarget) return;
     if (purgeConfirm !== 'PURGE') {
-      toast.error('Tape exactement PURGE pour confirmer.', 'Confirmation manquante');
+      toast.error('Coche la confirmation de purge.', 'Confirmation manquante');
       return;
     }
     setPurging(true);
@@ -263,7 +263,7 @@ export function AdminStudents() {
                             onClick={() => setMenuOpenId(null)}
                             aria-hidden
                           />
-                          <div className="absolute right-2 top-10 z-20 w-52 rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                          <div className="fixed bottom-6 right-6 z-50 w-56 rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-2xl">
                             {/* Switch course access (single-course gating) */}
                             {s.course_access === 'immigration' ? (
                               <button
@@ -381,14 +381,10 @@ export function AdminStudents() {
               Cible : <strong>{purgeTarget.first_name} {purgeTarget.last_name}</strong> ({purgeTarget.email})
             </p>
             <div>
-              <label className="label">Tape <code className="font-mono text-red-600">PURGE</code> pour confirmer</label>
-              <input
-                className="input font-mono"
-                value={purgeConfirm}
-                onChange={(e) => setPurgeConfirm(e.target.value)}
-                placeholder="PURGE"
-                autoComplete="off"
-              />
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                <input type="checkbox" className="mt-0.5 h-4 w-4" checked={purgeConfirm === 'PURGE'} onChange={(e) => setPurgeConfirm(e.target.checked ? 'PURGE' : '')} />
+                <span>Je confirme la suppression définitive de cet étudiant et de son compte.</span>
+              </label>
             </div>
             <div className="flex justify-end gap-2">
               <button
