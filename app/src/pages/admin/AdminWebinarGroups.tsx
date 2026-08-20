@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ExternalLink, Loader2, MessageCircle, Plus, RotateCw, Save, ShieldCheck, LifeBuoy,
+  ExternalLink, Loader2, MessageCircle, Plus, RotateCw, Save, ShieldCheck, LifeBuoy, Trash2,
 } from 'lucide-react';
 import {
   fetchWebinarGroups, fetchRotationOverview, queryKeys, updateWebinarGroup,
-  rpcAddRotationLinks, rpcStartNewRotationLot, rpcSetEmergencyLink,
+  rpcAddRotationLinks, rpcStartNewRotationLot, rpcSetEmergencyLink, rpcRemoveRotationLink,
 } from '@/lib/queries';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
@@ -205,7 +205,13 @@ function StatusBadge({ status }: { status: RotationLink['status'] }) {
   return <span className="badge-green"><span className="dot" /> Actif</span>;
 }
 
-function LinkRow({ link }: { link: RotationLink }) {
+function LinkRow({
+  link, onRemove, removing,
+}: {
+  link: RotationLink;
+  onRemove: (link: RotationLink) => void;
+  removing: boolean;
+}) {
   const muted = link.status !== 'active';
   const color = link.status === 'full' ? 'green' : 'orange';
   return (
@@ -217,7 +223,19 @@ function LinkRow({ link }: { link: RotationLink }) {
           </span>
           <code className="truncate font-mono text-sm text-zinc-800">{link.whatsapp_code}</code>
         </div>
-        <StatusBadge status={link.status} />
+        <div className="flex flex-none items-center gap-2">
+          <StatusBadge status={link.status} />
+          <button
+            type="button"
+            className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+            onClick={() => onRemove(link)}
+            disabled={removing}
+            title="Supprimer ce lien"
+            aria-label={`Supprimer le lien #${link.position}`}
+          >
+            {removing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
       <div className="mt-2 flex items-center gap-3">
         <ProgressBar
@@ -251,6 +269,8 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showRetired, setShowRetired] = useState(false);
   const [busy, setBusy] = useState<null | 'append' | 'lot' | 'emergency'>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<RotationLink | null>(null);
 
   const state = overviewQ.data?.state ?? null;
   const links = overviewQ.data?.links ?? [];
@@ -315,6 +335,29 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
     } finally {
       setBusy(null);
     }
+  }
+
+  async function doRemove(link: RotationLink) {
+    if (removingId) return;
+    setRemovingId(link.id);
+    try {
+      const res = await rpcRemoveRotationLink(link.id);
+      setRemoveTarget(null);
+      await refresh();
+      toast.success(res.deleted ? 'Lien supprimé.' : 'Lien retiré de la rotation.', 'Fait');
+    } catch {
+      toast.error("Le lien n'a pas pu être supprimé. Réessaie.", 'Erreur');
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
+  // A link nobody has been sent to yet is a plain mistake → remove it straight
+  // away. A link that already has members opens a confirm (it gets retired, its
+  // members keep their link).
+  function requestRemove(link: RotationLink) {
+    if (link.unique_ip_count === 0) void doRemove(link);
+    else setRemoveTarget(link);
   }
 
   async function doSaveEmergency() {
@@ -390,7 +433,14 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
               Aucun lien dans le lot actif. Ajoute des liens ci-dessous.
             </p>
           ) : (
-            currentLotLinks.map((link) => <LinkRow key={link.id} link={link} />)
+            currentLotLinks.map((link) => (
+              <LinkRow
+                key={link.id}
+                link={link}
+                onRemove={requestRemove}
+                removing={removingId === link.id}
+              />
+            ))
           )}
         </div>
       )}
@@ -532,6 +582,28 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Confirm dialog for removing a link that already has members */}
+      <Modal open={removeTarget !== null} onClose={() => setRemoveTarget(null)} title="Retirer ce lien ?">
+        {removeTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Le groupe #{removeTarget.position} a déjà <strong>{removeTarget.unique_ip_count} membre(s)</strong>.
+              Il sera <strong>retiré de la rotation</strong> : plus aucun nouvel inscrit n'y sera envoyé, mais
+              les personnes déjà présentes gardent leur lien.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-outline" onClick={() => setRemoveTarget(null)} disabled={removingId !== null}>
+                Annuler
+              </button>
+              <button type="button" className="btn-danger" onClick={() => doRemove(removeTarget)} disabled={removingId !== null}>
+                {removingId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Retirer de la rotation
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </section>
   );

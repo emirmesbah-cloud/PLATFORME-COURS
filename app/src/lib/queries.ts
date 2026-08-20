@@ -684,6 +684,14 @@ export async function rpcSetEmergencyLink(funnel: RotationFunnel, code: string) 
   return data as { ok: boolean; code: string | null };
 }
 
+export async function rpcRemoveRotationLink(linkId: string) {
+  const { data, error } = await supabase.rpc('remove_rotation_link', {
+    p_link_id: linkId,
+  });
+  if (error) throw error;
+  return data as { ok: boolean; deleted?: boolean; retired?: boolean; error?: string };
+}
+
 export async function logAdminAction(
   actionType: string,
   targetType: string | null = null,
