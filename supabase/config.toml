@@ -105,3 +105,10 @@ verify_jwt = false
 # Public post-webinar form. Validated, throttled and written with service_role;
 # no anonymous table INSERT policy is exposed.
 verify_jwt = false
+
+[functions.webinar-rotate]
+# Public WhatsApp group rotation resolver, called by the WordPress merci page.
+# No login (the visitor is anonymous) — gated instead by a shared secret header
+# X-Rotate-Secret, so only the merci page can reach it. All counting is atomic
+# server-side via the assign_webinar_group RPC (service_role).
+verify_jwt = false

@@ -36,6 +36,7 @@ import type {
   QuizQuestion, QuizSubmissionResult, QuizLessonStatus,
   Payment, PaymentMethod, PaymentCurrency, AccountingStats, Course,
   WebinarGroup, WebinarGroupSlug,
+  RotationFunnel, RotationLink, RotationState, RotationOverview,
   DeliveryOrder, DeliveryMode, EcomWilaya, EcomCommune, EcomStopdesk,
   WebinarLead, WebinarLeadStatus,
   StaffMember, WebinarFormSettings,
@@ -69,6 +70,7 @@ export const queryKeys = {
   adminEmails: ['admin', 'emails'] as const,
   adminAudit: ['admin', 'audit'] as const,
   adminWebinarGroups: ['admin', 'webinar_groups'] as const,
+  adminRotation: (funnel: string) => ['admin', 'webinar_rotation', funnel] as const,
   // Quiz
   quizQuestions: (lessonId: string) => ['quiz_questions', lessonId] as const,
   quizQuestionsStudent: (lessonId: string) => ['quiz_questions', 'student', lessonId] as const,
@@ -619,6 +621,67 @@ export async function updateWebinarGroup(
     .single();
   if (error) throw error;
   return data as WebinarGroup;
+}
+
+// ── Admin: WhatsApp group ROTATION (immigration + tiktok) ───────────────────
+// Reads go straight to the two RLS-protected tables (admins only); every write
+// goes through a SECURITY DEFINER RPC that validates codes and audit-logs.
+export async function fetchRotationOverview(
+  funnel: RotationFunnel,
+): Promise<RotationOverview> {
+  const [linksRes, stateRes] = await Promise.all([
+    withQueryTimeout(
+      supabase
+        .from('webinar_rotation_links')
+        .select('id, funnel, whatsapp_code, lot_number, position, status, unique_ip_count, alerted_990, created_at, created_by')
+        .eq('funnel', funnel)
+        .order('position', { ascending: true }),
+      10000,
+      'fetchRotationLinks',
+    ),
+    withQueryTimeout(
+      supabase
+        .from('webinar_rotation_state')
+        .select('funnel, current_lot, assign_counter, emergency_code, all_full_alerted, updated_at')
+        .eq('funnel', funnel)
+        .maybeSingle(),
+      10000,
+      'fetchRotationState',
+    ),
+  ]);
+  if (linksRes.error) throw linksRes.error;
+  if (stateRes.error) throw stateRes.error;
+  return {
+    links: (linksRes.data ?? []) as RotationLink[],
+    state: (stateRes.data ?? null) as RotationState | null,
+  };
+}
+
+export async function rpcAddRotationLinks(funnel: RotationFunnel, codes: string[]) {
+  const { data, error } = await supabase.rpc('add_rotation_links', {
+    p_funnel: funnel,
+    p_codes: codes,
+  });
+  if (error) throw error;
+  return data as { ok: boolean; added: number; lot: number };
+}
+
+export async function rpcStartNewRotationLot(funnel: RotationFunnel, codes: string[]) {
+  const { data, error } = await supabase.rpc('start_new_rotation_lot', {
+    p_funnel: funnel,
+    p_codes: codes,
+  });
+  if (error) throw error;
+  return data as { ok: boolean; lot: number; added: number };
+}
+
+export async function rpcSetEmergencyLink(funnel: RotationFunnel, code: string) {
+  const { data, error } = await supabase.rpc('set_emergency_link', {
+    p_funnel: funnel,
+    p_code: code,
+  });
+  if (error) throw error;
+  return data as { ok: boolean; code: string | null };
 }
 
 export async function logAdminAction(

@@ -1,16 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Loader2, MessageCircle, Save, ShieldCheck } from 'lucide-react';
-import { fetchWebinarGroups, queryKeys, updateWebinarGroup } from '@/lib/queries';
+import {
+  ExternalLink, Loader2, MessageCircle, Plus, RotateCw, Save, ShieldCheck, LifeBuoy,
+} from 'lucide-react';
+import {
+  fetchWebinarGroups, fetchRotationOverview, queryKeys, updateWebinarGroup,
+  rpcAddRotationLinks, rpcStartNewRotationLot, rpcSetEmergencyLink,
+} from '@/lib/queries';
 import { useToast } from '@/components/ui/Toast';
+import { Modal } from '@/components/ui/Modal';
+import { ProgressBar } from '@/components/ui/Progress';
 import { formatDateTime } from '@/lib/utils';
-import type { WebinarGroup, WebinarGroupSlug } from '@/lib/types';
+import type {
+  WebinarGroup, WebinarGroupSlug, RotationFunnel, RotationLink,
+} from '@/lib/types';
+
+const GROUP_CAP = 1000;
 
 const GROUP_META: Record<WebinarGroupSlug, { title: string; pageUrl: string; description: string }> = {
   immigration: {
     title: 'Webinar Immigration',
     pageUrl: 'https://aurel-academy.com/immigration/webinar/',
-    description: 'Lien utilisé par le bouton du webinar Immigration Allemagne.',
+    description: 'Rotation des groupes WhatsApp du webinar Immigration Allemagne.',
   },
   pflege: {
     title: 'Webinar Pflege',
@@ -20,7 +31,7 @@ const GROUP_META: Record<WebinarGroupSlug, { title: string; pageUrl: string; des
   tiktok: {
     title: 'Campagne TikTok',
     pageUrl: 'https://aurel-academy.com/webinartk/',
-    description: 'Lien utilisé par la landing page des publicités TikTok.',
+    description: 'Rotation des groupes WhatsApp de la landing page TikTok.',
   },
 };
 
@@ -45,11 +56,28 @@ function parseWhatsAppGroupCode(value: string): string | null {
   }
 }
 
+// Split a textarea/input into codes, validating each. Accepts one per line, or
+// comma/space separated. Returns validated codes (deduped) + the raw tokens that
+// failed to parse, so the UI can tell the admin exactly what to fix.
+function parseCodeList(raw: string): { codes: string[]; invalid: string[] } {
+  const tokens = raw.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+  const codes: string[] = [];
+  const invalid: string[] = [];
+  for (const t of tokens) {
+    const c = parseWhatsAppGroupCode(t);
+    if (c) codes.push(c);
+    else invalid.push(t);
+  }
+  return { codes: Array.from(new Set(codes)), invalid };
+}
+
 export function AdminWebinarGroups() {
   const groupsQ = useQuery({
     queryKey: queryKeys.adminWebinarGroups,
     queryFn: fetchWebinarGroups,
   });
+
+  const pflege = (groupsQ.data ?? []).find((g) => g.slug === 'pflege');
 
   return (
     <div className="space-y-6">
@@ -60,7 +88,7 @@ export function AdminWebinarGroups() {
         </div>
         <h1 className="text-3xl font-bold text-aurel-ink">Groupes WhatsApp</h1>
         <p className="mt-1 max-w-3xl text-slate-600">
-          Colle le nouveau lien d'invitation puis enregistre. Le bouton du webinar utilisera le nouveau groupe automatiquement.
+          Immigration et TikTok répartissent les inscrits sur plusieurs groupes (rotation). Pflege utilise un seul lien.
         </p>
       </header>
 
@@ -83,13 +111,16 @@ export function AdminWebinarGroups() {
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        {(groupsQ.data ?? []).map((group) => <GroupCard key={group.slug} group={group} />)}
+      <div className="grid gap-5 xl:grid-cols-2">
+        <RotationManager funnel="immigration" />
+        <RotationManager funnel="tiktok" />
+        {pflege && <GroupCard group={pflege} />}
       </div>
     </div>
   );
 }
 
+// ── PFLEGE : single-link editor, unchanged ──────────────────────────────────
 function GroupCard({ group }: { group: WebinarGroup }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -163,6 +194,345 @@ function GroupCard({ group }: { group: WebinarGroup }) {
       <div className="border-t border-zinc-100 pt-4 text-xs text-zinc-500">
         Dernière mise à jour : {formatDateTime(group.updated_at)}
       </div>
+    </section>
+  );
+}
+
+// ── IMMIGRATION / TIKTOK : rotation manager ─────────────────────────────────
+function StatusBadge({ status }: { status: RotationLink['status'] }) {
+  if (status === 'full') return <span className="badge-red">Plein</span>;
+  if (status === 'retired') return <span className="badge-slate">Retiré</span>;
+  return <span className="badge-green"><span className="dot" /> Actif</span>;
+}
+
+function LinkRow({ link }: { link: RotationLink }) {
+  const muted = link.status !== 'active';
+  const color = link.status === 'full' ? 'green' : 'orange';
+  return (
+    <div className={`rounded-lg border border-zinc-100 p-3 ${muted ? 'opacity-60' : ''}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex-none rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-semibold text-zinc-500">
+            #{link.position}
+          </span>
+          <code className="truncate font-mono text-sm text-zinc-800">{link.whatsapp_code}</code>
+        </div>
+        <StatusBadge status={link.status} />
+      </div>
+      <div className="mt-2 flex items-center gap-3">
+        <ProgressBar
+          value={link.unique_ip_count}
+          max={GROUP_CAP}
+          color={color}
+          className="flex-1"
+          label={`Membres du groupe #${link.position}`}
+        />
+        <span className="flex-none text-xs tabular-nums text-zinc-500">
+          {link.unique_ip_count} / {GROUP_CAP}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function RotationManager({ funnel }: { funnel: RotationFunnel }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const meta = GROUP_META[funnel];
+
+  const overviewQ = useQuery({
+    queryKey: queryKeys.adminRotation(funnel),
+    queryFn: () => fetchRotationOverview(funnel),
+  });
+
+  const [appendInput, setAppendInput] = useState('');
+  const [newLotInput, setNewLotInput] = useState('');
+  const [emergencyInput, setEmergencyInput] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [showRetired, setShowRetired] = useState(false);
+  const [busy, setBusy] = useState<null | 'append' | 'lot' | 'emergency'>(null);
+
+  const state = overviewQ.data?.state ?? null;
+  const links = overviewQ.data?.links ?? [];
+
+  // Prefill the emergency field from the stored code (as a full link, like the
+  // Pflege editor). Only when the query lands, never clobbering a live edit.
+  useEffect(() => {
+    setEmergencyInput(state?.emergency_code ? `https://chat.whatsapp.com/${state.emergency_code}` : '');
+  }, [state?.emergency_code]);
+
+  const currentLot = state?.current_lot ?? 1;
+  const activeLinks = useMemo(() => links.filter((l) => l.status === 'active'), [links]);
+  const currentLotLinks = useMemo(
+    () => links.filter((l) => l.lot_number === currentLot && l.status !== 'retired'),
+    [links, currentLot],
+  );
+  const retiredLinks = useMemo(() => links.filter((l) => l.status === 'retired'), [links]);
+  const fullCount = currentLotLinks.filter((l) => l.status === 'full').length;
+
+  const appendParsed = parseCodeList(appendInput);
+  const newLotParsed = parseCodeList(newLotInput);
+  const emergencyParsed = parseWhatsAppGroupCode(emergencyInput);
+
+  async function refresh() {
+    await qc.invalidateQueries({ queryKey: queryKeys.adminRotation(funnel) });
+  }
+
+  async function doAppend() {
+    if (busy) return;
+    if (appendParsed.codes.length === 0) {
+      toast.error('Colle au moins un lien WhatsApp valide.', 'Rien à ajouter');
+      return;
+    }
+    setBusy('append');
+    try {
+      const res = await rpcAddRotationLinks(funnel, appendParsed.codes);
+      setAppendInput('');
+      await refresh();
+      toast.success(`${res.added} lien(s) ajouté(s) au lot ${res.lot}.`, 'Lot mis à jour');
+    } catch {
+      toast.error("Les liens n'ont pas été ajoutés. Réessaie.", 'Erreur');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doStartNewLot() {
+    if (busy) return;
+    if (newLotParsed.codes.length === 0) {
+      toast.error('Colle au moins un lien WhatsApp valide pour le nouveau lot.', 'Nouveau lot vide');
+      return;
+    }
+    setBusy('lot');
+    try {
+      const res = await rpcStartNewRotationLot(funnel, newLotParsed.codes);
+      setNewLotInput('');
+      setConfirmOpen(false);
+      await refresh();
+      toast.success(`Lot ${res.lot} activé avec ${res.added} lien(s). L'ancien lot est retiré.`, 'Nouveau lot activé');
+    } catch {
+      toast.error("Le nouveau lot n'a pas été activé. Réessaie.", 'Erreur');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doSaveEmergency() {
+    if (busy) return;
+    const raw = emergencyInput.trim();
+    if (raw && !emergencyParsed) {
+      toast.error('Colle un lien WhatsApp valide, ou laisse vide pour retirer le lien de secours.', 'Lien invalide');
+      return;
+    }
+    setBusy('emergency');
+    try {
+      await rpcSetEmergencyLink(funnel, raw ? (emergencyParsed as string) : '');
+      await refresh();
+      toast.success(raw ? 'Lien de secours enregistré.' : 'Lien de secours retiré.', 'Secours mis à jour');
+    } catch {
+      toast.error("Le lien de secours n'a pas été enregistré. Réessaie.", 'Erreur');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="card-padded space-y-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold text-zinc-900">{meta.title}</h2>
+          <p className="mt-1 text-sm text-zinc-600">{meta.description}</p>
+        </div>
+        <a className="btn-outline" href={meta.pageUrl} target="_blank" rel="noreferrer">
+          <ExternalLink className="h-4 w-4" /> Page
+        </a>
+      </div>
+
+      {/* Live status */}
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-lg bg-zinc-50 p-3">
+          <div className="text-2xl font-bold text-zinc-900">{activeLinks.length}</div>
+          <div className="text-xs text-zinc-500">Liens actifs</div>
+        </div>
+        <div className="rounded-lg bg-zinc-50 p-3">
+          <div className="text-2xl font-bold text-zinc-900">{fullCount}</div>
+          <div className="text-xs text-zinc-500">Pleins (lot actif)</div>
+        </div>
+        <div className="rounded-lg bg-zinc-50 p-3">
+          <div className="text-2xl font-bold text-zinc-900">{currentLot}</div>
+          <div className="text-xs text-zinc-500">Lot en cours</div>
+        </div>
+      </div>
+
+      {overviewQ.isLoading && (
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <Loader2 className="h-4 w-4 animate-spin text-aurel-orange" /> Chargement…
+        </div>
+      )}
+      {overviewQ.isError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          Impossible de charger la rotation.
+          <button type="button" className="btn-outline ml-2" onClick={() => overviewQ.refetch()}>Réessayer</button>
+        </div>
+      )}
+
+      {/* Active lot list */}
+      {!overviewQ.isLoading && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-zinc-700">Lot actif (lot {currentLot})</h3>
+            <button type="button" className="btn-ghost text-zinc-500" onClick={refresh} title="Rafraîchir">
+              <RotateCw className="h-4 w-4" />
+            </button>
+          </div>
+          {currentLotLinks.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-zinc-200 p-3 text-sm text-zinc-500">
+              Aucun lien dans le lot actif. Ajoute des liens ci-dessous.
+            </p>
+          ) : (
+            currentLotLinks.map((link) => <LinkRow key={link.id} link={link} />)
+          )}
+        </div>
+      )}
+
+      {/* Append to active lot */}
+      <div className="border-t border-zinc-100 pt-4">
+        <label className="label" htmlFor={`append-${funnel}`}>Ajouter au lot actif</label>
+        <input
+          id={`append-${funnel}`}
+          className="input font-mono"
+          type="text"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          value={appendInput}
+          onChange={(e) => setAppendInput(e.target.value)}
+          placeholder="Un ou plusieurs liens (séparés par un espace / une virgule)"
+        />
+        {appendParsed.invalid.length > 0 && (
+          <p className="field-error">Ignoré(s) : {appendParsed.invalid.join(', ')}</p>
+        )}
+        <button
+          type="button"
+          className="btn-outline mt-2 w-full"
+          disabled={busy !== null || appendParsed.codes.length === 0}
+          onClick={doAppend}
+        >
+          {busy === 'append' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          Ajouter {appendParsed.codes.length > 0 ? `(${appendParsed.codes.length})` : ''}
+        </button>
+      </div>
+
+      {/* Start a new lot */}
+      <div className="border-t border-zinc-100 pt-4">
+        <label className="label" htmlFor={`newlot-${funnel}`}>Activer un nouveau lot</label>
+        <p className="mb-1 text-xs text-zinc-500">Un lien par ligne. Le lot actuel sera <strong>retiré</strong>.</p>
+        <textarea
+          id={`newlot-${funnel}`}
+          className="input font-mono min-h-[88px]"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          value={newLotInput}
+          onChange={(e) => setNewLotInput(e.target.value)}
+          placeholder={'https://chat.whatsapp.com/AAAAAAAAAA\nhttps://chat.whatsapp.com/BBBBBBBBBB'}
+        />
+        {newLotParsed.invalid.length > 0 && (
+          <p className="field-error">Ignoré(s) : {newLotParsed.invalid.join(', ')}</p>
+        )}
+        <button
+          type="button"
+          className="btn-danger mt-2 w-full"
+          disabled={busy !== null || newLotParsed.codes.length === 0}
+          onClick={() => setConfirmOpen(true)}
+        >
+          <RotateCw className="h-4 w-4" />
+          Activer un nouveau lot {newLotParsed.codes.length > 0 ? `(${newLotParsed.codes.length})` : ''}
+        </button>
+      </div>
+
+      {/* Emergency link */}
+      <div className="border-t border-zinc-100 pt-4">
+        <label className="label flex items-center gap-1.5" htmlFor={`emergency-${funnel}`}>
+          <LifeBuoy className="h-4 w-4 text-aurel-orange" /> Lien de secours (emergency)
+        </label>
+        <p className="mb-1 text-xs text-zinc-500">Utilisé uniquement si aucun lien n'est disponible. Laisse vide pour le retirer.</p>
+        <input
+          id={`emergency-${funnel}`}
+          className="input font-mono"
+          type="text"
+          inputMode="url"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          value={emergencyInput}
+          onChange={(e) => setEmergencyInput(e.target.value)}
+          placeholder="https://chat.whatsapp.com/… (optionnel)"
+        />
+        {emergencyInput.trim() && !emergencyParsed && (
+          <p className="field-error">Colle un lien WhatsApp valide, ou laisse vide.</p>
+        )}
+        <button
+          type="button"
+          className="btn-outline mt-2 w-full"
+          disabled={busy !== null}
+          onClick={doSaveEmergency}
+        >
+          {busy === 'emergency' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Enregistrer le lien de secours
+        </button>
+      </div>
+
+      {/* Retired lots history */}
+      {retiredLinks.length > 0 && (
+        <div className="border-t border-zinc-100 pt-4">
+          <button
+            type="button"
+            className="text-sm font-medium text-zinc-500 hover:text-zinc-700"
+            onClick={() => setShowRetired((v) => !v)}
+          >
+            {showRetired ? '▾' : '▸'} Lots précédents (retirés) · {retiredLinks.length}
+          </button>
+          {showRetired && (
+            <div className="mt-2 space-y-2">
+              {retiredLinks.map((link) => (
+                <div key={link.id} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-100 p-2 opacity-60">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="flex-none rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-500">lot {link.lot_number}</span>
+                    <code className="truncate font-mono text-xs text-zinc-700">{link.whatsapp_code}</code>
+                  </div>
+                  <span className="flex-none text-xs text-zinc-400">{link.unique_ip_count} membres</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Confirm dialog for new lot */}
+      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Activer un nouveau lot ?">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Le lot actuel (lot {currentLot}) sera <strong>entièrement retiré</strong> : tous ses liens, pleins ou non,
+            sortent de la rotation. Les nouveaux inscrits iront uniquement vers le nouveau lot.
+          </p>
+          <p className="text-sm text-slate-600">
+            Les personnes déjà dirigées vers un ancien groupe continueront d'y accéder (leur lien reste valable).
+          </p>
+          <div className="rounded-lg bg-zinc-50 p-3 text-sm">
+            <span className="font-semibold text-zinc-800">{newLotParsed.codes.length} lien(s)</span> dans le nouveau lot.
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-outline" onClick={() => setConfirmOpen(false)} disabled={busy !== null}>
+              Annuler
+            </button>
+            <button type="button" className="btn-danger" onClick={doStartNewLot} disabled={busy !== null}>
+              {busy === 'lot' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+              Confirmer et activer
+            </button>
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 }

@@ -99,6 +99,37 @@ export interface WebinarGroup {
   updated_at: string;
 }
 
+// ── WhatsApp group rotation (mig 20260819000057) — immigration + tiktok only ──
+export type RotationFunnel = 'immigration' | 'tiktok';
+export type RotationLinkStatus = 'active' | 'full' | 'retired';
+
+export interface RotationLink {
+  id: string;
+  funnel: RotationFunnel;
+  whatsapp_code: string;
+  lot_number: number;
+  position: number;
+  status: RotationLinkStatus;
+  unique_ip_count: number;
+  alerted_990: boolean;
+  created_at: string;
+  created_by: string | null;
+}
+
+export interface RotationState {
+  funnel: RotationFunnel;
+  current_lot: number;
+  assign_counter: number;
+  emergency_code: string | null;
+  all_full_alerted: boolean;
+  updated_at: string;
+}
+
+export interface RotationOverview {
+  links: RotationLink[];
+  state: RotationState | null;
+}
+
 // ── Phase 3 ────────────────────────────────────────────────────
 
 export interface LessonNote {
