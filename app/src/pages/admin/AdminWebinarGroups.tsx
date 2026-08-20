@@ -20,7 +20,7 @@ const GROUP_CAP = 1000;
 const GROUP_META: Record<WebinarGroupSlug, { title: string; pageUrl: string; description: string }> = {
   immigration: {
     title: 'Webinar Immigration',
-    pageUrl: 'https://aurel-academy.com/immigration/webinar/',
+    pageUrl: 'https://aurel-academy.com/webinar/',
     description: 'Rotation des groupes WhatsApp du webinar Immigration Allemagne.',
   },
   pflege: {

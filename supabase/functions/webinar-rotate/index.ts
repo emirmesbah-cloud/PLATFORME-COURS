@@ -58,32 +58,55 @@ async function sha256Hex(input: string): Promise<string> {
 
 // Fire-and-forget alert email via the existing send-email function (custom type,
 // service_role bearer). Never awaited on the hot path — the visitor's redirect
-// must not wait on Resend.
-async function sendAlert(subject: string, bodyText: string): Promise<void> {
+// must not wait on Resend. Returns true on a successful send, false otherwise,
+// so the caller can un-set the alert flag and let the next lead retry.
+async function sendAlert(subject: string, bodyText: string): Promise<boolean> {
   const html =
     `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;font-size:15px;color:#111;line-height:1.6">` +
     bodyText.split('\n').map((line) => `<p style="margin:0 0 10px">${line}</p>`).join('') +
     `</div>`;
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type':  'application/json',
-    },
-    body: JSON.stringify({
-      email_type: 'custom',
-      to: WEBINAR_ALERT_EMAIL,
-      subject,
-      html,
-      text: bodyText,
-    }),
-  });
-  if (!res.ok) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({
+        email_type: 'custom',
+        to: WEBINAR_ALERT_EMAIL,
+        subject,
+        html,
+        text: bodyText,
+      }),
+    });
+    if (res.ok) return true;
     await reportError(new Error(`send-email ${res.status}`), {
       function: 'webinar-rotate',
       level: 'warning',
       extra: { step: 'alert_email', status: res.status },
     });
+    return false;
+  } catch (err) {
+    await reportError(err, { function: 'webinar-rotate', level: 'warning', extra: { step: 'alert_email' } });
+    return false;
+  }
+}
+
+// When an alert email fails to send, flip its "already alerted" flag back off in
+// the DB so the NEXT lead re-fires it — the alert is retried instead of lost.
+// Best-effort: a failure here just means we keep the flag set (original one-shot
+// behaviour), never worse.
+async function resetAlert(
+  admin: ReturnType<typeof createClient>,
+  funnel: string,
+  kind: 'near_full' | 'all_full',
+  position: number | null,
+): Promise<void> {
+  try {
+    await admin.rpc('reset_rotation_alert', { p_funnel: funnel, p_kind: kind, p_position: position });
+  } catch (err) {
+    await reportError(err, { function: 'webinar-rotate', level: 'warning', extra: { step: 'reset_alert', kind } });
   }
 }
 
@@ -138,21 +161,27 @@ serve(async (req) => {
 
     if (result.near_full) {
       const nf = result.near_full;
-      waitUntil(sendAlert(
-        `⚠️ Groupe WhatsApp bientôt plein — ${funnel}`,
-        `Le groupe #${nf.position} (lot ${nf.lot}) du funnel « ${funnel} » a atteint ${nf.count} / 1000 membres.\n` +
-        `Pense à préparer et activer un nouveau lot de liens WhatsApp bientôt, avant qu'il ne soit complet.\n` +
-        `Tu peux le faire depuis le tableau de bord : Admin → Groupes WhatsApp.`,
-      ));
+      waitUntil((async () => {
+        const ok = await sendAlert(
+          `⚠️ Groupe WhatsApp bientôt plein — ${funnel}`,
+          `Le groupe #${nf.position} (lot ${nf.lot}) du funnel « ${funnel} » a atteint ${nf.count} / 1000 membres.\n` +
+          `Pense à préparer et activer un nouveau lot de liens WhatsApp bientôt, avant qu'il ne soit complet.\n` +
+          `Tu peux le faire depuis le tableau de bord : Admin → Groupes WhatsApp.`,
+        );
+        if (!ok) await resetAlert(admin, funnel, 'near_full', nf.position);
+      })());
     }
 
     if (result.all_full) {
-      waitUntil(sendAlert(
-        `🚨 Tous les groupes ${funnel} sont pleins`,
-        `Tous les groupes actifs du funnel « ${funnel} » sont pleins (1000 / 1000).\n` +
-        `En attendant, les nouveaux inscrits sont envoyés vers le DERNIER groupe (aucun lead n'est perdu).\n` +
-        `Ajoute vite un nouveau lot de liens depuis Admin → Groupes WhatsApp pour répartir de nouveau.`,
-      ));
+      waitUntil((async () => {
+        const ok = await sendAlert(
+          `🚨 Tous les groupes ${funnel} sont pleins`,
+          `Tous les groupes actifs du funnel « ${funnel} » sont pleins (1000 / 1000).\n` +
+          `En attendant, les nouveaux inscrits sont envoyés vers le DERNIER groupe (aucun lead n'est perdu).\n` +
+          `Ajoute vite un nouveau lot de liens depuis Admin → Groupes WhatsApp pour répartir de nouveau.`,
+        );
+        if (!ok) await resetAlert(admin, funnel, 'all_full', null);
+      })());
     }
 
     return json({ ok: true, code: result.code, source: result.source });
