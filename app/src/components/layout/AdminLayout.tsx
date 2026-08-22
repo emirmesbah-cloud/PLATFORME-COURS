@@ -211,8 +211,9 @@ export function AdminLayout() {
           />
         )}
 
-        {/* MAIN */}
-        <main className="flex-1 min-w-0 px-6 py-6 md:px-10 md:py-8 max-w-7xl">
+        {/* MAIN — full width (no max cap) so wide data tables use the whole
+            screen instead of overflowing into horizontal scroll. */}
+        <main className="flex-1 min-w-0 px-6 py-6 md:px-10 md:py-8">
           <SentryErrorBoundary
             fallback={
               <div className="rounded-card border border-red-200 bg-red-50 p-6 text-center">
