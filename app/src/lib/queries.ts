@@ -93,6 +93,7 @@ export const queryKeys = {
   webinarFormSettings: ['webinar_form_settings'] as const,
   adminSalesAnalytics: ['admin', 'sales_analytics'] as const,
   adminCloserPerformance: ['admin', 'closer_performance'] as const,
+  adminFunnelOverview: ['admin', 'funnel_overview'] as const,
   webinarLead: (leadId: string) => ['admin', 'webinar_lead', leadId] as const,
 };
 
@@ -1259,5 +1260,16 @@ export async function fetchCloserPerformance(): Promise<import('./types').Closer
   );
   if (error) throw error;
   const result = data as import('./types').CloserPerformance;
+  return result?.ok ? result : null;
+}
+
+export async function fetchFunnelOverview(): Promise<import('./types').FunnelOverview | null> {
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('admin_get_funnel_overview'),
+    15000,
+    'fetchFunnelOverview',
+  );
+  if (error) throw error;
+  const result = data as import('./types').FunnelOverview;
   return result?.ok ? result : null;
 }

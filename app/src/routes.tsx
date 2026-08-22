@@ -71,6 +71,7 @@ const AdminWebinarLeads = lazyNamed(() => import('@/pages/admin/AdminWebinarLead
 const AdminSecurity = lazyNamed(() => import('@/pages/admin/AdminSecurity'), 'AdminSecurity');
 const AdminClosers = lazyNamed(() => import('@/pages/admin/AdminClosers'), 'AdminClosers');
 const AdminCloserPerformance = lazyNamed(() => import('@/pages/admin/AdminCloserPerformance'), 'AdminCloserPerformance');
+const AdminFunnelOverview = lazyNamed(() => import('@/pages/admin/AdminFunnelOverview'), 'AdminFunnelOverview');
 const AdminFormBuilder = lazyNamed(() => import('@/pages/admin/AdminFormBuilder'), 'AdminFormBuilder');
 
 // Public unsubscribe page — lazy too, rarement utilisée et pas dans le
@@ -175,6 +176,7 @@ export const routes: RouteObject[] = [
       { path: 'security', element: <L><AdminSecurity /></L> },
       { path: 'closers', element: <L><AdminClosers /></L> },
       { path: 'closer-performance', element: <L><AdminCloserPerformance /></L> },
+      { path: 'funnel', element: <L><AdminFunnelOverview /></L> },
       { path: 'formulaire', element: <L><AdminFormBuilder /></L> },
     ],
   },

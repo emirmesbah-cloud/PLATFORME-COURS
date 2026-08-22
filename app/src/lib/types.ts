@@ -486,3 +486,16 @@ export interface CloserPerformance {
   closers: CloserPerformanceRow[];
   totals: { closers: number; assigned: number; calls: number; confirmed: number; cod_delivered: number };
 }
+
+export interface FunnelOverview {
+  ok: true;
+  registered: number;
+  attended: number;
+  called: number;
+  confirmed: number;
+  shipped: number;
+  delivered: number;
+  returned: number;
+  cod_confirmed: number;
+  cod_delivered: number;
+}
