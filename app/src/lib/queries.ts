@@ -632,8 +632,12 @@ export async function fetchRotationOverview(
   const [linksRes, stateRes] = await Promise.all([
     withQueryTimeout(
       supabase
+        // SELECT * (not an explicit column list) so the admin card keeps loading
+        // even in the window after this code deploys but BEFORE the `label`
+        // migration (20260820000061) is applied — a missing column then just
+        // reads as undefined instead of failing the whole query.
         .from('webinar_rotation_links')
-        .select('id, funnel, whatsapp_code, label, lot_number, position, status, unique_ip_count, alerted_990, created_at, created_by')
+        .select('*')
         .eq('funnel', funnel)
         .order('position', { ascending: true }),
       10000,
