@@ -499,3 +499,26 @@ export interface FunnelOverview {
   cod_confirmed: number;
   cod_delivered: number;
 }
+
+export interface CodWilayaRow {
+  wilaya_id: number;
+  wilaya_name: string;
+  orders: number;
+  shipped: number;
+  delivered: number;
+  returned: number;
+  in_transit: number;
+  cod_delivered: number;
+  delivery_rate: number;
+  return_rate: number;
+}
+
+export interface CodHealth {
+  ok: true;
+  totals: {
+    orders: number; shipped: number; delivered: number; returned: number; in_transit: number;
+    cod_confirmed: number; cod_delivered: number; cod_returned: number;
+    delivery_rate: number; return_rate: number;
+  };
+  by_wilaya: CodWilayaRow[];
+}

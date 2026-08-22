@@ -94,6 +94,7 @@ export const queryKeys = {
   adminSalesAnalytics: ['admin', 'sales_analytics'] as const,
   adminCloserPerformance: ['admin', 'closer_performance'] as const,
   adminFunnelOverview: ['admin', 'funnel_overview'] as const,
+  adminCodHealth: ['admin', 'cod_health'] as const,
   webinarLead: (leadId: string) => ['admin', 'webinar_lead', leadId] as const,
 };
 
@@ -1271,5 +1272,16 @@ export async function fetchFunnelOverview(): Promise<import('./types').FunnelOve
   );
   if (error) throw error;
   const result = data as import('./types').FunnelOverview;
+  return result?.ok ? result : null;
+}
+
+export async function fetchCodHealth(): Promise<import('./types').CodHealth | null> {
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('admin_get_cod_health'),
+    15000,
+    'fetchCodHealth',
+  );
+  if (error) throw error;
+  const result = data as import('./types').CodHealth;
   return result?.ok ? result : null;
 }
