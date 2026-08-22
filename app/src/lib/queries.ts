@@ -1132,6 +1132,21 @@ export async function assignWebinarLeadsCloser(leadIds: string[], closerName: st
   if (error) throw error;
 }
 
+export async function bulkSetLeadStatus(leadIds: string[], status: WebinarLeadStatus): Promise<number> {
+  if (leadIds.length === 0) return 0;
+  const { data, error } = await supabase.rpc('admin_bulk_set_lead_status', { p_lead_ids: leadIds, p_status: status });
+  if (error) throw error;
+  return (data as { updated?: number })?.updated ?? 0;
+}
+
+export async function bulkCreateOrders(leadIds: string[]): Promise<{ created: number; skipped: number }> {
+  if (leadIds.length === 0) return { created: 0, skipped: 0 };
+  const { data, error } = await supabase.rpc('admin_bulk_create_orders', { p_lead_ids: leadIds });
+  if (error) throw error;
+  const r = data as { created?: number; skipped?: number };
+  return { created: r?.created ?? 0, skipped: r?.skipped ?? 0 };
+}
+
 export async function fetchWebinarLead(leadId: string): Promise<WebinarLead | null> {
   const { data, error } = await supabase
     .from('webinar_leads')

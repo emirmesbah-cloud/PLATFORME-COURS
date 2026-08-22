@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, CheckCircle2, Copy, ExternalLink, Loader2, MessageCircle, Phone, Search, Trash2, UserCheck, Users, Video } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Copy, ExternalLink, Loader2, MessageCircle, Phone, Search, Trash2, Truck, UserCheck, Users, Video } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { DangerConfirmModal } from '@/components/ui/DangerConfirmModal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
-import { assignWebinarLeadCloser, assignWebinarLeadsCloser, deleteWebinarLead, fetchStaffMembers, fetchWebinarLeads, logWebinarCallWithOrder, queryKeys } from '@/lib/queries';
+import { assignWebinarLeadCloser, assignWebinarLeadsCloser, bulkCreateOrders, bulkSetLeadStatus, deleteWebinarLead, fetchStaffMembers, fetchWebinarLeads, logWebinarCallWithOrder, queryKeys } from '@/lib/queries';
 import type { WebinarLead, WebinarLeadStatus } from '@/lib/types';
 import { cn, formatDateTime } from '@/lib/utils';
 
@@ -16,6 +16,8 @@ const CLOSER_OPTIONS: { value: WebinarLeadStatus; label: string }[] = [
   { value: 'in_delivery', label: 'Confirmé / en livraison' },
 ];
 const FILTER_OPTIONS: { value: WebinarLeadStatus; label: string }[] = [...CLOSER_OPTIONS, { value: 'delivered', label: 'Livré' }, { value: 'returned', label: 'Retour / refusé' }];
+// Manual CRM working statuses that can be bulk-set (order-driven ones excluded).
+const BULK_STATUS_OPTIONS = CLOSER_OPTIONS.filter((o) => o.value !== 'in_delivery');
 const STATUS_LABEL: Record<WebinarLeadStatus, string> = { new: 'À appeler', to_call: 'À appeler', nrp: 'NRP — ne répond pas', callback: 'À rappeler', not_interested: 'Pas intéressé / annulé', confirmed: 'Confirmé / en livraison', in_delivery: 'Confirmé / en livraison', delivered: 'Livré', returned: 'Retour / refusé' };
 
 export function AdminWebinarLeads() {
@@ -29,6 +31,7 @@ export function AdminWebinarLeads() {
   const [assigning, setAssigning] = useState<WebinarLead | null>(null); const [assignedCloser, setAssignedCloser] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set()); const [bulkCloser, setBulkCloser] = useState(''); const [sortBy, setSortBy] = useState<'date' | 'closer' | 'crm' | 'ecom' | 'live'>('date');
   const [bulkDeleting, setBulkDeleting] = useState(false); const [confirmDeleteMode, setConfirmDeleteMode] = useState<null | 'selected' | 'all'>(null);
+  const [bulkStatus, setBulkStatus] = useState<WebinarLeadStatus | ''>(''); const [confirmToCommandes, setConfirmToCommandes] = useState(false);
   const leads = leadsQ.data ?? [];
   const filtered = useMemo(() => { const needle = search.trim().toLowerCase(); const rows = leads.filter((lead) => (status === 'all' || lead.status === status) && (!needle || [lead.full_name, lead.phone_raw, lead.email, lead.wilaya_name, lead.commune].some((value) => value.toLowerCase().includes(needle)))); return [...rows].sort((a, b) => { if (sortBy === 'live') return Number(b.attended_live) - Number(a.attended_live); if (sortBy === 'closer') return (a.closer_name ?? 'zzzz').localeCompare(b.closer_name ?? 'zzzz'); if (sortBy === 'crm') return a.status.localeCompare(b.status); if (sortBy === 'ecom') return (a.delivery_orders?.[0]?.ecom_situation ?? 'zzzz').localeCompare(b.delivery_orders?.[0]?.ecom_situation ?? 'zzzz'); return b.created_at.localeCompare(a.created_at); }); }, [leads, search, status, sortBy]);
   const stats = useMemo(() => ({ total: leads.length, toCall: leads.filter((lead) => ['new', 'to_call', 'nrp', 'callback'].includes(lead.status)).length, confirmed: leads.filter((lead) => ['confirmed', 'in_delivery', 'delivered'].includes(lead.status)).length }), [leads]);
@@ -70,6 +73,28 @@ export function AdminWebinarLeads() {
     toast.success(`${success} prospect(s) supprimé(s)${failed ? ` · ${failed} non supprimé(s)` : ''}.`);
     await Promise.all([qc.invalidateQueries({ queryKey: queryKeys.adminWebinarLeads }), qc.invalidateQueries({ queryKey: queryKeys.adminDeliveryOrders }), qc.invalidateQueries({ queryKey: queryKeys.adminSalesAnalytics })]);
   }
+  async function doBulkStatus() {
+    if (!bulkStatus || selectedIds.size === 0 || saving) return;
+    setSaving(true);
+    try {
+      const n = await bulkSetLeadStatus([...selectedIds], bulkStatus);
+      toast.success(`${n} prospect(s) mis à jour.`, 'Statut modifié');
+      setSelectedIds(new Set()); setBulkStatus('');
+      await qc.invalidateQueries({ queryKey: queryKeys.adminWebinarLeads });
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Modification impossible.'); }
+    finally { setSaving(false); }
+  }
+  async function doBulkToCommandes() {
+    if (selectedIds.size === 0 || saving) return;
+    setSaving(true);
+    try {
+      const r = await bulkCreateOrders([...selectedIds]);
+      toast.success(`${r.created} commande(s) créée(s)${r.skipped ? ` · ${r.skipped} déjà en commande` : ''}.`, 'Envoyé vers Commandes');
+      setConfirmToCommandes(false); setSelectedIds(new Set());
+      await Promise.all([qc.invalidateQueries({ queryKey: queryKeys.adminWebinarLeads }), qc.invalidateQueries({ queryKey: queryKeys.adminDeliveryOrders }), qc.invalidateQueries({ queryKey: queryKeys.adminSalesAnalytics })]);
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Envoi impossible.'); }
+    finally { setSaving(false); }
+  }
   async function copyPublicLink() { const url = `${window.location.origin}/inscription-webinar`; try { await navigator.clipboard.writeText(url); toast.success('Lien du formulaire copié.'); } catch { toast.error(`Copie ce lien : ${url}`); } }
 
   return <div className="space-y-6">
@@ -80,7 +105,7 @@ export function AdminWebinarLeads() {
         <label className="relative min-w-64 flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" /><input className="input pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom, WhatsApp, email, wilaya…" /></label>
         <select className="input w-52" value={status} onChange={(e) => setStatus(e.target.value as WebinarLeadStatus | 'all')}><option value="all">Tous les statuts</option>{FILTER_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
         <select className="input w-52" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}><option value="date">Trier par : date</option><option value="closer">Trier par : closer</option><option value="crm">Trier par : statut CRM</option><option value="ecom">Trier par : statut E-com</option><option value="live">Trier par : vue du live</option></select>
-        {profile?.is_admin && <><select className="input w-52" value={bulkCloser} onChange={(e) => setBulkCloser(e.target.value)}><option value="">Attribuer à…</option>{(staffQ.data ?? []).filter((member) => member.is_active).map((member) => { const name = `${member.first_name} ${member.last_name}`.trim(); return <option key={member.id} value={name}>{name}</option>; })}</select><button type="button" className="btn-primary" disabled={saving || selectedIds.size === 0 || !bulkCloser} onClick={approveBulkAssignment}><UserCheck className="h-4 w-4" /> Attribuer ({selectedIds.size})</button><button type="button" className="btn-outline text-red-600" disabled={saving || bulkDeleting || selectedIds.size === 0} onClick={() => setConfirmDeleteMode('selected')}><Trash2 className="h-4 w-4" /> Supprimer les choisis ({selectedIds.size})</button><button type="button" className="btn-outline text-red-600" disabled={saving || bulkDeleting || filtered.length === 0} onClick={() => setConfirmDeleteMode('all')}><Trash2 className="h-4 w-4" /> Tout supprimer ({filtered.length})</button></>}
+        {profile?.is_admin && <><select className="input w-52" value={bulkCloser} onChange={(e) => setBulkCloser(e.target.value)}><option value="">Attribuer à…</option>{(staffQ.data ?? []).filter((member) => member.is_active).map((member) => { const name = `${member.first_name} ${member.last_name}`.trim(); return <option key={member.id} value={name}>{name}</option>; })}</select><button type="button" className="btn-primary" disabled={saving || selectedIds.size === 0 || !bulkCloser} onClick={approveBulkAssignment}><UserCheck className="h-4 w-4" /> Attribuer ({selectedIds.size})</button><button type="button" className="btn-outline text-red-600" disabled={saving || bulkDeleting || selectedIds.size === 0} onClick={() => setConfirmDeleteMode('selected')}><Trash2 className="h-4 w-4" /> Supprimer les choisis ({selectedIds.size})</button><button type="button" className="btn-outline text-red-600" disabled={saving || bulkDeleting || filtered.length === 0} onClick={() => setConfirmDeleteMode('all')}><Trash2 className="h-4 w-4" /> Tout supprimer ({filtered.length})</button><select className="input w-48" value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value as WebinarLeadStatus | '')}><option value="">Changer le statut…</option>{BULK_STATUS_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><button type="button" className="btn-outline" disabled={saving || !bulkStatus || selectedIds.size === 0} onClick={doBulkStatus}><CheckCircle2 className="h-4 w-4" /> Changer le statut ({selectedIds.size})</button><button type="button" className="btn-primary" disabled={saving || selectedIds.size === 0} onClick={() => setConfirmToCommandes(true)}><Truck className="h-4 w-4" /> Vers Commandes ({selectedIds.size})</button></>}
       </div>
       {leadsQ.isLoading ? <Spinner label="Chargement des prospects…" /> : leadsQ.isError ? <div className="p-8 text-center text-red-600">Impossible de charger les prospects.</div> : filtered.length === 0 ? <div className="p-10 text-center text-zinc-500">Aucun prospect pour ces filtres.</div> : <div className="overflow-x-auto"><table className="w-full min-w-[1240px] text-sm"><thead className="bg-zinc-50 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-500"><tr><th className="px-3 py-3"><input type="checkbox" aria-label="Sélectionner tous les prospects affichés" checked={filtered.length > 0 && filtered.every((lead) => selectedIds.has(lead.id))} onChange={(e) => setSelectedIds(e.target.checked ? new Set(filtered.map((lead) => lead.id)) : new Set())} /></th><th className="px-4 py-3">Prospect</th><th className="px-4 py-3">Webinar</th><th className="px-4 py-3">Livraison</th><th className="px-4 py-3">Closer</th><th className="px-4 py-3">Statut CRM</th><th className="px-4 py-3">Statut E-com Delivery</th><th className="px-4 py-3">Dernier suivi</th><th className="px-4 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-zinc-100">{filtered.map((lead) => <LeadRow key={lead.id} lead={lead} selected={selectedIds.has(lead.id)} onToggle={() => setSelectedIds((current) => { const next = new Set(current); if (next.has(lead.id)) next.delete(lead.id); else next.add(lead.id); return next; })} onCall={() => openCall(lead)} onDelete={() => setDeleting(lead)} onAssign={profile?.is_admin ? () => { setAssigning(lead); setAssignedCloser(lead.closer_name ?? ''); } : undefined} />)}</tbody></table></div>}
     </section>
@@ -90,6 +115,7 @@ export function AdminWebinarLeads() {
     <Modal open={!!assigning} onClose={() => !saving && setAssigning(null)} title="Attribuer le prospect" maxWidth="max-w-md"><p className="mb-4 text-sm text-zinc-600">Choisis le closer responsable de <strong>{assigning?.full_name}</strong>.</p><select className="input" value={assignedCloser} onChange={(e) => setAssignedCloser(e.target.value)}><option value="">Choisir un closer</option>{(staffQ.data ?? []).filter((member) => member.is_active).map((member) => { const name = `${member.first_name} ${member.last_name}`.trim(); return <option key={member.id} value={name}>{name}</option>; })}</select><div className="mt-6 flex justify-end gap-2"><button className="btn-outline" disabled={saving} onClick={() => setAssigning(null)}>Annuler</button><button className="btn-primary" disabled={saving || !assignedCloser} onClick={approveAssignment}>Confirmer l’attribution</button></div></Modal>
     <Modal open={confirmDeleteMode === 'selected'} onClose={() => !bulkDeleting && setConfirmDeleteMode(null)} title="Supprimer les prospects choisis ?" maxWidth="max-w-md"><p className="text-zinc-700">Supprimer définitivement <strong>{selectedIds.size}</strong> prospect(s) sélectionné(s) ?</p><p className="mt-2 text-sm text-zinc-500">Les commandes liées et leurs colis E-com seront aussi supprimés. Si E-com refuse un colis, ce prospect-là restera intact.</p><div className="mt-6 flex justify-end gap-2"><button className="btn-outline" disabled={bulkDeleting} onClick={() => setConfirmDeleteMode(null)}>Non</button><button className="btn-primary bg-red-600 hover:bg-red-700" disabled={bulkDeleting} onClick={() => runBulkDelete([...selectedIds])}>{bulkDeleting && <Loader2 className="h-4 w-4 animate-spin" />} Oui, supprimer</button></div></Modal>
     <DangerConfirmModal open={confirmDeleteMode === 'all'} onClose={() => setConfirmDeleteMode(null)} onConfirm={() => runBulkDelete(filtered.map((lead) => lead.id))} busy={bulkDeleting} count={filtered.length} title="Tout supprimer (liste filtrée) ?" description={<span>Supprime <strong>tous les {filtered.length} prospects actuellement affichés</strong> (selon la recherche / le filtre en cours), ainsi que leurs commandes et colis E-com liés.</span>} confirmLabel="Tout supprimer" />
+    <Modal open={confirmToCommandes} onClose={() => !saving && setConfirmToCommandes(false)} title="Envoyer vers Commandes ?" maxWidth="max-w-md"><p className="text-zinc-700">Créer une commande pour <strong>{selectedIds.size}</strong> prospect(s) sélectionné(s) et les passer en « Confirmé / en livraison » ?</p><p className="mt-2 text-sm text-zinc-500">Les prospects qui ont déjà une commande sont ignorés (aucun doublon). Retrouve-les ensuite dans la section Commandes.</p><div className="mt-6 flex justify-end gap-2"><button className="btn-outline" disabled={saving} onClick={() => setConfirmToCommandes(false)}>Annuler</button><button className="btn-primary" disabled={saving} onClick={doBulkToCommandes}>{saving && <Loader2 className="h-4 w-4 animate-spin" />} Oui, envoyer</button></div></Modal>
   </div>;
 }
 
