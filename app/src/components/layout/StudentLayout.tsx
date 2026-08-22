@@ -1,6 +1,6 @@
 import { Link, NavLink, useLocation, useNavigate, Outlet, Navigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard, BookOpen, Gift, User, LogOut, Menu, X, Shield, Award, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Gift, User, LogOut, Menu, X, Shield, Award, AlertTriangle, UserRoundCheck } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
 import { AurelLogo } from '@/components/features/AurelLogo';
@@ -15,11 +15,23 @@ const NAV = [
   { to: '/profil',      label: 'Profil',     icon: User },
 ];
 
+// Where a closer lands when they click "Closer" — their first attributed section.
+const CLOSER_PERMISSION_PATH: Record<string, string> = {
+  prospects: '/admin/prospects', formulaire: '/admin/formulaire', commandes: '/admin/commandes', codes: '/admin/codes',
+};
+export function closerLandingPath(permissions?: string[] | null): string {
+  return (permissions ?? []).map((p) => CLOSER_PERMISSION_PATH[p]).find(Boolean) ?? '/admin/prospects';
+}
+
 export function StudentLayout() {
   const { profile, isAdmin, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
+  // A closer is also a student: they keep the course, plus a "Closer" button
+  // that jumps to the section attributed to them.
+  const isCloser = profile?.staff_role === 'closer' && (profile?.staff_permissions?.length ?? 0) > 0;
+  const closerPath = closerLandingPath(profile?.staff_permissions);
   // SHERLOCK R17 : auto-reset the ErrorBoundary when the route changes. Avant :
   // si une page errored, naviguer vers une autre route gardait l'error UI
   // affichée (l'ErrorBoundary state survit aux changements d'URL tant qu'on
@@ -94,6 +106,15 @@ export function StudentLayout() {
                 Admin
               </NavLink>
             )}
+            {isCloser && !isAdmin && (
+              <Link
+                to={closerPath}
+                className="ml-2 flex items-center gap-2 rounded-card-sm px-3 py-2 text-[13px] font-medium text-aurel-teal hover:bg-aurel-teal-soft"
+              >
+                <UserRoundCheck className="h-4 w-4" />
+                Closer
+              </Link>
+            )}
           </nav>
 
           <div className="flex items-center gap-3">
@@ -164,6 +185,12 @@ export function StudentLayout() {
                   className="flex items-center gap-3 rounded-card-sm px-3 py-3 text-[14px] font-medium text-aurel-teal min-h-[44px]">
                   <Shield className="h-4 w-4" /> Admin
                 </NavLink>
+              )}
+              {isCloser && !isAdmin && (
+                <Link to={closerPath} onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 rounded-card-sm px-3 py-3 text-[14px] font-medium text-aurel-teal min-h-[44px]">
+                  <UserRoundCheck className="h-4 w-4" /> Closer
+                </Link>
               )}
               <button onClick={handleSignOut} className="mt-1 flex items-center gap-3 rounded-card-sm px-3 py-3 text-[14px] font-medium text-red-600 hover:bg-red-50 min-h-[44px]">
                 <LogOut className="h-4 w-4" /> Déconnexion

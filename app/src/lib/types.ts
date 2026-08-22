@@ -107,6 +107,7 @@ export interface RotationLink {
   id: string;
   funnel: RotationFunnel;
   whatsapp_code: string;
+  label: string | null;
   lot_number: number;
   position: number;
   status: RotationLinkStatus;

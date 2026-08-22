@@ -633,7 +633,7 @@ export async function fetchRotationOverview(
     withQueryTimeout(
       supabase
         .from('webinar_rotation_links')
-        .select('id, funnel, whatsapp_code, lot_number, position, status, unique_ip_count, alerted_990, created_at, created_by')
+        .select('id, funnel, whatsapp_code, label, lot_number, position, status, unique_ip_count, alerted_990, created_at, created_by')
         .eq('funnel', funnel)
         .order('position', { ascending: true }),
       10000,
@@ -690,6 +690,15 @@ export async function rpcRemoveRotationLink(linkId: string) {
   });
   if (error) throw error;
   return data as { ok: boolean; deleted?: boolean; retired?: boolean; error?: string };
+}
+
+export async function rpcRenameRotationLink(linkId: string, label: string) {
+  const { data, error } = await supabase.rpc('rename_rotation_link', {
+    p_link_id: linkId,
+    p_label: label,
+  });
+  if (error) throw error;
+  return data as { ok: boolean; label: string | null; error?: string };
 }
 
 export async function logAdminAction(

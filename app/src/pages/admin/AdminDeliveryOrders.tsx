@@ -13,6 +13,7 @@ import {
 } from '@/lib/queries';
 import type { Course, DeliveryMode, DeliveryOrder } from '@/lib/types';
 import { Modal } from '@/components/ui/Modal';
+import { DangerConfirmModal } from '@/components/ui/DangerConfirmModal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { cn, courseLabel, formatDateTime } from '@/lib/utils';
@@ -73,6 +74,7 @@ export function AdminDeliveryOrders() {
   const [confirmingBulk, setConfirmingBulk] = useState(false);
   const [bulkSending, setBulkSending] = useState(false);
   const [confirmingBulkDelete, setConfirmingBulkDelete] = useState(false);
+  const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
   const [sourceLeadId, setSourceLeadId] = useState<string | null>(null);
@@ -250,17 +252,19 @@ export function AdminDeliveryOrders() {
     finally { setBusyOrder(null); }
   }
 
-  async function deleteSelected() {
-    const ids = Array.from(selectedOrderIds);
+  async function deleteOrders(ids: string[], closeModals: () => void) {
     if (!ids.length) return;
     setBulkDeleting(true); let success = 0; let failed = 0;
     for (const id of ids) {
       try { await deleteDeliveryOrder(id); success += 1; } catch { failed += 1; }
     }
-    setBulkDeleting(false); setConfirmingBulkDelete(false); setSelectedOrderIds(new Set());
+    setBulkDeleting(false); closeModals(); setSelectedOrderIds(new Set());
     toast.success(`${success} commande(s) supprimée(s)${failed ? ` · ${failed} non supprimée(s)` : ''}.`);
     await Promise.all([qc.invalidateQueries({ queryKey: queryKeys.adminDeliveryOrders }), qc.invalidateQueries({ queryKey: queryKeys.adminWebinarLeads }), qc.invalidateQueries({ queryKey: queryKeys.adminSalesAnalytics })]);
   }
+  function deleteSelected() { return deleteOrders(Array.from(selectedOrderIds), () => setConfirmingBulkDelete(false)); }
+  // "Tout supprimer" targets every currently-listed order that isn't mid-sync.
+  function deleteAllShown() { return deleteOrders(selectableOrders.map((order) => order.id), () => setConfirmingDeleteAll(false)); }
 
   async function runOrderAction(order: DeliveryOrder, action: 'sync' | 'refresh' | 'confirm') {
     if (action === 'confirm') {
@@ -391,7 +395,7 @@ export function AdminDeliveryOrders() {
       <section className="card overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 p-5">
           <h2 className="text-lg font-bold text-aurel-ink">Commandes ({orders.length})</h2>
-          <div className="flex flex-wrap gap-2"><button type="button" className="btn-primary" disabled={!selectedSendableOrders.length || bulkSending || !connectionQ.data?.connected} onClick={() => setConfirmingBulk(true)}><Send className="h-4 w-4" /> Envoyer ({selectedSendableOrders.length})</button><button type="button" className="btn-outline" disabled={selectedOrders.length !== 1 || !!selectedOrders[0]?.ecom_tracking} onClick={editSelected}><Pencil className="h-4 w-4" /> Modifier</button><button type="button" className="btn-outline text-red-600" disabled={!selectedOrderIds.size || bulkDeleting} onClick={() => setConfirmingBulkDelete(true)}><Trash2 className="h-4 w-4" /> Supprimer ({selectedOrderIds.size})</button><button type="button" className="btn-ghost" onClick={() => ordersQ.refetch()} disabled={ordersQ.isFetching}>
+          <div className="flex flex-wrap gap-2"><button type="button" className="btn-primary" disabled={!selectedSendableOrders.length || bulkSending || !connectionQ.data?.connected} onClick={() => setConfirmingBulk(true)}><Send className="h-4 w-4" /> Envoyer ({selectedSendableOrders.length})</button><button type="button" className="btn-outline" disabled={selectedOrders.length !== 1 || !!selectedOrders[0]?.ecom_tracking} onClick={editSelected}><Pencil className="h-4 w-4" /> Modifier</button><button type="button" className="btn-outline text-red-600" disabled={!selectedOrderIds.size || bulkDeleting} onClick={() => setConfirmingBulkDelete(true)}><Trash2 className="h-4 w-4" /> Supprimer ({selectedOrderIds.size})</button><button type="button" className="btn-outline text-red-600" disabled={!selectableOrders.length || bulkDeleting} onClick={() => setConfirmingDeleteAll(true)}><Trash2 className="h-4 w-4" /> Tout supprimer ({selectableOrders.length})</button><button type="button" className="btn-ghost" onClick={() => ordersQ.refetch()} disabled={ordersQ.isFetching}>
             <RefreshCw className={cn('h-4 w-4', ordersQ.isFetching && 'animate-spin')} /> Actualiser
           </button></div>
         </div>
@@ -531,6 +535,7 @@ export function AdminDeliveryOrders() {
 
       <Modal open={confirmingBulk} onClose={() => !bulkSending && setConfirmingBulk(false)} title="Confirmer l'envoi" maxWidth="max-w-md"><p className="text-zinc-700">Cette action est-elle confirmée ?</p><p className="mt-2 text-sm text-zinc-500">{selectedSendableOrders.length} commande(s) non envoyée(s) seront transmises à E-com Delivery.</p><div className="mt-6 flex justify-end gap-2"><button className="btn-outline" disabled={bulkSending} onClick={() => setConfirmingBulk(false)}>Non</button><button className="btn-primary" disabled={bulkSending} onClick={sendSelected}>{bulkSending && <Loader2 className="h-4 w-4 animate-spin" />} Oui, envoyer</button></div></Modal>
       <Modal open={confirmingBulkDelete} onClose={() => !bulkDeleting && setConfirmingBulkDelete(false)} title="Supprimer la sélection ?" maxWidth="max-w-md"><p className="text-zinc-700">Supprimer définitivement {selectedOrderIds.size} commande(s) ?</p><p className="mt-2 text-sm text-zinc-500">Les colis déjà créés seront d’abord supprimés chez E-com, puis retirés d’Aurel. Si E-com refuse, la commande restera intacte dans Aurel.</p><div className="mt-6 flex justify-end gap-2"><button className="btn-outline" disabled={bulkDeleting} onClick={() => setConfirmingBulkDelete(false)}>Non</button><button className="btn-primary bg-red-600 hover:bg-red-700" disabled={bulkDeleting} onClick={deleteSelected}>{bulkDeleting && <Loader2 className="h-4 w-4 animate-spin" />} Oui, supprimer</button></div></Modal>
+      <DangerConfirmModal open={confirmingDeleteAll} onClose={() => setConfirmingDeleteAll(false)} onConfirm={deleteAllShown} busy={bulkDeleting} count={selectableOrders.length} title="Tout supprimer les commandes ?" description={<span>Supprime <strong>les {selectableOrders.length} commandes affichées</strong> (hors celles en cours de synchronisation), ainsi que leurs colis E-com.</span>} confirmLabel="Tout supprimer" />
       <Modal open={!!deletingOrder} onClose={() => !busyOrder && setDeletingOrder(null)} title="Supprimer la commande ?" maxWidth="max-w-md"><p className="text-zinc-700">Supprimer définitivement la commande de <strong>{deletingOrder?.customer_name}</strong> ?</p><p className="mt-2 text-sm text-zinc-500">{deletingOrder?.ecom_tracking ? `Le colis ${deletingOrder.ecom_tracking} sera supprimé chez E-com avant d’être retiré d’Aurel.` : 'Cette commande locale sera retirée d’Aurel.'}</p><div className="mt-6 flex justify-end gap-2"><button className="btn-outline" disabled={!!busyOrder} onClick={() => setDeletingOrder(null)}>Non</button><button className="btn-primary bg-red-600 hover:bg-red-700" disabled={!!busyOrder} onClick={approveDeleteOrder}>{busyOrder && <Loader2 className="h-4 w-4 animate-spin" />} Oui, supprimer</button></div></Modal>
 
       <Modal open={!!editingDestination} onClose={() => !savingCorrection && setEditingDestination(null)} title="Corriger la destination" maxWidth="max-w-xl">

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ExternalLink, Loader2, MessageCircle, Plus, RotateCw, Save, ShieldCheck, LifeBuoy, Trash2,
+  ExternalLink, Loader2, MessageCircle, Plus, RotateCw, Save, ShieldCheck, LifeBuoy, Trash2, Pencil, Check, X,
 } from 'lucide-react';
 import {
   fetchWebinarGroups, fetchRotationOverview, queryKeys, updateWebinarGroup,
-  rpcAddRotationLinks, rpcStartNewRotationLot, rpcSetEmergencyLink, rpcRemoveRotationLink,
+  rpcAddRotationLinks, rpcStartNewRotationLot, rpcSetEmergencyLink, rpcRemoveRotationLink, rpcRenameRotationLink,
 } from '@/lib/queries';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
@@ -206,22 +206,66 @@ function StatusBadge({ status }: { status: RotationLink['status'] }) {
 }
 
 function LinkRow({
-  link, onRemove, removing,
+  link, onRemove, removing, onRename, renaming,
 }: {
   link: RotationLink;
   onRemove: (link: RotationLink) => void;
   removing: boolean;
+  onRename: (link: RotationLink, label: string) => void;
+  renaming: boolean;
 }) {
   const muted = link.status !== 'active';
   const color = link.status === 'full' ? 'green' : 'orange';
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(link.label ?? '');
+  useEffect(() => { setDraft(link.label ?? ''); }, [link.label]);
+
+  function saveName() {
+    if (renaming) return;
+    if ((draft.trim() || '') === (link.label ?? '')) { setEditing(false); return; }
+    onRename(link, draft.trim());
+    setEditing(false);
+  }
+
   return (
     <div className={`rounded-lg border border-zinc-100 p-3 ${muted ? 'opacity-60' : ''}`}>
       <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="flex-none rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-semibold text-zinc-500">
             #{link.position}
           </span>
-          <code className="truncate font-mono text-sm text-zinc-800">{link.whatsapp_code}</code>
+          {editing ? (
+            <span className="flex min-w-0 flex-1 items-center gap-1">
+              <input
+                autoFocus
+                className="input h-8 py-1 text-sm"
+                value={draft}
+                maxLength={80}
+                placeholder="Nom du groupe"
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') { setDraft(link.label ?? ''); setEditing(false); } }}
+                disabled={renaming}
+              />
+              <button type="button" className="rounded p-1 text-green-600 hover:bg-green-50 disabled:opacity-50" onClick={saveName} disabled={renaming} aria-label="Enregistrer le nom">
+                {renaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              </button>
+              <button type="button" className="rounded p-1 text-zinc-400 hover:bg-zinc-100" onClick={() => { setDraft(link.label ?? ''); setEditing(false); }} disabled={renaming} aria-label="Annuler">
+                <X className="h-4 w-4" />
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="group flex min-w-0 items-center gap-1 text-left"
+              onClick={() => setEditing(true)}
+              title="Renommer ce groupe"
+            >
+              <span className={`truncate text-sm font-semibold ${link.label ? 'text-zinc-800' : 'italic text-zinc-400'}`}>
+                {link.label || 'Sans nom'}
+              </span>
+              <Pencil className="h-3 w-3 flex-none text-zinc-300 group-hover:text-zinc-500" />
+            </button>
+          )}
         </div>
         <div className="flex flex-none items-center gap-2">
           <StatusBadge status={link.status} />
@@ -237,6 +281,7 @@ function LinkRow({
           </button>
         </div>
       </div>
+      <code className="mt-1.5 block truncate font-mono text-xs text-zinc-400">{link.whatsapp_code}</code>
       <div className="mt-2 flex items-center gap-3">
         <ProgressBar
           value={link.unique_ip_count}
@@ -271,6 +316,7 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
   const [busy, setBusy] = useState<null | 'append' | 'lot' | 'emergency'>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<RotationLink | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
 
   const state = overviewQ.data?.state ?? null;
   const links = overviewQ.data?.links ?? [];
@@ -349,6 +395,19 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
       toast.error("Le lien n'a pas pu être supprimé. Réessaie.", 'Erreur');
     } finally {
       setRemovingId(null);
+    }
+  }
+
+  async function doRename(link: RotationLink, label: string) {
+    if (renamingId) return;
+    setRenamingId(link.id);
+    try {
+      await rpcRenameRotationLink(link.id, label);
+      await refresh();
+    } catch {
+      toast.error("Le nom n'a pas pu être enregistré. Réessaie.", 'Erreur');
+    } finally {
+      setRenamingId(null);
     }
   }
 
@@ -439,6 +498,8 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
                 link={link}
                 onRemove={requestRemove}
                 removing={removingId === link.id}
+                onRename={doRename}
+                renaming={renamingId === link.id}
               />
             ))
           )}

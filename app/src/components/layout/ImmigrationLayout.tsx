@@ -1,9 +1,10 @@
 import { Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useEffect, useRef } from 'react';
-import { LogOut, AlertTriangle, Shield, User } from 'lucide-react';
+import { LogOut, AlertTriangle, Shield, User, UserRoundCheck } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
 import { AurelLogo } from '@/components/features/AurelLogo';
+import { closerLandingPath } from '@/components/layout/StudentLayout';
 import { initials } from '@/lib/utils';
 
 /**
@@ -15,6 +16,7 @@ export function ImmigrationLayout() {
   const { profile, isAdmin, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const isCloser = profile?.staff_role === 'closer' && (profile?.staff_permissions?.length ?? 0) > 0;
 
   const boundaryKeyRef = useRef(0);
   const lastPathRef = useRef(location.pathname);
@@ -49,6 +51,14 @@ export function ImmigrationLayout() {
                 className="hidden md:inline-flex items-center gap-1.5 rounded-card-sm px-3 py-2 text-[13px] font-medium text-aurel-teal hover:bg-aurel-teal-soft"
               >
                 <Shield className="h-4 w-4" /> Admin
+              </Link>
+            )}
+            {isCloser && !isAdmin && (
+              <Link
+                to={closerLandingPath(profile?.staff_permissions)}
+                className="inline-flex items-center gap-1.5 rounded-card-sm px-3 py-2 text-[13px] font-medium text-aurel-teal hover:bg-aurel-teal-soft"
+              >
+                <UserRoundCheck className="h-4 w-4" /> Closer
               </Link>
             )}
             {profile && (
