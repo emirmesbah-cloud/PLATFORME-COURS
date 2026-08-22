@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, KeyRound, Users, BookOpen, Gift, Menu, X, ArrowLeft, LogOut,
   TrendingUp, Heart, Mail, Shield, AlertTriangle, GraduationCap, Wallet, Plane,
-  MessageCircle, Truck, ClipboardList, UserRoundCheck, FilePenLine, LockKeyhole,
+  MessageCircle, Truck, ClipboardList, UserRoundCheck, FilePenLine, LockKeyhole, Trophy,
 } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
@@ -45,6 +45,7 @@ const NAV_GROUPS: { label: string; items: { to: string; label: string; icon: typ
       { to: '/admin/prospects',     label: 'Prospects',    icon: ClipboardList },
       { to: '/admin/formulaire',    label: 'Formulaire',   icon: FilePenLine },
       { to: '/admin/closers',       label: 'Closers',      icon: UserRoundCheck },
+      { to: '/admin/closer-performance', label: 'Perf. closers', icon: Trophy },
       { to: '/admin/commandes',    label: 'Commandes',    icon: Truck },
       { to: '/admin/comptabilite', label: 'Comptabilité', icon: Wallet, alertKey: 'pending' },
       { to: '/admin/analytics',    label: 'Analytics',    icon: TrendingUp },

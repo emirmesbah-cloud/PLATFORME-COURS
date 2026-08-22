@@ -92,6 +92,7 @@ export const queryKeys = {
   adminStaff: ['admin', 'staff'] as const,
   webinarFormSettings: ['webinar_form_settings'] as const,
   adminSalesAnalytics: ['admin', 'sales_analytics'] as const,
+  adminCloserPerformance: ['admin', 'closer_performance'] as const,
   webinarLead: (leadId: string) => ['admin', 'webinar_lead', leadId] as const,
 };
 
@@ -1247,5 +1248,16 @@ export async function fetchSalesAnalytics(): Promise<import('./types').SalesAnal
   );
   if (error) throw error;
   const result = data as import('./types').SalesAnalytics;
+  return result?.ok ? result : null;
+}
+
+export async function fetchCloserPerformance(): Promise<import('./types').CloserPerformance | null> {
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('admin_get_closer_performance'),
+    15000,
+    'fetchCloserPerformance',
+  );
+  if (error) throw error;
+  const result = data as import('./types').CloserPerformance;
   return result?.ok ? result : null;
 }

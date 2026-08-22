@@ -467,3 +467,22 @@ export interface SalesAnalytics {
   prospect_status: { status: WebinarLeadStatus; n: number }[];
   orders_by_day: { day: string; n: number; amount: number }[];
 }
+
+export interface CloserPerformanceRow {
+  closer_name: string;
+  assigned: number;
+  calls: number;
+  confirmed: number;
+  delivered: number;
+  returned: number;
+  cod_confirmed: number;
+  cod_delivered: number;
+  confirmation_rate: number;
+  delivery_rate: number;
+}
+
+export interface CloserPerformance {
+  ok: true;
+  closers: CloserPerformanceRow[];
+  totals: { closers: number; assigned: number; calls: number; confirmed: number; cod_delivered: number };
+}
