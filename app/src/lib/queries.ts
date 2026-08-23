@@ -1161,7 +1161,7 @@ export interface WebinarLeadSubmission {
   full_name: string;
   phone: string;
   email: string;
-  attended_live: boolean;
+  ready_to_pay: boolean;
   wilaya_id: number;
   wilaya_name: string;
   commune: string;

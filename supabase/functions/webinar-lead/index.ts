@@ -174,10 +174,15 @@ serve(async (req) => {
   const phoneRaw = clean(payload.phone, 30);
   const phoneNormalized = normalizePhone(payload.phone);
   const email = clean(payload.email, 254).toLowerCase();
-  if (typeof payload.attended_live !== 'boolean') {
+  // The form now asks "prêt à payer 38 000 DZD" → ready_to_pay. Accept the
+  // legacy attended_live key too during the frontend rollout window.
+  const answer = typeof payload.ready_to_pay === 'boolean' ? payload.ready_to_pay
+    : typeof payload.attended_live === 'boolean' ? payload.attended_live
+    : null;
+  if (answer === null) {
     return json({ ok: false, error: 'ATTENDANCE_REQUIRED' }, 422);
   }
-  const attendedLive = payload.attended_live;
+  const readyToPay = answer;
   const wilayaId = Number(payload.wilaya_id);
   const commune = clean(payload.commune, 100);
   const address = clean(payload.address, 200);
@@ -262,7 +267,7 @@ serve(async (req) => {
       phone_raw: phoneRaw,
       phone_normalized: phoneNormalized,
       email,
-      attended_live: attendedLive,
+      ready_to_pay: readyToPay,
       wilaya_id: wilayaId,
       wilaya_name: String(selectedWilaya.libelle),
       commune: String(selectedCommune.commune),
@@ -289,9 +294,8 @@ serve(async (req) => {
         if (!backupSettings?.backup_webhook_url) return;
         const backupResponse = await fetch(String(backupSettings.backup_webhook_url), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          // pret_a_payer_38000 is the readable answer to the new form question.
-          // attended_live is kept for backward-compat with any older sheet script.
-          body: JSON.stringify({ lead_id: leadId, created_at: inserted.created_at, full_name: fullName, phone: phoneNormalized, email, pret_a_payer_38000: attendedLive ? 'Oui' : 'Non', attended_live: attendedLive, wilaya: String(selectedWilaya.libelle), commune, address, extra_answers: extraAnswers }),
+          // pret_a_payer_38000 is the readable answer to the current form question.
+          body: JSON.stringify({ lead_id: leadId, created_at: inserted.created_at, full_name: fullName, phone: phoneNormalized, email, pret_a_payer_38000: readyToPay ? 'Oui' : 'Non', wilaya: String(selectedWilaya.libelle), commune, address, extra_answers: extraAnswers }),
         });
         await admin.from('webinar_leads').update({ sheet_backup_status: backupResponse.ok ? 'saved' : `http_${backupResponse.status}`, sheet_backup_at: backupResponse.ok ? new Date().toISOString() : null }).eq('id', leadId);
       } catch {

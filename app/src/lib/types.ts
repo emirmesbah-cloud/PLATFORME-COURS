@@ -380,7 +380,8 @@ export interface WebinarLead {
   phone_raw: string;
   phone_normalized: string;
   email: string;
-  attended_live: boolean;
+  attended_live: boolean | null;
+  ready_to_pay: boolean | null;
   wilaya_id: number;
   wilaya_name: string;
   commune: string;

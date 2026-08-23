@@ -130,7 +130,7 @@ export function WebinarRegistrationPage() {
         full_name: form.fullName,
         phone: form.phone,
         email: form.email,
-        attended_live: form.attended,
+        ready_to_pay: form.attended,
         wilaya_id: wilaya.id,
         wilaya_name: wilaya.libelle,
         commune: commune.commune,
