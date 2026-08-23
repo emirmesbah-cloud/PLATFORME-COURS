@@ -11,12 +11,12 @@ function formatDA(value: number): string {
   return `${Math.round(Number(value) || 0).toLocaleString('fr-FR')} DA`;
 }
 
-type SortKey = 'returned' | 'return_rate' | 'orders' | 'cod_delivered' | 'delivery_rate';
+type SortKey = 'returned' | 'return_rate' | 'orders' | 'cod_collected' | 'delivery_rate';
 const SORT_LABEL: Record<SortKey, string> = {
   returned: 'Retours (nombre)',
   return_rate: 'Taux de retour',
   orders: 'Commandes',
-  cod_delivered: 'Encaissé',
+  cod_collected: 'Encaissé (versé)',
   delivery_rate: 'Taux de livraison',
 };
 
@@ -64,8 +64,9 @@ export function AdminCodHealth() {
               <Tile icon={PackageCheck} label="Livrées" value={`${t.delivered}`} sub={`Taux de livraison ${t.delivery_rate}%`} tone="green" />
               <Tile icon={Undo2} label="Retours / refus" value={`${t.returned}`} sub={`Taux de retour ${t.return_rate}%`} tone="red" />
               <Tile icon={Clock3} label="En transit" value={`${t.in_transit}`} sub="Ni livrées ni retournées" tone="amber" />
-              <Tile icon={Wallet} label="Encaissé (livré)" value={formatDA(t.cod_delivered)} tone="green" />
-              <Tile icon={Wallet} label="Confirmé (total)" value={formatDA(t.cod_confirmed)} tone="teal" />
+              <Tile icon={Wallet} label="Revenu confirmé" value={formatDA(t.cod_confirmed)} sub="commandes confirmées" tone="teal" />
+              <Tile icon={Wallet} label="Livré à encaisser" value={formatDA(t.cod_delivered)} sub={`${t.delivered} livré(s), pas encore versé`} tone="amber" />
+              <Tile icon={Wallet} label="Encaissé (versé)" value={formatDA(t.cod_collected)} sub={`${t.collected} commande(s) versée(s)`} tone="green" />
               <Tile icon={AlertTriangle} label="Perdu (retours)" value={formatDA(t.cod_returned)} tone="red" />
               <Tile icon={AlertTriangle} label="Taux de retour" value={`${t.return_rate}%`} sub={t.return_rate >= 25 ? 'Élevé — à surveiller' : 'Sous contrôle'} tone={t.return_rate >= 25 ? 'red' : 'green'} />
             </div>
@@ -94,7 +95,7 @@ export function AdminCodHealth() {
                           <th className="px-4 py-3 text-right">Retours</th>
                           <th className="px-4 py-3">Taux de livraison</th>
                           <th className="px-4 py-3">Taux de retour</th>
-                          <th className="px-4 py-3 text-right">Encaissé</th>
+                          <th className="px-4 py-3 text-right">Encaissé (versé)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-100">
@@ -120,7 +121,7 @@ export function AdminCodHealth() {
                                 <span className={cn('w-10 flex-none text-right text-xs tabular-nums', row.return_rate >= 25 ? 'font-semibold text-red-600' : 'text-zinc-500')}>{row.return_rate}%</span>
                               </div>
                             </td>
-                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">{formatDA(row.cod_delivered)}</td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">{formatDA(row.cod_collected)}</td>
                           </tr>
                         ))}
                       </tbody>

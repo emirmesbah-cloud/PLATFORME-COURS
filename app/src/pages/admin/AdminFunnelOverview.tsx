@@ -19,6 +19,7 @@ const STAGE_COLOR: Record<string, string> = {
   confirmed: 'bg-aurel-teal',
   shipped: 'bg-aurel-teal',
   delivered: 'bg-green-500',
+  collected: 'bg-green-700',
 };
 
 export function AdminFunnelOverview() {
@@ -31,7 +32,8 @@ export function AdminFunnelOverview() {
     { key: 'called', label: 'Appelés', hint: 'Contactés au moins 1 fois' },
     { key: 'confirmed', label: 'Confirmés', hint: 'Devenus une commande' },
     { key: 'shipped', label: 'Expédiés', hint: 'Colis créé chez E-com' },
-    { key: 'delivered', label: 'Livrés', hint: 'Livrés & encaissés' },
+    { key: 'delivered', label: 'Livrés', hint: 'Colis livrés au client' },
+    { key: 'collected', label: 'Encaissés', hint: 'Argent versé par E-com' },
   ];
 
   const total = d?.registered ?? 0;
@@ -60,9 +62,9 @@ export function AdminFunnelOverview() {
           <>
             {/* Money + quality tiles */}
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Tile label="Revenu confirmé" value={formatDA(d.cod_confirmed)} icon={Wallet} tone="teal" />
-              <Tile label="Revenu livré (encaissé)" value={formatDA(d.cod_delivered)} icon={Wallet} tone="green" />
-              <Tile label="Taux de confirmation" value={`${pct(d.confirmed, d.registered)}%`} sub="confirmés / inscrits" tone="teal" />
+              <Tile label="Revenu confirmé" value={formatDA(d.cod_confirmed)} sub="commandes confirmées" icon={Wallet} tone="teal" />
+              <Tile label="Revenu livré" value={formatDA(d.cod_delivered)} sub="livré, à encaisser" icon={Wallet} tone="amber" />
+              <Tile label="Revenu encaissé" value={formatDA(d.cod_collected)} sub="argent réellement versé" icon={Wallet} tone="green" />
               <Tile label="Taux de retour" value={`${pct(d.returned, d.confirmed)}%`} sub={`${d.returned} retour(s) / confirmés`} icon={TrendingDown} tone="red" />
             </div>
 
@@ -115,8 +117,8 @@ export function AdminFunnelOverview() {
   );
 }
 
-function Tile({ label, value, sub, icon: Icon, tone }: { label: string; value: string; sub?: string; icon?: typeof Wallet; tone: 'teal' | 'green' | 'red' }) {
-  const toneClass = tone === 'green' ? 'bg-green-50 text-green-600' : tone === 'red' ? 'bg-red-50 text-red-600' : 'bg-aurel-teal-soft text-aurel-teal-dark';
+function Tile({ label, value, sub, icon: Icon, tone }: { label: string; value: string; sub?: string; icon?: typeof Wallet; tone: 'teal' | 'green' | 'red' | 'amber' }) {
+  const toneClass = tone === 'green' ? 'bg-green-50 text-green-600' : tone === 'red' ? 'bg-red-50 text-red-600' : tone === 'amber' ? 'bg-amber-50 text-amber-600' : 'bg-aurel-teal-soft text-aurel-teal-dark';
   return (
     <div className="card-padded">
       {Icon && <div className={cn('mb-2 inline-flex h-9 w-9 items-center justify-center rounded-card-sm', toneClass)}><Icon className="h-5 w-5" /></div>}

@@ -495,9 +495,11 @@ export interface FunnelOverview {
   confirmed: number;
   shipped: number;
   delivered: number;
+  collected: number;
   returned: number;
   cod_confirmed: number;
   cod_delivered: number;
+  cod_collected: number;
 }
 
 export interface CodWilayaRow {
@@ -508,7 +510,8 @@ export interface CodWilayaRow {
   delivered: number;
   returned: number;
   in_transit: number;
-  cod_delivered: number;
+  collected: number;
+  cod_collected: number;
   delivery_rate: number;
   return_rate: number;
 }
@@ -516,8 +519,8 @@ export interface CodWilayaRow {
 export interface CodHealth {
   ok: true;
   totals: {
-    orders: number; shipped: number; delivered: number; returned: number; in_transit: number;
-    cod_confirmed: number; cod_delivered: number; cod_returned: number;
+    orders: number; shipped: number; delivered: number; returned: number; in_transit: number; collected: number;
+    cod_confirmed: number; cod_delivered: number; cod_collected: number; cod_returned: number;
     delivery_rate: number; return_rate: number;
   };
   by_wilaya: CodWilayaRow[];
