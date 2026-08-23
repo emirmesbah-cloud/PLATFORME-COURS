@@ -289,7 +289,9 @@ serve(async (req) => {
         if (!backupSettings?.backup_webhook_url) return;
         const backupResponse = await fetch(String(backupSettings.backup_webhook_url), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lead_id: leadId, created_at: inserted.created_at, full_name: fullName, phone: phoneNormalized, email, attended_live: attendedLive, wilaya: String(selectedWilaya.libelle), commune, address, extra_answers: extraAnswers }),
+          // pret_a_payer_38000 is the readable answer to the new form question.
+          // attended_live is kept for backward-compat with any older sheet script.
+          body: JSON.stringify({ lead_id: leadId, created_at: inserted.created_at, full_name: fullName, phone: phoneNormalized, email, pret_a_payer_38000: attendedLive ? 'Oui' : 'Non', attended_live: attendedLive, wilaya: String(selectedWilaya.libelle), commune, address, extra_answers: extraAnswers }),
         });
         await admin.from('webinar_leads').update({ sheet_backup_status: backupResponse.ok ? 'saved' : `http_${backupResponse.status}`, sheet_backup_at: backupResponse.ok ? new Date().toISOString() : null }).eq('id', leadId);
       } catch {
