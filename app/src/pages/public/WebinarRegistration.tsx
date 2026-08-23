@@ -201,9 +201,9 @@ export function WebinarRegistrationPage() {
 
             <fieldset>
               <legend className="mb-2 block w-full">
-                <span className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
-                  <span className="max-w-[60%] text-sm font-semibold text-zinc-800">{FR.payQuestion} *</span>
-                  <span dir="rtl" className="max-w-[60%] text-sm font-semibold text-zinc-800">{AR.payQuestion} *</span>
+                <span className="flex items-start gap-4">
+                  <span className="flex-1 text-start text-sm font-semibold text-zinc-800">{FR.payQuestion} *</span>
+                  <span dir="rtl" className="flex-1 text-right text-sm font-semibold text-zinc-800">{AR.payQuestion} *</span>
                 </span>
               </legend>
               <div className="space-y-2">
