@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import {
   fetchWebinarGroups, fetchRotationOverview, queryKeys, updateWebinarGroup,
-  rpcAddRotationLinks, rpcStartNewRotationLot, rpcSetEmergencyLink, rpcRemoveRotationLink, rpcRenameRotationLink,
+  rpcAddRotationLinks, rpcStartNewRotationLot, rpcSetEmergencyLink, rpcRemoveRotationLink, rpcRenameRotationLink, rpcAdjustRotationLink,
 } from '@/lib/queries';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
@@ -206,25 +206,37 @@ function StatusBadge({ status }: { status: RotationLink['status'] }) {
 }
 
 function LinkRow({
-  link, onRemove, removing, onRename, renaming,
+  link, onRemove, removing, onRename, renaming, onAdjust, adjusting,
 }: {
   link: RotationLink;
   onRemove: (link: RotationLink) => void;
   removing: boolean;
   onRename: (link: RotationLink, label: string) => void;
   renaming: boolean;
+  onAdjust: (link: RotationLink, count: number) => void;
+  adjusting: boolean;
 }) {
   const muted = link.status !== 'active';
   const color = link.status === 'full' ? 'green' : 'orange';
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(link.label ?? '');
   useEffect(() => { setDraft(link.label ?? ''); }, [link.label]);
+  const [editingCount, setEditingCount] = useState(false);
+  const [countDraft, setCountDraft] = useState(String(link.unique_ip_count));
+  useEffect(() => { setCountDraft(String(link.unique_ip_count)); }, [link.unique_ip_count]);
 
   function saveName() {
     if (renaming) return;
     if ((draft.trim() || '') === (link.label ?? '')) { setEditing(false); return; }
     onRename(link, draft.trim());
     setEditing(false);
+  }
+  function saveCount() {
+    if (adjusting) return;
+    const n = Math.max(0, parseInt(countDraft, 10) || 0);
+    if (n === link.unique_ip_count) { setEditingCount(false); return; }
+    onAdjust(link, n);
+    setEditingCount(false);
   }
 
   return (
@@ -290,9 +302,37 @@ function LinkRow({
           className="flex-1"
           label={`Membres du groupe #${link.position}`}
         />
-        <span className="flex-none text-xs tabular-nums text-zinc-500">
-          {link.unique_ip_count} / {GROUP_CAP}
-        </span>
+        {editingCount ? (
+          <span className="flex flex-none items-center gap-1">
+            <input
+              autoFocus
+              type="number"
+              min={0}
+              max={GROUP_CAP}
+              className="input h-7 w-20 py-0.5 text-xs"
+              value={countDraft}
+              onChange={(e) => setCountDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveCount(); if (e.key === 'Escape') { setCountDraft(String(link.unique_ip_count)); setEditingCount(false); } }}
+              disabled={adjusting}
+            />
+            <button type="button" className="rounded p-0.5 text-green-600 hover:bg-green-50 disabled:opacity-50" onClick={saveCount} disabled={adjusting} aria-label="Enregistrer le nombre">
+              {adjusting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            </button>
+            <button type="button" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100" onClick={() => { setCountDraft(String(link.unique_ip_count)); setEditingCount(false); }} disabled={adjusting} aria-label="Annuler">
+              <X className="h-4 w-4" />
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="group flex flex-none items-center gap-1 text-xs tabular-nums text-zinc-500 hover:text-zinc-800"
+            onClick={() => setEditingCount(true)}
+            title="Ajuster le nombre de membres (d'après WhatsApp)"
+          >
+            {link.unique_ip_count} / {GROUP_CAP}
+            <Pencil className="h-3 w-3 text-zinc-300 group-hover:text-zinc-500" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -317,6 +357,7 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<RotationLink | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [adjustingId, setAdjustingId] = useState<string | null>(null);
 
   const state = overviewQ.data?.state ?? null;
   const links = overviewQ.data?.links ?? [];
@@ -329,10 +370,9 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
 
   const currentLot = state?.current_lot ?? 1;
   const activeLinks = useMemo(() => links.filter((l) => l.status === 'active'), [links]);
-  const currentLotLinks = useMemo(
-    () => links.filter((l) => l.lot_number === currentLot && l.status !== 'retired'),
-    [links, currentLot],
-  );
+  // Everything currently in the rotation (active + full), any lot — so a
+  // reactivated group shows up here, not just current-lot links.
+  const currentLotLinks = useMemo(() => links.filter((l) => l.status !== 'retired'), [links]);
   const retiredLinks = useMemo(() => links.filter((l) => l.status === 'retired'), [links]);
   const fullCount = currentLotLinks.filter((l) => l.status === 'full').length;
 
@@ -395,6 +435,20 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
       toast.error("Le lien n'a pas pu être supprimé. Réessaie.", 'Erreur');
     } finally {
       setRemovingId(null);
+    }
+  }
+
+  async function doAdjust(link: RotationLink, count: number) {
+    if (adjustingId) return;
+    setAdjustingId(link.id);
+    try {
+      const res = await rpcAdjustRotationLink(link.id, count);
+      await refresh();
+      toast.success(res.status === 'active' ? `Nombre mis à jour (${res.count}). Groupe réactivé.` : `Nombre mis à jour (${res.count}).`, 'Fait');
+    } catch {
+      toast.error("Le nombre n'a pas pu être enregistré. Réessaie.", 'Erreur');
+    } finally {
+      setAdjustingId(null);
     }
   }
 
@@ -482,7 +536,7 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
       {!overviewQ.isLoading && (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-zinc-700">Lot actif (lot {currentLot})</h3>
+            <h3 className="text-sm font-semibold text-zinc-700">Groupes en rotation</h3>
             <button type="button" className="btn-ghost text-zinc-500" onClick={refresh} title="Rafraîchir">
               <RotateCw className="h-4 w-4" />
             </button>
@@ -500,6 +554,8 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
                 removing={removingId === link.id}
                 onRename={doRename}
                 renaming={renamingId === link.id}
+                onAdjust={doAdjust}
+                adjusting={adjustingId === link.id}
               />
             ))
           )}
@@ -607,12 +663,24 @@ function RotationManager({ funnel }: { funnel: RotationFunnel }) {
           {showRetired && (
             <div className="mt-2 space-y-2">
               {retiredLinks.map((link) => (
-                <div key={link.id} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-100 p-2 opacity-60">
-                  <div className="flex min-w-0 items-center gap-2">
+                <div key={link.id} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-100 p-2">
+                  <div className="flex min-w-0 items-center gap-2 opacity-70">
                     <span className="flex-none rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-500">lot {link.lot_number}</span>
+                    {link.label && <span className="flex-none text-xs font-semibold text-zinc-700">{link.label}</span>}
                     <code className="truncate font-mono text-xs text-zinc-700">{link.whatsapp_code}</code>
                   </div>
-                  <span className="flex-none text-xs text-zinc-400">{link.unique_ip_count} membres</span>
+                  <div className="flex flex-none items-center gap-2">
+                    <span className="text-xs text-zinc-400">{link.unique_ip_count} membres</span>
+                    <button
+                      type="button"
+                      className="btn-outline px-2 py-1 text-xs"
+                      disabled={adjustingId !== null}
+                      onClick={() => doAdjust(link, link.unique_ip_count)}
+                      title="Remettre ce groupe dans la rotation"
+                    >
+                      {adjustingId === link.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />} Réactiver
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

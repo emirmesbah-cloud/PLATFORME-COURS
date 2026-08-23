@@ -708,6 +708,15 @@ export async function rpcRenameRotationLink(linkId: string, label: string) {
   return data as { ok: boolean; label: string | null; error?: string };
 }
 
+export async function rpcAdjustRotationLink(linkId: string, count: number) {
+  const { data, error } = await supabase.rpc('adjust_rotation_link', {
+    p_link_id: linkId,
+    p_count: count,
+  });
+  if (error) throw error;
+  return data as { ok: boolean; count: number; status: string; error?: string };
+}
+
 export async function logAdminAction(
   actionType: string,
   targetType: string | null = null,
