@@ -27,7 +27,7 @@ export function AdminFunnelOverview() {
 
   const stages: { key: keyof FunnelOverview; label: string; hint: string }[] = [
     { key: 'registered', label: 'Inscrits', hint: 'Formulaires reçus' },
-    { key: 'attended', label: 'Ont vu le live', hint: 'attended_live = oui' },
+    { key: 'attended', label: 'Prêts à payer', hint: 'ont répondu « oui »' },
     { key: 'called', label: 'Appelés', hint: 'Contactés au moins 1 fois' },
     { key: 'confirmed', label: 'Confirmés', hint: 'Devenus une commande' },
     { key: 'shipped', label: 'Expédiés', hint: 'Colis créé chez E-com' },
