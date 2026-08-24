@@ -23,6 +23,14 @@ test('closer RLS is read-only and write RPCs are ownership-scoped', () => {
   assert.match(sql, /v_lead\.closer_user_id IS DISTINCT FROM v_uid/);
 });
 
+test('legacy closer updates are limited to status and note by a database trigger', () => {
+  const sql = read('../../supabase/migrations/20260824000074_closer_legacy_write_guard.sql');
+  assert.match(sql, /to_jsonb\(NEW\) - ARRAY\['status', 'note', 'updated_at'\]/);
+  assert.match(sql, /OLD\.closer_user_id IS DISTINCT FROM v_uid/);
+  assert.match(sql, /NEW\.closer_user_id IS DISTINCT FROM v_uid/);
+  assert.match(sql, /FOR UPDATE TO authenticated/);
+});
+
 test('student administration excludes closer and admin profiles', () => {
   const queries = read('../src/lib/queries.ts');
   assert.match(queries, /\.eq\('is_admin', false\)[\s\S]*\.eq\('staff_role', 'student'\)/);
