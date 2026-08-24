@@ -1130,8 +1130,10 @@ export async function fetchWebinarLeads(): Promise<WebinarLead[]> {
   return (data ?? []) as never;
 }
 
+// Assign via the RPC so the closer's user id is resolved + stored (RLS scopes
+// closers by id, not by name).
 export async function assignWebinarLeadCloser(leadId: string, closerName: string): Promise<void> {
-  const { error } = await supabase.from('webinar_leads').update({ closer_name: closerName.trim() }).eq('id', leadId);
+  const { error } = await supabase.rpc('admin_assign_leads_closer', { p_lead_ids: [leadId], p_closer_name: closerName.trim() });
   if (error) throw error;
 }
 
@@ -1154,7 +1156,7 @@ export async function updateWebinarLeadNote(leadId: string, note: string): Promi
 
 export async function assignWebinarLeadsCloser(leadIds: string[], closerName: string): Promise<void> {
   if (leadIds.length === 0) return;
-  const { error } = await supabase.from('webinar_leads').update({ closer_name: closerName.trim() }).in('id', leadIds);
+  const { error } = await supabase.rpc('admin_assign_leads_closer', { p_lead_ids: leadIds, p_closer_name: closerName.trim() });
   if (error) throw error;
 }
 

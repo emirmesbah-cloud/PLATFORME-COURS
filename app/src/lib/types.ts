@@ -390,6 +390,7 @@ export interface WebinarLead {
   campaign: string;
   status: WebinarLeadStatus;
   closer_name: string | null;
+  closer_user_id: string | null;
   call_count: number;
   last_call_at: string | null;
   next_follow_up_at: string | null;
