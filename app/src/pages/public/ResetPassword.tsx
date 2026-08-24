@@ -77,15 +77,17 @@ export function ResetPasswordPage() {
     // résolve avant de setReady(true). Sur ISP lent, ce call peut hang plusieurs
     // dizaines de secondes — l'user voyait un spinner infini sans pouvoir
     // demander un nouveau lien. On garde une limite à 15s pour les webviews
-    // email/mobile lents, sans rejeter trop tôt un lien encore valide.
+    // email/mobile lents, sans rejeter trop tôt un lien encore valide. Six
+    // seconds is enough for PKCE/hash recovery while avoiding a page that looks
+    // blank or frozen to the user.
     const hardTimeout = setTimeout(() => {
       if (!mounted) return;
       if (!recoveryEventSeen) {
         // eslint-disable-next-line no-console
-        console.warn('[Aurel] reset-password: recovery session unavailable after 15s');
+        console.warn('[Aurel] reset-password: recovery session unavailable after 6s');
       }
       setReady(true);
-    }, 15000);
+    }, 6000);
 
     // Validate the recovered session with Auth before enabling a password
     // change. Token identity ties the marker to this exact server-issued
@@ -181,8 +183,11 @@ export function ResetPasswordPage() {
         <div className="mb-8 flex justify-center"><AurelLogo size="lg" /></div>
         <div className="card-padded">
           {!ready ? (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
               <Loader2 className="h-6 w-6 animate-spin text-aurel-orange" />
+              <p className="text-sm font-medium text-slate-700">Vérification du lien sécurisé…</p>
+              <p className="text-xs text-slate-500">Cette étape peut prendre quelques secondes sur une connexion lente.</p>
+              <Link to="/forgot-password" className="text-xs font-semibold text-aurel-orange hover:underline">Demander un nouveau lien</Link>
             </div>
           ) : !linkValid ? (
             <div className="text-center">

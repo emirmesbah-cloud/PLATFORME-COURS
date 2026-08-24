@@ -75,7 +75,7 @@ export default defineConfig({
       manifest: {
         name: 'Aurel Academy — Espace étudiant',
         short_name: 'Aurel Academy',
-        description: 'Plateforme étudiant Aurel Academy : Deutsch für Pflegekräfte.',
+        description: 'Plateforme étudiant Aurel Academy : programmes Pflege et Immigration Allemagne.',
         lang: 'fr',
         dir: 'ltr',
         start_url: '/',

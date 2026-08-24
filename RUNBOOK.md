@@ -3,7 +3,7 @@
 > Procédures de réaction aux incidents critiques de production.
 > Garde ce fichier à portée de main (ou print-out à côté du laptop).
 >
-> **Dernière mise à jour : 2026-04-29** (V1, 3 scénarios)
+> **Dernière mise à jour : 2026-08-24** (6 scénarios opérationnels)
 
 ---
 
@@ -12,7 +12,7 @@
 | Service | Contact / Lien |
 |---|---|
 | Toi (admin) | `emirmesbah@gmail.com` · WhatsApp `+213 555 290 826` |
-| Closers | Hana, Aymen, Djihane (cf. apps-script.gs) |
+| Closers | Liste à jour dans `/admin/closers` |
 | Hébergeur cPanel | Octenium support — via espace client |
 | Cloudflare | [https://dash.cloudflare.com/?to=/:account/support](https://dash.cloudflare.com/?to=/:account/support) |
 | Supabase | [https://supabase.com/dashboard/support/new](https://supabase.com/dashboard/support/new) |
@@ -73,7 +73,7 @@
 
 ### Étape 4 — Si l'incident dure > 4h
 
-**Plan B : restore depuis backup hebdomadaire**
+**Plan B : restore depuis backup quotidien**
 
 1. Va sur [https://github.com/emirmesbah-cloud/PLATFORME-COURS/actions/workflows/backup-supabase.yml](https://github.com/emirmesbah-cloud/PLATFORME-COURS/actions/workflows/backup-supabase.yml)
 2. Trouve le dernier run successful → télécharge l'artifact `aurel-backup-*.sql.gz`
@@ -88,7 +88,7 @@
 7. Redeploy frontend (push commit vide)
 8. Update Apps Script Google Sheets si besoin
 
-⚠️ Cette procédure perd les données depuis le dernier backup (max 7 jours). À documenter dans le post-mortem.
+⚠️ Cette procédure perd les données depuis le dernier backup (objectif maximal : 24 h). À documenter dans le post-mortem.
 
 ---
 
@@ -238,6 +238,32 @@ SELECT * FROM activation_codes WHERE used_at > NOW() - INTERVAL '24 hours';
 
 ---
 
+## Scénario 4 — E-com inaccessible ou statuts bloqués
+
+1. Ouvre `/admin/commandes` et clique **Actualiser**. Les lectures réessaient automatiquement trois fois.
+2. Ne renvoie jamais une commande si elle possède déjà un tracking.
+3. Compare le tracking dans E-com avant de relancer une commande marquée en échec.
+4. Vérifie la configuration webhook ; chaque événement valide doit avoir une signature HMAC et moins de cinq minutes.
+5. Si E-com est réellement indisponible, garde les commandes en brouillon puis reprends l'envoi après le retour du service.
+
+## Scénario 5 — Un closer ne peut pas se connecter
+
+1. Vérifie dans `/admin/closers` que le closer est actif, possède la permission `prospects` et que son compte est lié.
+2. Première connexion : le closer ouvre `/closer`, choisit **Première connexion** et reçoit une invitation dans sa boîte email.
+3. Ne crée jamais un mot de passe commun et ne communique jamais un lien d'invitation à une autre personne.
+4. Compte déjà lié : utiliser **Mot de passe oublié**. L'adresse non reconnue reçoit volontairement la même réponse publique pour empêcher l'énumération.
+5. Si le compte reste non lié, désactive temporairement la fiche closer, vérifie l'adresse, puis réactive-la avant une nouvelle invitation.
+
+## Scénario 6 — Migration ou déploiement échoué
+
+1. Vérifie d'abord le workflow CI : TypeScript, tests de sécurité et build doivent être verts.
+2. Vérifie l'historique avec `supabase migration list --linked` : une version ne doit jamais être présente seulement en local après déploiement.
+3. N'utilise `migration repair --status applied` que si le SQL correspondant est déjà effectivement présent en production.
+4. Après une migration RLS, contrôle `/admin`, un compte closer jetable et un compte étudiant jetable.
+5. Si la migration a échoué, elle est transactionnelle : corrige le nouveau fichier avant de la relancer. Ne modifie jamais une ancienne migration déjà enregistrée.
+
+---
+
 ## 📚 Annexes
 
 ### Backups disponibles
@@ -347,11 +373,8 @@ et retourne 500 → le déploiement est invalidé.
 
 ---
 
-## 🔄 V2 — Scénarios à ajouter post-launch
+## 🔄 Scénarios complémentaires à documenter
 
-- Scénario 4 : Cloudflare Pages deploy fail
-- Scénario 5 : VDOCipher OTP signing fail (vidéos inaccessibles)
-- Scénario 6 : Apps Script Google quotas atteints
 - Scénario 7 : Domaine `aurel-academy.com` expiré ou DNS down
 - Scénario 8 : Bug RLS (étudiant accède aux données d'un autre)
 - Scénario 9 : Attaque DDoS / brute force login

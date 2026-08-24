@@ -1,10 +1,10 @@
 # ============================================================================
-# Aurel Academy — Backup hebdomadaire Supabase (V1)
+# Aurel Academy — Backup quotidien Supabase
 #
 # Stratégie V1 :
 #   - pg_dump complet du schéma public (data + structure)
 #   - Stocké en GitHub Actions artifact (rétention 90 jours, gratuit)
-#   - Run automatique chaque dimanche à 03:00 UTC
+#   - Run automatique chaque jour à 03:00 UTC
 #   - Triggerable manuellement aussi
 #
 # V2 (post-launch) : upload vers Google Drive ou S3 avec rétention 12 mois.
@@ -20,8 +20,7 @@ name: Backup Supabase DB
 
 on:
   schedule:
-    # Dimanche 03:00 UTC = dimanche 04:00 Paris hiver / 05:00 Paris été
-    - cron: '0 3 * * 0'
+    - cron: '0 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -94,6 +93,13 @@ jobs:
 
           # Compress
           gzip -9 "$OUT"
+          gzip -t "${OUT}.gz"
+          # Basic restoreability guard: reject an empty/truncated dump before
+          # uploading it. A staging restore drill remains a separate operation.
+          if ! gzip -dc "${OUT}.gz" | grep -q 'CREATE TABLE'; then
+            echo "::error::Backup contains no CREATE TABLE statement"
+            exit 1
+          fi
           ls -lh "${OUT}.gz"
 
           echo "BACKUP_FILE=${OUT}.gz" >> $GITHUB_ENV

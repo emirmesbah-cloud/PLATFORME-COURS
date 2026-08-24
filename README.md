@@ -26,7 +26,8 @@ platform/
 ┌─────────────────────────────────────────┐
 │  supabase/                              │
 │  - PostgreSQL + RLS                     │
-│  - Edge Function activate-account       │
+│  - Activation, VdoCipher, CRM/webinar   │
+│  - Synchronisation E-com + webhooks     │
 │  - Auth (email + password)              │
 │  Region : Frankfurt                     │
 └─────────────────────────────────────────┘
@@ -41,9 +42,9 @@ platform/
 
 ### Backend (Supabase)
 Voir [`supabase/README.md`](./supabase/README.md) pour :
-- Les 6 migrations SQL à appliquer
-- Le déploiement de l'Edge Function `activate-account`
-- Les tests de validation Phase 1
+- Les migrations SQL versionnées et appliquées par GitHub Actions
+- Le déploiement des Edge Functions
+- Les contrôles RLS et les procédures de diagnostic
 
 ### Frontend (app)
 Voir [`app/README.md`](./app/README.md) pour :
@@ -76,6 +77,8 @@ node generate-codes.js --tier=autonome --count=10
 - **RLS activé** sur toutes les tables Phase 1
 - **`is_admin`** ne peut être muté que par le `service_role` (trigger DB Phase 1.5)
 - Pas de signup public admin — promotion manuelle via Supabase Dashboard
+- Première connexion closer par invitation email vérifiée, jamais par mot de passe choisi publiquement
+- Closers limités côté base aux prospects qui leur sont attribués
 - Edge Function `activate-account` rollback automatique si redeem échoue
 
 ## 🌐 Repo lié

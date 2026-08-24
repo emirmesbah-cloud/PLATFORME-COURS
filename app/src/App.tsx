@@ -5,6 +5,7 @@ import { AuthProvider } from '@/hooks/useAuth';
 import { ToastProvider } from '@/components/ui/Toast';
 import { PWAUpdatePrompt } from '@/components/features/PWAUpdatePrompt';
 import { KickedListener } from '@/components/features/KickedListener';
+import { MetaPixelConsent } from '@/components/features/MetaPixelConsent';
 import { routes } from '@/routes';
 
 const queryClient = new QueryClient({
@@ -39,6 +40,7 @@ export default function App() {
                 directly (the kicked event is dispatched from useAuth). */}
             <KickedListener />
             <AppRoutes />
+            <MetaPixelConsent />
             <PWAUpdatePrompt />
           </AuthProvider>
         </BrowserRouter>

@@ -91,13 +91,15 @@ export function AdminDeliveryOrders() {
   const connectionQ = useQuery({
     queryKey: queryKeys.ecomConnection,
     queryFn: fetchEcomConnection,
-    retry: false,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
     staleTime: 5 * 60_000,
   });
   const wilayasQ = useQuery({
     queryKey: queryKeys.ecomWilayas,
     queryFn: fetchEcomWilayas,
-    retry: false,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
     staleTime: 24 * 60 * 60_000,
   });
   const communesQ = useQuery({

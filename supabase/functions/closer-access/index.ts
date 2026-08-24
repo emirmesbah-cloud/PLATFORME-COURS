@@ -1,16 +1,13 @@
 // ============================================================================
 // Aurel Academy — Edge Function : POST /functions/v1/closer-access
 //
-// Lets a PRE-APPROVED closer create their own login (email + password) once.
-// Gated by the staff_members list: the email must already be an ACTIVE closer
-// the admin added in the dashboard, and must not already have an account. This
-// is the only way to self-register — everyone else is rejected.
+// Sends a mailbox-verified invitation to a PRE-APPROVED closer. The caller can
+// no longer choose a password for an allowlisted address: possession of the
+// email inbox is required before Supabase establishes a session.
 //
-// verify_jwt = false (public) — the visitor has no account yet. Protection is
-// the staff_members allowlist + the "one account only" guard, not a JWT.
-//
-// After success the browser signs in with the same password (supabase-js) and
-// lands on the Prospects section (RootRedirect routes closers there).
+// verify_jwt = false (public) — the visitor has no account yet. Responses are
+// deliberately identical for unknown, existing and invited addresses to avoid
+// enumerating the staff list.
 // ============================================================================
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
@@ -48,46 +45,50 @@ serve(async (req) => {
   catch { return json({ ok: false, error: 'INVALID_JSON' }, 400); }
 
   const email = String(payload?.email ?? '').trim().toLowerCase();
-  const password = String(payload?.password ?? '');
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, error: 'EMAIL_INVALID' }, 422);
-  if (password.length < 8) return json({ ok: false, error: 'PASSWORD_TOO_SHORT' }, 422);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return json({ ok: true, message: 'CHECK_EMAIL' });
+  }
 
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // 1. Must be a pre-approved, active closer.
+  // Only pre-approved active staff can receive an invitation. Unknown and
+  // already-linked addresses get the exact same public response.
   const { data: staff } = await admin
     .from('staff_members')
-    .select('first_name, last_name, whatsapp, is_active, permissions')
+    .select('first_name, last_name, whatsapp, is_active, permissions, auth_user_id')
     .ilike('email', email)
     .maybeSingle();
   if (!staff || staff.is_active !== true) {
-    return json({ ok: false, error: 'NOT_A_CLOSER' }, 403);
+    return json({ ok: true, message: 'CHECK_EMAIL' });
   }
 
-  // 2. One account only — if it already exists, they must log in instead.
-  const { data: existing } = await admin.from('profiles').select('id').ilike('email', email).maybeSingle();
-  if (existing) return json({ ok: false, error: 'ACCOUNT_EXISTS' }, 409);
+  if (staff.auth_user_id) return json({ ok: true, message: 'CHECK_EMAIL' });
 
-  // 3. Create the auth user (email pre-confirmed — no email step for staff).
-  const { data: created, error: createErr } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: {
+  // A profile may already be linked even if an older staff row missed the id.
+  const { data: existing } = await admin.from('profiles').select('id').ilike('email', email).maybeSingle();
+  if (existing) {
+    await admin.from('staff_members').update({ auth_user_id: existing.id, updated_at: new Date().toISOString() }).ilike('email', email);
+    return json({ ok: true, message: 'CHECK_EMAIL' });
+  }
+
+  // Supabase sends the invitation itself. The session is established only
+  // after the closer clicks the signed, expiring link received in their inbox.
+  const { data: created, error: createErr } = await admin.auth.admin.inviteUserByEmail(email, {
+    redirectTo: 'https://app.aurel-academy.com/',
+    data: {
       first_name: staff.first_name ?? '',
       last_name: (staff.last_name as string) ?? '',
       whatsapp: (staff.whatsapp as string) ?? '',
     },
   });
   if (createErr || !created?.user) {
-    // A duplicate here means an auth user exists without a profile row.
-    if (String(createErr?.message ?? '').toLowerCase().includes('already')) {
-      return json({ ok: false, error: 'ACCOUNT_EXISTS' }, 409);
+    const duplicate = String(createErr?.message ?? '').toLowerCase().includes('already');
+    if (!duplicate) {
+      await reportError(createErr ?? new Error('inviteUserByEmail returned no user'), { function: 'closer-access', extra: { step: 'invite' } });
     }
-    await reportError(createErr ?? new Error('createUser returned no user'), { function: 'closer-access', extra: { step: 'createUser' } });
-    return json({ ok: false, error: 'CREATE_FAILED' }, 500);
+    return json({ ok: true, message: 'CHECK_EMAIL' });
   }
   const uid = created.user.id;
 
@@ -105,8 +106,8 @@ serve(async (req) => {
     // Roll back the orphan auth user so a retry can succeed.
     await admin.auth.admin.deleteUser(uid).catch(() => {});
     await reportError(profErr, { function: 'closer-access', extra: { step: 'profile_insert' } });
-    return json({ ok: false, error: 'PROFILE_FAILED' }, 500);
+    return json({ ok: true, message: 'CHECK_EMAIL' });
   }
 
-  return json({ ok: true });
+  return json({ ok: true, message: 'CHECK_EMAIL' });
 });
