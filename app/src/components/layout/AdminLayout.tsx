@@ -10,6 +10,10 @@ import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchAccountingStats, queryKeys } from '@/lib/queries';
 import { cn } from '@/lib/utils';
+import { Modal } from '@/components/ui/Modal';
+import { PasswordInput } from '@/components/ui/PasswordInput';
+import { useToast } from '@/components/ui/Toast';
+import { supabase } from '@/lib/supabase';
 
 /**
  * AdminLayout — Linear Tech direction (palette Aurel).
@@ -63,7 +67,23 @@ const NAV_GROUPS: { label: string; items: { to: string; label: string; icon: typ
 export function AdminLayout() {
   const { signOut, profile } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pw, setPw] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
+
+  async function changePassword() {
+    if (pw.length < 8) { toast.error('Le mot de passe doit faire au moins 8 caractères.'); return; }
+    setPwSaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: pw });
+      if (error) throw error;
+      toast.success('Mot de passe mis à jour.', 'C\'est fait');
+      setPw(''); setPwOpen(false);
+    } catch { toast.error("Le mot de passe n'a pas pu être changé. Réessaie."); }
+    finally { setPwSaving(false); }
+  }
 
   // Pull accounting stats once for the pending-payments badge in the sidebar.
   const statsQ = useQuery({
@@ -166,20 +186,31 @@ export function AdminLayout() {
 
           {/* Bottom : user + actions */}
           <div className="mt-auto pt-3 border-t border-zinc-200 space-y-1">
-            <Link
-              to="/dashboard"
-              className="flex items-center gap-2 px-3 py-2 rounded-card-sm text-[12px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-              onClick={() => setOpen(false)}
+            {!isCloser && (
+              <>
+                <Link
+                  to="/dashboard"
+                  className="flex items-center gap-2 px-3 py-2 rounded-card-sm text-[12px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                  onClick={() => setOpen(false)}
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" /> Aperçu étudiant Pflege
+                </Link>
+                <Link
+                  to="/immigration"
+                  className="flex items-center gap-2 px-3 py-2 rounded-card-sm text-[12px] font-medium text-aurel-orange-dark hover:bg-aurel-orange-soft"
+                  onClick={() => setOpen(false)}
+                >
+                  <Plane className="h-3.5 w-3.5" /> Aperçu étudiant Immigration
+                </Link>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => { setPwOpen(true); setOpen(false); }}
+              className="flex w-full items-center gap-2 px-3 py-2 rounded-card-sm text-[12px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
             >
-              <ArrowLeft className="h-3.5 w-3.5" /> Aperçu étudiant Pflege
-            </Link>
-            <Link
-              to="/immigration"
-              className="flex items-center gap-2 px-3 py-2 rounded-card-sm text-[12px] font-medium text-aurel-orange-dark hover:bg-aurel-orange-soft"
-              onClick={() => setOpen(false)}
-            >
-              <Plane className="h-3.5 w-3.5" /> Aperçu étudiant Immigration
-            </Link>
+              <LockKeyhole className="h-3.5 w-3.5" /> Changer mot de passe
+            </button>
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-card-sm">
               <div
                 className="grid h-7 w-7 place-items-center rounded-full text-white text-[11px] font-semibold flex-none"
@@ -229,6 +260,19 @@ export function AdminLayout() {
         </main>
 
       </div>
+
+      <Modal open={pwOpen} onClose={() => !pwSaving && setPwOpen(false)} title="Changer mon mot de passe" maxWidth="max-w-sm">
+        <div className="space-y-4">
+          <p className="text-sm text-zinc-600">Choisis un nouveau mot de passe (au moins 8 caractères).</p>
+          <PasswordInput className="input" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Nouveau mot de passe" />
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-outline" disabled={pwSaving} onClick={() => setPwOpen(false)}>Annuler</button>
+            <button type="button" className="btn-primary" disabled={pwSaving || pw.length < 8} onClick={changePassword}>
+              {pwSaving ? <LockKeyhole className="h-4 w-4 animate-pulse" /> : <LockKeyhole className="h-4 w-4" />} Enregistrer
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

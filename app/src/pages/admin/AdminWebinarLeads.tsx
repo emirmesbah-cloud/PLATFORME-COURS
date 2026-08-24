@@ -16,8 +16,9 @@ const CLOSER_OPTIONS: { value: WebinarLeadStatus; label: string }[] = [
   { value: 'in_delivery', label: 'Confirmé / en livraison' },
 ];
 const FILTER_OPTIONS: { value: WebinarLeadStatus; label: string }[] = [...CLOSER_OPTIONS, { value: 'delivered', label: 'Livré' }, { value: 'returned', label: 'Retour / refusé' }];
-// Manual CRM working statuses that can be bulk-set (order-driven ones excluded).
-const BULK_STATUS_OPTIONS = CLOSER_OPTIONS.filter((o) => o.value !== 'in_delivery');
+// Statuses that can be bulk-set — working statuses + delivery outcomes.
+// "Confirmé / en livraison" is excluded: it needs an order → "Vers Commandes".
+const BULK_STATUS_OPTIONS = FILTER_OPTIONS.filter((o) => o.value !== 'in_delivery');
 const STATUS_LABEL: Record<WebinarLeadStatus, string> = { new: 'À appeler', to_call: 'À appeler', nrp: 'NRP — ne répond pas', callback: 'À rappeler', not_interested: 'Pas intéressé / annulé', confirmed: 'Confirmé / en livraison', in_delivery: 'Confirmé / en livraison', delivered: 'Livré', returned: 'Retour / refusé' };
 
 export function AdminWebinarLeads() {
