@@ -95,7 +95,7 @@ export function AdminLayout() {
   const pending = statsQ.data?.pending ?? 0;
   const isCloser = profile?.staff_role === 'closer';
   const permissionPath: Record<string, string> = { prospects: '/admin/prospects', formulaire: '/admin/formulaire', commandes: '/admin/commandes', codes: '/admin/codes' };
-  const closerPaths = new Set(['/admin/security', ...(profile?.staff_permissions ?? []).map((permission) => permissionPath[permission]).filter(Boolean)]);
+  const closerPaths = new Set((profile?.staff_permissions ?? []).map((permission) => permissionPath[permission]).filter(Boolean));
   const visibleGroups = isCloser
     ? [{ label: 'Accès attribués', items: NAV_GROUPS.flatMap((group) => group.items).filter((item) => closerPaths.has(item.to)) }]
     : NAV_GROUPS;
@@ -121,7 +121,7 @@ export function AdminLayout() {
           </button>
           <Link to="/admin" className="flex items-center gap-2">
             <div className="grid h-7 w-7 place-items-center rounded-card-sm bg-zinc-950 text-white text-[14px] font-bold">A</div>
-            <span className="text-[15px] font-semibold tracking-tight">Aurel <span className="font-mono text-[10px] uppercase tracking-wider text-aurel-orange">admin</span></span>
+            <span className="text-[15px] font-semibold tracking-tight">Aurel <span className="font-mono text-[10px] uppercase tracking-wider text-aurel-orange">{isCloser ? 'closers' : 'admin'}</span></span>
           </Link>
           <button onClick={handleSignOut} aria-label="Déconnexion" className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card-sm hover:bg-zinc-100">
             <LogOut className="h-4 w-4 text-zinc-600" />
@@ -143,7 +143,7 @@ export function AdminLayout() {
             <div className="grid h-7 w-7 place-items-center rounded-card-sm bg-zinc-950 text-white text-[14px] font-bold">A</div>
             <div className="leading-tight">
               <div className="text-[15px] font-semibold tracking-tight">Aurel</div>
-              <div className="font-mono text-[10px] uppercase tracking-wider text-aurel-orange font-medium">admin</div>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-aurel-orange font-medium">{isCloser ? 'closers' : 'admin'}</div>
             </div>
           </Link>
 

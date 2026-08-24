@@ -1135,6 +1135,13 @@ export async function assignWebinarLeadCloser(leadId: string, closerName: string
   if (error) throw error;
 }
 
+// Change a single lead's status directly (RLS-scoped: a closer can only change
+// their own leads). No order side-effects — use logWebinarCallWithOrder for that.
+export async function updateWebinarLeadStatus(leadId: string, status: WebinarLeadStatus): Promise<void> {
+  const { error } = await supabase.from('webinar_leads').update({ status }).eq('id', leadId);
+  if (error) throw error;
+}
+
 // Free-text note about a prospect (separate from call notes). Editable by any
 // staff member with prospect access via the RLS policy.
 export async function updateWebinarLeadNote(leadId: string, note: string): Promise<void> {

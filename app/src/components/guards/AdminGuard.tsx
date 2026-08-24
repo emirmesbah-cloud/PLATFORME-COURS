@@ -83,7 +83,7 @@ export function AdminGuard({ children }: { children: ReactNode }) {
   const isCloser = profile.staff_role === 'closer' && permissions.length > 0;
   if (!isAdmin && !isCloser) return <Navigate to="/dashboard" replace />;
   const permissionPath: Record<string, string> = { prospects: '/admin/prospects', formulaire: '/admin/formulaire', commandes: '/admin/commandes', codes: '/admin/codes' };
-  const allowedPaths = ['/admin/security', ...permissions.map((permission) => permissionPath[permission]).filter(Boolean)];
+  const allowedPaths = permissions.map((permission) => permissionPath[permission]).filter(Boolean);
   if (isCloser && !allowedPaths.includes(location.pathname)) {
     return <Navigate to="/admin/prospects" replace />;
   }
