@@ -144,6 +144,17 @@ serve(async (req) => {
   try { payload = await req.json(); }
   catch { return json({ ok: false }, 400); }
 
+  // Secret-gated test ping: fires a real ntfy push so the admin can confirm the
+  // phone-alert pipe end-to-end, without touching any live group count.
+  if (payload?.ping === true) {
+    const ok = await sendNtfy(
+      'Aurel Academy - test',
+      '✅ Test réussi : les alertes des groupes WhatsApp (990 / tous pleins) arriveront ici sur ton téléphone.',
+      'high', 'white_check_mark',
+    );
+    return json({ ok, ping: true });
+  }
+
   const funnel   = String(payload?.funnel ?? '').trim();
   const clientIp = String(payload?.client_ip ?? '').trim();
   let   mode     = String(payload?.mode ?? 'assign').trim();
