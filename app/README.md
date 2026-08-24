@@ -134,6 +134,8 @@ npm run build
 
 ## 🚀 Déploiement Cloudflare Pages
 
+> Dernier contrôle complet du build Worker et des parcours critiques : 24 août 2026.
+
 ### A. Lier le repo
 
 1. Va sur **[Cloudflare Pages](https://dash.cloudflare.com/?to=/:account/pages)** → **Create a project** → **Connect to Git**.
