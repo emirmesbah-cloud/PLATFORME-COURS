@@ -36,6 +36,9 @@ const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const WEBINAR_ROTATE_SECRET     = Deno.env.get('WEBINAR_ROTATE_SECRET') ?? '';
 const WEBINAR_ALERT_EMAIL       = Deno.env.get('WEBINAR_ALERT_EMAIL') ?? 'amirmesbah510@gmail.com';
+// Phone push via ntfy (the admin subscribes to this topic in the ntfy app).
+// Override with the WEBINAR_NTFY_TOPIC secret if you want a less guessable one.
+const WEBINAR_NTFY_TOPIC        = Deno.env.get('WEBINAR_NTFY_TOPIC') ?? 'checkchouka';
 
 const VALID_FUNNELS = new Set(['immigration', 'tiktok']);
 const VALID_MODES   = new Set(['assign', 'preview', 'test']);
@@ -89,6 +92,23 @@ async function sendAlert(subject: string, bodyText: string): Promise<boolean> {
     return false;
   } catch (err) {
     await reportError(err, { function: 'webinar-rotate', level: 'warning', extra: { step: 'alert_email' } });
+    return false;
+  }
+}
+
+// Phone push via ntfy (https://ntfy.sh/<topic>). Title stays ASCII (ntfy headers
+// are latin-1); the accented/emoji detail goes in the body. Returns true on 2xx.
+async function sendNtfy(title: string, body: string, priority: 'high' | 'urgent', tags: string): Promise<boolean> {
+  if (!WEBINAR_NTFY_TOPIC) return false;
+  try {
+    const res = await fetch(`https://ntfy.sh/${WEBINAR_NTFY_TOPIC}`, {
+      method: 'POST',
+      headers: { 'Title': title, 'Priority': priority, 'Tags': tags },
+      body,
+    });
+    return res.ok;
+  } catch (err) {
+    await reportError(err, { function: 'webinar-rotate', level: 'warning', extra: { step: 'ntfy' } });
     return false;
   }
 }
@@ -162,25 +182,29 @@ serve(async (req) => {
     if (result.near_full) {
       const nf = result.near_full;
       waitUntil((async () => {
-        const ok = await sendAlert(
-          `⚠️ Groupe WhatsApp bientôt plein — ${funnel}`,
+        const body =
           `Le groupe #${nf.position} (lot ${nf.lot}) du funnel « ${funnel} » a atteint ${nf.count} / 1000 membres.\n` +
-          `Pense à préparer et activer un nouveau lot de liens WhatsApp bientôt, avant qu'il ne soit complet.\n` +
-          `Tu peux le faire depuis le tableau de bord : Admin → Groupes WhatsApp.`,
-        );
-        if (!ok) await resetAlert(admin, funnel, 'near_full', nf.position);
+          `Prépare et active un nouveau lot de liens WhatsApp avant qu'il ne soit complet.\n` +
+          `Admin → Groupes WhatsApp.`;
+        const [okPush, okMail] = await Promise.all([
+          sendNtfy(`Groupe WhatsApp bientot plein - ${funnel}`, `⚠️ ${body}`, 'high', 'warning'),
+          sendAlert(`⚠️ Groupe WhatsApp bientôt plein — ${funnel}`, body),
+        ]);
+        if (!okPush && !okMail) await resetAlert(admin, funnel, 'near_full', nf.position);
       })());
     }
 
     if (result.all_full) {
       waitUntil((async () => {
-        const ok = await sendAlert(
-          `🚨 Tous les groupes ${funnel} sont pleins`,
+        const body =
           `Tous les groupes actifs du funnel « ${funnel} » sont pleins (1000 / 1000).\n` +
-          `En attendant, les nouveaux inscrits sont envoyés vers le DERNIER groupe (aucun lead n'est perdu).\n` +
-          `Ajoute vite un nouveau lot de liens depuis Admin → Groupes WhatsApp pour répartir de nouveau.`,
-        );
-        if (!ok) await resetAlert(admin, funnel, 'all_full', null);
+          `Les nouveaux inscrits vont vers le DERNIER groupe (aucun lead perdu).\n` +
+          `Ajoute vite un nouveau lot depuis Admin → Groupes WhatsApp.`;
+        const [okPush, okMail] = await Promise.all([
+          sendNtfy(`Tous les groupes ${funnel} sont pleins`, `🚨 ${body}`, 'urgent', 'rotating_light'),
+          sendAlert(`🚨 Tous les groupes ${funnel} sont pleins`, body),
+        ]);
+        if (!okPush && !okMail) await resetAlert(admin, funnel, 'all_full', null);
       })());
     }
 
