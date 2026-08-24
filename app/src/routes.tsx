@@ -9,6 +9,7 @@ import { FullPageSpinner } from '@/components/ui/Spinner';
 
 // Public pages — eager (small + always needed)
 import { LoginPage }           from '@/pages/public/Login';
+import { CloserAccessPage }    from '@/pages/public/CloserAccess';
 import { ActivatePage }        from '@/pages/public/Activate';
 import { ForgotPasswordPage }  from '@/pages/public/ForgotPassword';
 import { ResetPasswordPage }   from '@/pages/public/ResetPassword';
@@ -96,6 +97,7 @@ function L({ children }: { children: React.ReactNode }) {
 export const routes: RouteObject[] = [
   { path: '/',                  element: <RootRedirect /> },
   { path: '/login',             element: <LoginPage /> },
+  { path: '/closer',            element: <CloserAccessPage /> },
   { path: '/activate',          element: <ActivatePage /> },
   { path: '/forgot-password',   element: <ForgotPasswordPage /> },
   { path: '/reset-password',    element: <ResetPasswordPage /> },

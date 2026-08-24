@@ -1135,6 +1135,16 @@ export async function assignWebinarLeadCloser(leadId: string, closerName: string
   if (error) throw error;
 }
 
+// Free-text note about a prospect (separate from call notes). Editable by any
+// staff member with prospect access via the RLS policy.
+export async function updateWebinarLeadNote(leadId: string, note: string): Promise<void> {
+  const { error } = await supabase
+    .from('webinar_leads')
+    .update({ note: note.trim() ? note.trim().slice(0, 2000) : null })
+    .eq('id', leadId);
+  if (error) throw error;
+}
+
 export async function assignWebinarLeadsCloser(leadIds: string[], closerName: string): Promise<void> {
   if (leadIds.length === 0) return;
   const { error } = await supabase.from('webinar_leads').update({ closer_name: closerName.trim() }).in('id', leadIds);

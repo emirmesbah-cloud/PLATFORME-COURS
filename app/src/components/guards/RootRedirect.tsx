@@ -2,6 +2,7 @@ import { Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { FullPageSpinner } from '@/components/ui/Spinner';
+import { closerLandingPath } from '@/components/layout/StudentLayout';
 
 export function RootRedirect() {
   const { session, profile, profileSource, isLoading, isAdmin } = useAuth();
@@ -48,6 +49,12 @@ export function RootRedirect() {
   // Admins atterrissent sur /admin. Ils peuvent basculer sur l'espace étudiant
   // via le lien "Espace étudiant" dans le header admin.
   if (isAdmin) return <Navigate to="/admin" replace />;
+
+  // Closers land straight on their attributed section (Prospects) — they have a
+  // scoped, prospects-only admin space, not the student course.
+  if (profile?.staff_role === 'closer' && (profile?.staff_permissions?.length ?? 0) > 0) {
+    return <Navigate to={closerLandingPath(profile.staff_permissions)} replace />;
+  }
 
   // Single-course routing : un étudiant Immigration atterrit sur son cours,
   // un étudiant Pflege (défaut) sur le dashboard Pflege existant.

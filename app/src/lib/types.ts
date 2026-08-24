@@ -394,6 +394,7 @@ export interface WebinarLead {
   last_call_at: string | null;
   next_follow_up_at: string | null;
   latest_call_note: string | null;
+  note: string | null;
   created_at: string;
   updated_at: string;
   delivery_orders?: Pick<DeliveryOrder, 'id' | 'ecom_tracking' | 'ecom_situation'>[];

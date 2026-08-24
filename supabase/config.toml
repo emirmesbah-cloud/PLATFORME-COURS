@@ -106,6 +106,12 @@ verify_jwt = false
 # no anonymous table INSERT policy is exposed.
 verify_jwt = false
 
+[functions.closer-access]
+# Public closer self-registration (email + password). No JWT — the visitor has
+# no account yet; gated instead by the staff_members allowlist + one-account
+# guard inside the function.
+verify_jwt = false
+
 [functions.webinar-rotate]
 # Public WhatsApp group rotation resolver, called by the WordPress merci page.
 # No login (the visitor is anonymous) — gated instead by a shared secret header
