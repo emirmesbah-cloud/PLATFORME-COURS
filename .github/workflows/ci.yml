@@ -8,11 +8,16 @@ on:
     branches: [main]
     paths:
       - 'app/**'
+      - 'supabase/**'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
     paths:
       - 'app/**'
+      - 'supabase/**'
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -46,6 +51,9 @@ jobs:
       # here instead of after Cloudflare has already swapped the bundle.
       - name: TypeScript check
         run: npm run lint
+
+      - name: Security and workflow contracts
+        run: npm test
 
       - name: Build
         env:

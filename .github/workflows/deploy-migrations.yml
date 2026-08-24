@@ -8,13 +8,12 @@
 # ============================================================================
 name: Deploy Migrations
 
-# ⚠️ Trigger manuel uniquement.
-# Les migrations 001-007 actuelles ont été appliquées manuellement via SQL Editor
-# (donc absentes de schema_migrations). Re-running db push échouerait avec
-# "table already exists". Pour activer l'auto : exécuter `supabase migration repair
-# --status applied <version>` pour chaque migration déjà appliquée, puis switcher
-# le trigger en push.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/workflows/deploy-migrations.yml'
   workflow_dispatch:
 
 # SHERLOCK FIX : explicit permissions block. Avant : default GITHUB_TOKEN
@@ -38,7 +37,7 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.115.0
 
       - name: Link project
         env:

@@ -195,13 +195,10 @@ serve(async (req) => {
   }
   if (!commune || !address) return json({ ok: false, error: 'ADDRESS_REQUIRED' }, 422);
 
-  // Per-IP volume cap (public only; admin testers exempt). Stops one connection
-  // from flooding the form with fake orders — each submission otherwise creates
-  // a lead AND a 38 000 DZD draft order. Fixed window, keyed by a HASH of the IP
-  // so the raw address is never stored (see webinar_lead_rate_limits). Tunable:
-  // RL_MAX submissions per RL_WINDOW_MS.
-  const RL_MAX = 5;
-  const RL_WINDOW_MS = 60 * 60_000; // 1 hour
+  // Public-only burst protection. The database increments the bucket in one
+  // atomic UPSERT, so concurrent submissions cannot all read the same old
+  // counter. Logged-in admins remain unrestricted for repeated QA tests.
+  const RL_MAX = 30;
   if (!isAdminTester) {
     try {
       const ipRaw = req.headers.get('cf-connecting-ip')?.trim()
@@ -209,46 +206,19 @@ serve(async (req) => {
       if (ipRaw) {
         const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`webinar-lead:${ipRaw}`));
         const keyHash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
-        const nowIso = new Date().toISOString();
-        const { data: bucket } = await admin
-          .from('webinar_lead_rate_limits')
-          .select('window_started_at, request_count')
-          .eq('key_hash', keyHash)
-          .maybeSingle();
-        const fresh = !bucket || (Date.now() - new Date(bucket.window_started_at as string).getTime()) >= RL_WINDOW_MS;
-        if (!fresh && (bucket!.request_count as number) >= RL_MAX) {
-          // RATE_LIMITED matches the message the registration form already shows.
+        const { data: allowed, error: limitError } = await admin.rpc('consume_webinar_lead_rate_limit', {
+          p_key_hash: keyHash,
+          p_max_requests: RL_MAX,
+          p_window: '1 hour',
+        });
+        if (limitError) throw limitError;
+        if (allowed !== true) {
           return json({ ok: false, error: 'RATE_LIMITED' }, 429);
-        }
-        if (fresh) {
-          await admin.from('webinar_lead_rate_limits')
-            .upsert({ key_hash: keyHash, window_started_at: nowIso, request_count: 1, updated_at: nowIso });
-        } else {
-          await admin.from('webinar_lead_rate_limits')
-            .update({ request_count: (bucket!.request_count as number) + 1, updated_at: nowIso })
-            .eq('key_hash', keyHash);
         }
       }
     } catch (rlErr) {
       // Fail open: a limiter outage must never block a real registration.
       console.warn('[webinar-lead] rate limit unavailable; failing open', rlErr);
-    }
-  }
-
-  // Duplicate guard (the exemption computed above finally does something): one
-  // registration per phone number for the public, so a prospect who submits
-  // twice never becomes two leads and two 38 000 DZD draft orders, and a closer
-  // never calls the same person twice. Admin testers are exempt so they can
-  // re-submit the same identity freely. A repeat is treated as success WITHOUT
-  // creating a second row — the visitor still proceeds to the WhatsApp group.
-  if (!isAdminTester) {
-    const { data: existingLead } = await admin
-      .from('webinar_leads')
-      .select('id')
-      .eq('phone_normalized', phoneNormalized)
-      .limit(1);
-    if (existingLead && existingLead.length > 0) {
-      return json({ ok: true, duplicate: true });
     }
   }
 
@@ -262,22 +232,25 @@ serve(async (req) => {
 
     const extraAnswers = payload.extra_answers && typeof payload.extra_answers === 'object'
       ? payload.extra_answers as Record<string, unknown> : {};
-    const { data: inserted, error } = await admin.from('webinar_leads').insert({
-      full_name: fullName,
-      phone_raw: phoneRaw,
-      phone_normalized: phoneNormalized,
-      email,
-      ready_to_pay: readyToPay,
-      wilaya_id: wilayaId,
-      wilaya_name: String(selectedWilaya.libelle),
-      commune: String(selectedCommune.commune),
-      address,
-      status: 'to_call',
-      source: 'youtube_live',
-      campaign: 'post_webinar',
-      extra_answers: extraAnswers,
-    }).select('id, created_at').single();
+    // Duplicate check + insert happen under one database advisory lock. This
+    // closes the race where simultaneous requests used to create two leads.
+    const { data: insertedRaw, error } = await admin.rpc('service_insert_webinar_lead', {
+      p_full_name: fullName,
+      p_phone_raw: phoneRaw,
+      p_phone_normalized: phoneNormalized,
+      p_email: email,
+      p_ready_to_pay: readyToPay,
+      p_wilaya_id: wilayaId,
+      p_wilaya_name: String(selectedWilaya.libelle),
+      p_commune: String(selectedCommune.commune),
+      p_address: address,
+      p_extra_answers: extraAnswers,
+      p_allow_duplicate: isAdminTester,
+    });
     if (error) throw error;
+    const inserted = insertedRaw as { ok?: boolean; duplicate?: boolean; id?: string; created_at?: string } | null;
+    if (!inserted?.ok || !inserted.id) throw new Error('LEAD_INSERT_FAILED');
+    if (inserted.duplicate) return json({ ok: true, duplicate: true, already_registered: true });
 
     // Sheet/webhook backup runs in the BACKGROUND so the visitor gets their
     // "thank you" the moment the lead is saved, instead of waiting on a slow

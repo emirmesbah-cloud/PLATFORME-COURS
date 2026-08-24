@@ -35,9 +35,7 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          # NOTE: 'latest' is non-deterministic — a CLI change can alter deploy
-          # behaviour with no code change. Pin a known-good version if this bites.
-          version: latest
+          version: 2.115.0
 
       - name: Deploy every function (resilient — one failure never skips the rest)
         env:

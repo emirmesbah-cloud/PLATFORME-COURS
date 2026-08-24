@@ -331,6 +331,7 @@ export async function fetchAllStudents(
     .from('profiles')
     .select('*')
     .eq('is_admin', false)
+    .eq('staff_role', 'student')
     .order('created_at', { ascending: false });
   if (!opts.includeRevoked) q = q.is('revoked_at', null);
   const { data, error } = await q;
@@ -1137,20 +1138,28 @@ export async function assignWebinarLeadCloser(leadId: string, closerName: string
   if (error) throw error;
 }
 
-// Change a single lead's status directly (RLS-scoped: a closer can only change
-// their own leads). No order side-effects — use logWebinarCallWithOrder for that.
+// All closer writes go through a narrow security-definer RPC. RLS itself is
+// SELECT-only for closers, so protected fields cannot be changed by crafting a
+// direct PostgREST request outside the UI.
 export async function updateWebinarLeadStatus(leadId: string, status: WebinarLeadStatus): Promise<void> {
-  const { error } = await supabase.from('webinar_leads').update({ status }).eq('id', leadId);
+  const { error } = await supabase.rpc('staff_update_webinar_lead', {
+    p_lead_id: leadId,
+    p_status: status,
+    p_note: null,
+    p_update_note: false,
+  });
   if (error) throw error;
 }
 
 // Free-text note about a prospect (separate from call notes). Editable by any
 // staff member with prospect access via the RLS policy.
 export async function updateWebinarLeadNote(leadId: string, note: string): Promise<void> {
-  const { error } = await supabase
-    .from('webinar_leads')
-    .update({ note: note.trim() ? note.trim().slice(0, 2000) : null })
-    .eq('id', leadId);
+  const { error } = await supabase.rpc('staff_update_webinar_lead', {
+    p_lead_id: leadId,
+    p_status: null,
+    p_note: note.trim() ? note.trim().slice(0, 2000) : null,
+    p_update_note: true,
+  });
   if (error) throw error;
 }
 
@@ -1227,8 +1236,8 @@ export async function fetchPublicEcomCommunes(wilayaId: number): Promise<EcomCom
 }
 
 export async function submitWebinarLead(input: WebinarLeadSubmission): Promise<{ already_registered?: boolean; not_eligible?: boolean }> {
-  const result = await invokePublicWebinar<{ already_registered?: boolean; not_eligible?: boolean }>({ ...input });
-  return { already_registered: result.already_registered, not_eligible: result.not_eligible };
+  const result = await invokePublicWebinar<{ already_registered?: boolean; duplicate?: boolean; not_eligible?: boolean }>({ ...input });
+  return { already_registered: result.already_registered ?? result.duplicate, not_eligible: result.not_eligible };
 }
 
 export async function logWebinarCall(input: {
