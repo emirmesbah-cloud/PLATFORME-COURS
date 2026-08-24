@@ -2,6 +2,8 @@ interface Env {
   ASSETS: Fetcher;
 }
 
+// Static SPA gateway. Last deployment verification: 2026-08-24.
+
 const BLOCKED_PATHS = [
   /^\/content\/immigration\/bonus(?:\/|$)/,
   /^\/assets\/.*\.map$/,
