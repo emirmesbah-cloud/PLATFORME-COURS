@@ -53,3 +53,14 @@ test('public lead concurrency controls are atomic database functions', () => {
   assert.match(sql, /ON CONFLICT \(key_hash\) DO UPDATE/);
   assert.match(sql, /pg_advisory_xact_lock/);
 });
+
+test('new webinar leads use a strict atomic closer rotation', () => {
+  const sql = read('../../supabase/migrations/20260825000075_strict_closer_round_robin.sql');
+  assert.match(sql, /webinar_lead_assignment_state/);
+  assert.match(sql, /FOR UPDATE/);
+  assert.match(sql, /OFFSET mod\(v_counter, v_staff_count\)/);
+  assert.match(sql, /ORDER BY s\.created_at, s\.id/);
+  assert.match(sql, /assign_counter = assign_counter \+ 1/);
+  assert.doesNotMatch(sql, /ORDER BY count\(l\.id\)/);
+  assert.doesNotMatch(sql, /l\.status IN/);
+});
