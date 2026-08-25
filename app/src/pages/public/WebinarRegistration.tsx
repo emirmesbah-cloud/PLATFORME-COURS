@@ -36,7 +36,7 @@ const FR = {
   payQuestion: 'Je suis prêt à payer 38 000 DZD (3 millions 800) pour commencer ce programme',
   payYes: 'Oui, je suis prêt', payNo: 'Non, pas maintenant',
   chooseOpt: 'Choisir',
-  submit: 'Envoyer ma demande', submitting: 'Enregistrement…',
+  submit: 'JE COMMANDE', submitting: 'Enregistrement…',
   privacy: 'Tes informations restent privées et utilisées uniquement pour ton suivi.',
   successTitle: 'Merci pour ta réponse',
   successBody: (name: string) => `Merci ${name}. Notre équipe pourra maintenant te contacter pour finaliser ta demande.`,
