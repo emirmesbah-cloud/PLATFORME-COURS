@@ -1,18 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, Loader2, Mail, Lock, UserRoundCheck } from 'lucide-react';
+import { Loader2, Mail, Lock, UserRoundCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { AurelLogo } from '@/components/features/AurelLogo';
 
 export function CloserAccessPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<'login' | 'invite'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inviteSent, setInviteSent] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -20,18 +18,9 @@ export function CloserAccessPage() {
     setError(null);
     const em = email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { setError('Entre une adresse email valide.'); return; }
-    if (mode === 'login' && password.length < 8) { setError('Le mot de passe doit faire au moins 8 caractères.'); return; }
+    if (password.length < 8) { setError('Le mot de passe doit faire au moins 8 caractères.'); return; }
     setBusy(true);
     try {
-      if (mode === 'invite') {
-        // The server never accepts a caller-chosen password. It sends a signed,
-        // expiring Supabase invitation only to an active pre-approved closer.
-        // The generic response intentionally does not reveal staff membership.
-        await supabase.functions.invoke('closer-access', { body: { email: em } });
-        setInviteSent(true);
-        return;
-      }
-
       const { error: signInErr } = await supabase.auth.signInWithPassword({ email: em, password });
       if (signInErr) { setError('Email ou mot de passe incorrect.'); return; }
       navigate('/', { replace: true });
@@ -56,16 +45,9 @@ export function CloserAccessPage() {
               Accès sécurisé aux prospects qui te sont attribués.
             </p>
           </div>
-          <div className="mb-5 grid grid-cols-2 rounded-lg bg-zinc-100 p-1 text-sm font-semibold">
-            <button type="button" className={mode === 'login' ? 'rounded-md bg-white px-3 py-2 shadow-sm' : 'px-3 py-2 text-zinc-500'} onClick={() => { setMode('login'); setError(null); setInviteSent(false); }}>Connexion</button>
-            <button type="button" className={mode === 'invite' ? 'rounded-md bg-white px-3 py-2 shadow-sm' : 'px-3 py-2 text-zinc-500'} onClick={() => { setMode('invite'); setError(null); setInviteSent(false); }}>Première connexion</button>
+          <div className="mb-5 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-center text-sm text-zinc-600">
+            Ton compte est créé uniquement par un administrateur. Utilise l’email et le mot de passe reçus.
           </div>
-          {inviteSent ? (
-            <div className="rounded-card-sm border border-emerald-200 bg-emerald-50 p-4 text-center text-sm text-emerald-800">
-              <CheckCircle2 className="mx-auto mb-2 h-6 w-6" />
-              Si cette adresse est autorisée, un lien sécurisé vient d'être envoyé. Vérifie aussi les spams.
-            </div>
-          ) : (
           <form onSubmit={submit} className="space-y-4">
             <label className="block space-y-1.5">
               <span className="label">Email</span>
@@ -74,18 +56,17 @@ export function CloserAccessPage() {
                 <input className="input pl-9" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ton@email.com" />
               </div>
             </label>
-            {mode === 'login' && <label className="block space-y-1.5">
+            <label className="block space-y-1.5">
               <span className="label">Mot de passe</span>
               <PasswordInput className="input pl-9" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Au moins 8 caractères" leftIcon={<Lock className="h-4 w-4" />} />
-            </label>}
+            </label>
             {error && <div role="alert" className="rounded-card-sm border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
             <button type="submit" className="btn-primary btn-block min-h-[46px]" disabled={busy}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === 'invite' ? <Mail className="h-4 w-4" /> : <UserRoundCheck className="h-4 w-4" />}
-              {mode === 'invite' ? "Recevoir l'invitation" : 'Accéder'}
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserRoundCheck className="h-4 w-4" />}
+              Accéder
             </button>
-            {mode === 'login' && <button type="button" className="w-full text-center text-sm text-zinc-500 hover:text-aurel-orange" onClick={() => navigate('/forgot-password')}>Mot de passe oublié ?</button>}
+            <button type="button" className="w-full text-center text-sm text-zinc-500 hover:text-aurel-orange" onClick={() => navigate('/forgot-password')}>Mot de passe oublié ?</button>
           </form>
-          )}
         </div>
         <p className="mt-5 text-center text-xs text-zinc-400">© 2026 Aurel Academy</p>
       </div>

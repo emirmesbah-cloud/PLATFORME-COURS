@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { SentryErrorBoundary } from '@/lib/sentry';
 import { useAuth } from '@/hooks/useAuth';
-import { fetchAccountingStats, queryKeys } from '@/lib/queries';
+import { fetchAccountingStats, notifyCloserPasswordChanged, queryKeys } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
 import { PasswordInput } from '@/components/ui/PasswordInput';
@@ -79,7 +79,15 @@ export function AdminLayout() {
     try {
       const { error } = await supabase.auth.updateUser({ password: pw });
       if (error) throw error;
-      toast.success('Mot de passe mis à jour.', 'C\'est fait');
+      let emailSent = true;
+      if (profile?.staff_role === 'closer') {
+        try { emailSent = await notifyCloserPasswordChanged(); }
+        catch { emailSent = false; }
+      }
+      toast.success(
+        emailSent ? 'Mot de passe mis à jour. Un email de confirmation a été envoyé.' : 'Mot de passe mis à jour. La notification email sera vérifiable dans Emails.',
+        'C\'est fait',
+      );
       setPw(''); setPwOpen(false);
     } catch { toast.error("Le mot de passe n'a pas pu être changé. Réessaie."); }
     finally { setPwSaving(false); }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Save, UserRoundCheck } from 'lucide-react';
-import { fetchStaffMembers, queryKeys, upsertStaffMember } from '@/lib/queries';
+import { fetchStaffMembers, provisionCloserAccount, queryKeys, upsertStaffMember } from '@/lib/queries';
 import { useToast } from '@/components/ui/Toast';
 
 const EMPTY = { first_name: '', last_name: '', email: '', whatsapp: '', permissions: ['prospects'], tasks: [] as string[], is_active: true };
@@ -27,10 +27,17 @@ export function AdminClosers() {
     setSaving(true);
     try {
       await upsertStaffMember(input);
+      const account = await provisionCloserAccount(input.email);
       await qc.invalidateQueries({ queryKey: queryKeys.adminStaff });
       setDraft(EMPTY);
       setEditingId(null);
-      toast.success('Closer enregistré avec les accès sélectionnés.');
+      if (account.created && account.email_sent) {
+        toast.success('Closer créé. L’email de bienvenue avec le mot de passe provisoire a été envoyé.');
+      } else if (account.created) {
+        toast.info('Compte créé, mais l’email de bienvenue n’a pas pu être confirmé. Vérifie la section Emails.');
+      } else {
+        toast.success('Closer enregistré avec les accès sélectionnés.');
+      }
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Enregistrement impossible.'); }
     finally { setSaving(false); }
   }

@@ -370,6 +370,26 @@ export async function upsertStaffMember(input: Partial<StaffMember> & { first_na
   if (error) throw error;
 }
 
+export async function provisionCloserAccount(email: string): Promise<{ created: boolean; email_sent: boolean }> {
+  const { data, error } = await supabase.functions.invoke('closer-access', {
+    body: { action: 'provision', email: email.trim().toLowerCase() },
+  });
+  if (error) throw error;
+  const result = data as { ok?: boolean; error?: string; created?: boolean; email_sent?: boolean } | null;
+  if (!result?.ok) throw new Error(result?.error || 'PROVISION_FAILED');
+  return { created: !!result.created, email_sent: !!result.email_sent };
+}
+
+export async function notifyCloserPasswordChanged(): Promise<boolean> {
+  const { data, error } = await supabase.functions.invoke('closer-access', {
+    body: { action: 'password-changed' },
+  });
+  if (error) throw error;
+  const result = data as { ok?: boolean; error?: string; email_sent?: boolean } | null;
+  if (!result?.ok) throw new Error(result?.error || 'PASSWORD_NOTIFICATION_FAILED');
+  return !!result.email_sent;
+}
+
 export async function fetchWebinarFormSettings(publicView = false): Promise<WebinarFormSettings> {
   if (publicView) {
     const env = (import.meta as { env: Record<string, string> }).env;
@@ -1141,11 +1161,11 @@ export async function assignWebinarLeadCloser(leadId: string, closerName: string
 // All closer writes go through a narrow security-definer RPC. RLS itself is
 // SELECT-only for closers, so protected fields cannot be changed by crafting a
 // direct PostgREST request outside the UI.
-export async function updateWebinarLeadStatus(leadId: string, status: WebinarLeadStatus): Promise<void> {
+export async function updateWebinarLeadStatus(leadId: string, status: WebinarLeadStatus, note?: string | null): Promise<void> {
   const { error } = await supabase.rpc('staff_update_webinar_lead', {
     p_lead_id: leadId,
     p_status: status,
-    p_note: null,
+    p_note: note?.trim() ? note.trim().slice(0, 2000) : null,
     p_update_note: false,
   });
   if (error) throw error;

@@ -7,12 +7,17 @@ import { dirname, resolve } from 'node:path';
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (relative) => readFileSync(resolve(here, relative), 'utf8');
 
-test('closer onboarding requires a mailbox invitation', () => {
+test('closer onboarding is admin-managed and has no public first-connection flow', () => {
   const source = read('../../supabase/functions/closer-access/index.ts');
-  assert.match(source, /inviteUserByEmail/);
-  assert.doesNotMatch(source, /admin\.createUser/);
-  assert.doesNotMatch(source, /email_confirm\s*:\s*true/);
-  assert.doesNotMatch(source, /payload\?\.password/);
+  const page = read('../src/pages/public/CloserAccess.tsx');
+  const config = read('../../supabase/config.toml');
+  assert.match(source, /callerProfile\?\.is_admin/);
+  assert.match(source, /admin\.auth\.admin\.createUser/);
+  assert.match(source, /CLOSER_DEFAULT_PASSWORD/);
+  assert.match(source, /password-changed/);
+  assert.doesNotMatch(source, /inviteUserByEmail/);
+  assert.doesNotMatch(page, /Première connexion/);
+  assert.match(config, /\[functions\.closer-access\][\s\S]*verify_jwt = true/);
 });
 
 test('closer RLS is read-only and write RPCs are ownership-scoped', () => {
@@ -63,4 +68,18 @@ test('new webinar leads use a strict atomic closer rotation', () => {
   assert.match(sql, /assign_counter = assign_counter \+ 1/);
   assert.doesNotMatch(sql, /ORDER BY count\(l\.id\)/);
   assert.doesNotMatch(sql, /l\.status IN/);
+});
+
+test('closers cannot create sales or mark delivery, and reporting starts 26 August', () => {
+  const sql = read('../../supabase/migrations/20260827000076_closer_access_sales_truth.sql');
+  const ui = read('../src/pages/admin/AdminWebinarLeads.tsx');
+  assert.match(sql, /DROP POLICY IF EXISTS "Closers update assigned lead status and note"/);
+  assert.match(sql, /p_status NOT IN \('to_call', 'nrp', 'callback', 'not_interested', 'confirmed', 'returned'\)/);
+  assert.match(sql, /IF NOT public\.is_admin\(v_uid\) THEN RAISE EXCEPTION 'FORBIDDEN'; END IF;/);
+  assert.match(sql, /2026-08-26 00:00:00\+01/);
+  assert.match(sql, /'actor', CASE WHEN v_is_admin THEN 'admin' ELSE 'closer' END/);
+  assert.match(ui, /CLOSER_STATUS_OPTIONS[\s\S]*value: 'confirmed'/);
+  assert.match(ui, /onCall=\{profile\?\.is_admin/);
+  assert.match(ui, /Mes ventes livrées/);
+  assert.match(ui, /h-6 w-6/);
 });

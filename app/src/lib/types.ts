@@ -486,8 +486,9 @@ export interface CloserPerformanceRow {
 
 export interface CloserPerformance {
   ok: true;
+  from_date?: string;
   closers: CloserPerformanceRow[];
-  totals: { closers: number; assigned: number; calls: number; confirmed: number; cod_delivered: number };
+  totals: { closers: number; assigned: number; calls: number; confirmed: number; delivered: number; cod_delivered: number };
 }
 
 export interface FunnelOverview {

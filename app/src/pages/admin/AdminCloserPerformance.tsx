@@ -11,10 +11,11 @@ function formatDA(value: number): string {
   return `${Math.round(Number(value) || 0).toLocaleString('fr-FR')} DA`;
 }
 
-type SortKey = 'cod_delivered' | 'confirmed' | 'confirmation_rate' | 'calls' | 'assigned';
+type SortKey = 'cod_delivered' | 'delivered' | 'confirmed' | 'confirmation_rate' | 'calls' | 'assigned';
 const SORT_LABEL: Record<SortKey, string> = {
   cod_delivered: 'Revenu livré',
-  confirmed: 'Ventes confirmées',
+  delivered: 'Ventes livrées',
+  confirmed: 'Colis confirmés',
   confirmation_rate: 'Taux de confirmation',
   calls: 'Appels passés',
   assigned: 'Prospects attribués',
@@ -43,6 +44,7 @@ export function AdminCloserPerformance() {
           <p className="mt-1 max-w-3xl text-slate-600">
             Activité <strong>et</strong> résultats par closer : appels, taux de confirmation, livraisons et revenu réellement encaissé.
           </p>
+          <p className="mt-1 text-xs font-medium text-aurel-orange">Comptage opérationnel depuis le 26/08/2026.</p>
         </div>
         <button type="button" className="btn-ghost" onClick={() => perfQ.refetch()} disabled={perfQ.isFetching}>
           <RefreshCw className={cn('h-4 w-4', perfQ.isFetching && 'animate-spin')} /> Actualiser
@@ -53,7 +55,7 @@ export function AdminCloserPerformance() {
         <Kpi icon={Users} label="Closers actifs" value={String(totals?.closers ?? 0)} color="orange" />
         <Kpi icon={UserCheck} label="Prospects attribués" value={String(totals?.assigned ?? 0)} color="orange" />
         <Kpi icon={Phone} label="Appels passés" value={String(totals?.calls ?? 0)} color="orange" />
-        <Kpi icon={Trophy} label="Ventes confirmées" value={String(totals?.confirmed ?? 0)} color="green" />
+        <Kpi icon={Trophy} label="Ventes livrées" value={String(totals?.delivered ?? 0)} color="green" />
         <Kpi icon={Wallet} label="Revenu livré" value={formatDA(totals?.cod_delivered ?? 0)} color="green" />
       </div>
 
@@ -82,7 +84,7 @@ export function AdminCloserPerformance() {
                     <th className="px-4 py-3">Closer</th>
                     <th className="px-4 py-3 text-right">Attribués</th>
                     <th className="px-4 py-3 text-right">Appels</th>
-                    <th className="px-4 py-3">Confirmés · taux</th>
+                    <th className="px-4 py-3">Colis confirmés · taux</th>
                     <th className="px-4 py-3 text-right">Livrés</th>
                     <th className="px-4 py-3 text-right">Retours</th>
                     <th className="px-4 py-3 text-right">Taux livraison</th>

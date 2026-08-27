@@ -107,10 +107,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.closer-access]
-# Public closer self-registration (email + password). No JWT — the visitor has
-# no account yet; gated instead by the staff_members allowlist + one-account
-# guard inside the function.
-verify_jwt = false
+# Admin-managed closer provisioning + authenticated password-change notices.
+# There is no public closer self-registration.
+verify_jwt = true
 
 [functions.webinar-rotate]
 # Public WhatsApp group rotation resolver, called by the WordPress merci page.

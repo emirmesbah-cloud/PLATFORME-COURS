@@ -12,6 +12,7 @@ import { clearSessionBackup } from '@/lib/session-backup';
 import { useToast } from '@/components/ui/Toast';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { AurelLogo } from '@/components/features/AurelLogo';
+import { notifyCloserPasswordChanged } from '@/lib/queries';
 
 /**
  * /reset-password
@@ -140,6 +141,12 @@ export function ResetPasswordPage() {
         }
         return;
       }
+
+      // If this recovery belongs to a closer, send the same immediate security
+      // notice as the in-app password change. Non-closer accounts are ignored
+      // by the server and the password change itself never depends on email.
+      try { await notifyCloserPasswordChanged(); }
+      catch { /* password update already succeeded; email failure is logged server-side */ }
 
       clearPasswordRecoverySession();
       setDone(true);
