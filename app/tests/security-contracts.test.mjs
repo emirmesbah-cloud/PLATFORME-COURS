@@ -97,6 +97,7 @@ test('closers cannot create sales or mark delivery, and reporting covers the ful
 
 test('prospect notes and statuses are kept in a shared scoped timeline', () => {
   const sql = read('../../supabase/migrations/20260827000078_crm_timelines_and_order_history.sql');
+  const backfill = read('../../supabase/migrations/20260827000079_backfill_legacy_crm_notes.sql');
   const ui = read('../src/pages/admin/AdminWebinarLeads.tsx');
   assert.match(sql, /staff_get_webinar_lead_history/);
   assert.match(sql, /can_manage_webinar_lead\(auth\.uid\(\), p_lead_id\)/);
@@ -106,6 +107,9 @@ test('prospect notes and statuses are kept in a shared scoped timeline', () => {
   assert.match(ui, /1er appel/);
   assert.match(ui, /Oui, confirmer/);
   assert.doesNotMatch(ui, />\s*Note\s*</);
+  assert.match(backfill, /source', 'prospect_note'/);
+  assert.match(backfill, /source', 'latest_call_note'/);
+  assert.match(backfill, /NOT EXISTS/);
 });
 
 test('only confirmed prospects become orders and ready-to-ship orders enter history', () => {
