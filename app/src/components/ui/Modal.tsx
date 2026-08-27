@@ -21,6 +21,12 @@ export function Modal({
   // - Initial focus jumps inside the modal so SR users land in the dialog
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  // Callers commonly pass an inline closure. Keep the latest callback in a
+  // ref so typing inside a controlled input does not tear down/recreate the
+  // focus trap on every render (which previously stole focus after 1 letter).
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -44,7 +50,7 @@ export function Modal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -82,7 +88,7 @@ export function Modal({
         try { prev.focus(); } catch { /* element gone */ }
       }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

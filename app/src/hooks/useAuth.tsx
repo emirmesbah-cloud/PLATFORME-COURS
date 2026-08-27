@@ -216,6 +216,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // kick handler can short-circuit when the current user is an admin
   // (without needing to re-subscribe whenever profile changes).
   const isAdminRef = useRef(false);
+  // Staff accounts (admins + closers) are operational accounts and may stay
+  // connected across refreshes/devices until they explicitly sign out.
+  const isStaffRef = useRef(false);
   // R23 race-guard : true ONLY after profileSource hits 'db' at least once.
   // Used by the Realtime kick handler to defer kicks while we're still in
   // stub/cache state and is_admin is unreliable.
@@ -449,13 +452,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const newSid = newRow?.current_session_id;
             if (!newSid) return;
 
-            // R23 : ADMIN MULTI-DEVICE. Admins can stay connected on multiple
-            // devices simultaneously without kicking each other. The kick rule
-            // only applies to students (single-active-session). isAdminRef
-            // mirrors profile.is_admin via the effect further below.
-            if (isAdminRef.current) {
+            // Operational staff accounts stay connected until explicit
+            // logout. Single-active-session kicks apply only to students.
+            if (isStaffRef.current) {
               // eslint-disable-next-line no-console
-              console.info('[Aurel R23] Admin multi-device — skipping kick');
+              console.info('[Aurel] Staff persistent session — skipping kick');
               return;
             }
 
@@ -467,9 +468,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // returned the real is_admin value.
             if (!isAdminConfirmedRef.current) {
               setTimeout(() => {
-                if (isAdminRef.current) {
+                if (isStaffRef.current) {
                   // eslint-disable-next-line no-console
-                  console.info('[Aurel R23] Admin confirmed during defer — skipping deferred kick');
+                  console.info('[Aurel] Staff confirmed during defer — skipping deferred kick');
                   return;
                 }
                 const lsidLater = readLocalSessionId();
@@ -691,8 +692,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // double claim/subscribe si Supabase JS fire SIGNED_IN au restore.
     let lastHandledUserId: string | null = null;
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      // Supabase is the single source of truth for session lifecycle.
-      setSession(newSession);
+      // Do not replace a synchronously hydrated local session with a transient
+      // null INITIAL_SESSION during a slow refresh. SIGNED_OUT remains the
+      // only auth event that clears it; a real refreshed session replaces it.
+      if (newSession) setSession(newSession);
+      else if (event === 'SIGNED_OUT') setSession(null);
 
       // CRITICAL FIX (port from Naim) : INITIAL_SESSION fire au boot quand
       // supabase-js restore une session existante du localStorage. Avant
@@ -815,10 +819,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // authoritative vs still in stub/cache transition.
   useEffect(() => {
     isAdminRef.current = !!profile?.is_admin && (profileSource === 'db' || profileSource === 'cache');
+    isStaffRef.current = (
+      !!profile?.is_admin || profile?.staff_role === 'closer' || profile?.staff_role === 'admin'
+    ) && (profileSource === 'db' || profileSource === 'cache');
     if (profileSource === 'db') {
       isAdminConfirmedRef.current = true;
     }
-  }, [profile?.is_admin, profileSource]);
+  }, [profile?.is_admin, profile?.staff_role, profileSource]);
 
   // SHERLOCK R12 (BULLETPROOF) — removed the periodic verifyLocalSession poll.
   //
@@ -855,7 +862,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // enforcement, so skip the verify_session poll entirely. Otherwise an
       // admin logged in on device A would get strikes when they also log into
       // device B (current_session_id in DB matches B, not A).
-      if (isAdminRef.current) return;
+      if (isStaffRef.current) return;
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       const localSid = readLocalSessionId();
       if (!localSid) return;

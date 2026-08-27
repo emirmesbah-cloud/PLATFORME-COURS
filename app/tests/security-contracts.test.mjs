@@ -28,12 +28,12 @@ test('closer RLS is read-only and write RPCs are ownership-scoped', () => {
   assert.match(sql, /v_lead\.closer_user_id IS DISTINCT FROM v_uid/);
 });
 
-test('legacy closer updates are limited to status and note by a database trigger', () => {
-  const sql = read('../../supabase/migrations/20260824000074_closer_legacy_write_guard.sql');
-  assert.match(sql, /to_jsonb\(NEW\) - ARRAY\['status', 'note', 'updated_at'\]/);
-  assert.match(sql, /OLD\.closer_user_id IS DISTINCT FROM v_uid/);
-  assert.match(sql, /NEW\.closer_user_id IS DISTINCT FROM v_uid/);
-  assert.match(sql, /FOR UPDATE TO authenticated/);
+test('legacy closer trigger is removed and scoped RPC validates notes/follow-ups', () => {
+  const sql = read('../../supabase/migrations/20260827000077_manual_assignment_closer_followup.sql');
+  assert.match(sql, /DROP TRIGGER IF EXISTS webinar_leads_protect_closer_update/);
+  assert.match(sql, /p_status <> 'confirmed' AND v_note IS NULL/);
+  assert.match(sql, /p_status = 'callback' AND p_next_follow_up_at IS NULL/);
+  assert.match(sql, /can_manage_webinar_lead\(v_uid, p_lead_id\)/);
 });
 
 test('student administration excludes closer and admin profiles', () => {
@@ -59,15 +59,25 @@ test('public lead concurrency controls are atomic database functions', () => {
   assert.match(sql, /pg_advisory_xact_lock/);
 });
 
-test('new webinar leads use a strict atomic closer rotation', () => {
-  const sql = read('../../supabase/migrations/20260825000075_strict_closer_round_robin.sql');
-  assert.match(sql, /webinar_lead_assignment_state/);
-  assert.match(sql, /FOR UPDATE/);
-  assert.match(sql, /OFFSET mod\(v_counter, v_staff_count\)/);
-  assert.match(sql, /ORDER BY s\.created_at, s\.id/);
-  assert.match(sql, /assign_counter = assign_counter \+ 1/);
-  assert.doesNotMatch(sql, /ORDER BY count\(l\.id\)/);
-  assert.doesNotMatch(sql, /l\.status IN/);
+test('new webinar leads remain unassigned until an admin attributes them', () => {
+  const sql = read('../../supabase/migrations/20260827000077_manual_assignment_closer_followup.sql');
+  assert.match(sql, /DROP TRIGGER IF EXISTS webinar_leads_auto_assign/);
+  assert.match(sql, /closer assignment is admin-only/);
+});
+
+test('order creation preserves the independent CRM status', () => {
+  const sql = read('../../supabase/migrations/20260827000077_manual_assignment_closer_followup.sql');
+  assert.match(sql, /DROP TRIGGER IF EXISTS delivery_orders_mark_webinar_lead/);
+  assert.match(sql, /crm_status_preserved/);
+  const bulkFunction = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION public.admin_bulk_create_orders'));
+  assert.doesNotMatch(bulkFunction, /SET status = 'in_delivery'/);
+});
+
+test('modal focus trap is stable while controlled fields rerender', () => {
+  const modal = read('../src/components/ui/Modal.tsx');
+  assert.match(modal, /const onCloseRef = useRef\(onClose\)/);
+  assert.match(modal, /\}, \[open\]\);/);
+  assert.doesNotMatch(modal, /\}, \[open, onClose\]\);/);
 });
 
 test('closers cannot create sales or mark delivery, and reporting starts 26 August', () => {

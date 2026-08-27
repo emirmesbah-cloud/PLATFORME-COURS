@@ -1161,12 +1161,18 @@ export async function assignWebinarLeadCloser(leadId: string, closerName: string
 // All closer writes go through a narrow security-definer RPC. RLS itself is
 // SELECT-only for closers, so protected fields cannot be changed by crafting a
 // direct PostgREST request outside the UI.
-export async function updateWebinarLeadStatus(leadId: string, status: WebinarLeadStatus, note?: string | null): Promise<void> {
+export async function updateWebinarLeadStatus(
+  leadId: string,
+  status: WebinarLeadStatus,
+  note?: string | null,
+  nextFollowUpAt?: string | null,
+): Promise<void> {
   const { error } = await supabase.rpc('staff_update_webinar_lead', {
     p_lead_id: leadId,
     p_status: status,
     p_note: note?.trim() ? note.trim().slice(0, 2000) : null,
     p_update_note: false,
+    p_next_follow_up_at: nextFollowUpAt || null,
   });
   if (error) throw error;
 }
