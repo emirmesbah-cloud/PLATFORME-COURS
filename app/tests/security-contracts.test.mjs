@@ -142,3 +142,20 @@ test('closers can read only the E-com status of their assigned prospects', () =>
   assert.match(queries, /statusByLead\.get\(lead\.id\)/);
   assert.match(ui, /function LeadCard[\s\S]*E-com[\s\S]*order\.ecom_situation/);
 });
+
+test('readiness Live destination is a singleton, admin-only replacement with a non-cacheable public redirect', () => {
+  const sql = read('../../supabase/migrations/20260827000081_readiness_live_link.sql');
+  const edge = read('../../supabase/functions/readiness-live/index.ts');
+  const config = read('../../supabase/config.toml');
+  const page = read('../src/pages/admin/AdminReadinessSimulator.tsx');
+
+  assert.match(sql, /id\s+BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK \(id\)/);
+  assert.match(sql, /NOT public\.is_admin\(v_uid\)/);
+  assert.match(sql, /WHERE id = TRUE[\s\S]*RETURNING \* INTO v_row/);
+  assert.match(sql, /readiness_live_url_replaced/);
+  assert.match(edge, /status: 302/);
+  assert.match(edge, /Cache-Control': 'no-store, no-cache/);
+  assert.match(edge, /\.eq\('id', true\)/);
+  assert.match(config, /\[functions\.readiness-live\][\s\S]*verify_jwt = false/);
+  assert.match(page, /L'ancien lien a été remplacé/);
+});

@@ -75,6 +75,7 @@ const AdminCloserPerformance = lazyNamed(() => import('@/pages/admin/AdminCloser
 const AdminFunnelOverview = lazyNamed(() => import('@/pages/admin/AdminFunnelOverview'), 'AdminFunnelOverview');
 const AdminCodHealth = lazyNamed(() => import('@/pages/admin/AdminCodHealth'), 'AdminCodHealth');
 const AdminFormBuilder = lazyNamed(() => import('@/pages/admin/AdminFormBuilder'), 'AdminFormBuilder');
+const AdminReadinessSimulator = lazyNamed(() => import('@/pages/admin/AdminReadinessSimulator'), 'AdminReadinessSimulator');
 
 // Public unsubscribe page — lazy too, rarement utilisée et pas dans le
 // flow auth principal.
@@ -182,6 +183,7 @@ export const routes: RouteObject[] = [
       { path: 'funnel', element: <L><AdminFunnelOverview /></L> },
       { path: 'cod-health', element: <L><AdminCodHealth /></L> },
       { path: 'formulaire', element: <L><AdminFormBuilder /></L> },
+      { path: 'readiness', element: <L><AdminReadinessSimulator /></L> },
     ],
   },
 

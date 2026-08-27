@@ -380,6 +380,13 @@ export interface WebinarFormSettings {
   updated_at: string;
 }
 
+export interface ReadinessSimulatorSettings {
+  id: boolean;
+  live_url: string;
+  updated_at: string;
+  updated_by: string | null;
+}
+
 // ── Webinar prospect CRM (mig 20260817000051) ─────────────────
 export type WebinarLeadStatus =
   | 'new' | 'to_call' | 'nrp' | 'callback' | 'not_interested'

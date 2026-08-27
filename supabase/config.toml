@@ -117,3 +117,8 @@ verify_jwt = true
 # X-Rotate-Secret, so only the merci page can reach it. All counting is atomic
 # server-side via the assign_webinar_group RPC (service_role).
 verify_jwt = false
+
+[functions.readiness-live]
+# Public navigation endpoint. It only reads one server-side URL and responds
+# with a non-cacheable 302; it never exposes write access or secrets.
+verify_jwt = false

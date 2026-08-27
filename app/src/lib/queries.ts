@@ -39,7 +39,7 @@ import type {
   RotationFunnel, RotationLink, RotationState, RotationOverview,
   DeliveryOrder, DeliveryMode, EcomWilaya, EcomCommune, EcomStopdesk,
   EcomOrderHistoryEvent, WebinarLead, WebinarLeadActivity, WebinarLeadStatus,
-  StaffMember, WebinarFormSettings,
+  StaffMember, WebinarFormSettings, ReadinessSimulatorSettings,
 } from './types';
 
 // SHERLOCK R14 — H10 : profile shape côté admin inclut revoked_at + reason
@@ -91,6 +91,7 @@ export const queryKeys = {
   adminWebinarLeads: ['admin', 'webinar_leads'] as const,
   adminStaff: ['admin', 'staff'] as const,
   webinarFormSettings: ['webinar_form_settings'] as const,
+  readinessSimulatorSettings: ['admin', 'readiness_simulator_settings'] as const,
   adminSalesAnalytics: ['admin', 'sales_analytics'] as const,
   adminCloserPerformance: ['admin', 'closer_performance'] as const,
   adminFunnelOverview: ['admin', 'funnel_overview'] as const,
@@ -1126,6 +1127,28 @@ export async function updateDeliveryOrderDestination(input: {
 export async function refreshDeliveryOrder(orderId: string): Promise<DeliveryOrder> {
   const result = await invokeEcom<{ order: DeliveryOrder }>({ action: 'refresh', order_id: orderId });
   return result.order;
+}
+
+export async function fetchReadinessSimulatorSettings(): Promise<ReadinessSimulatorSettings> {
+  const { data, error } = await withQueryTimeout(
+    supabase
+      .from('readiness_simulator_settings')
+      .select('id, live_url, updated_at, updated_by')
+      .eq('id', true)
+      .single(),
+    10000,
+    'fetchReadinessSimulatorSettings',
+  );
+  if (error) throw error;
+  return data as ReadinessSimulatorSettings;
+}
+
+export async function saveReadinessSimulatorLiveUrl(liveUrl: string): Promise<ReadinessSimulatorSettings> {
+  const { data, error } = await supabase.rpc('admin_set_readiness_live_url', {
+    p_live_url: liveUrl,
+  });
+  if (error) throw error;
+  return data as ReadinessSimulatorSettings;
 }
 
 export async function fetchDeliveryOrderHistory(orderId: string): Promise<{ order: DeliveryOrder; history: EcomOrderHistoryEvent[] }> {
