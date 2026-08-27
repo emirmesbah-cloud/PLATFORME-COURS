@@ -126,3 +126,19 @@ test('only confirmed prospects become orders and ready-to-ship orders enter hist
   assert.match(orders, /if \(order\.ecom_confirmed\) return true/);
   assert.match(orders, /déplacé dans Historique des commandes/);
 });
+
+test('closers can read only the E-com status of their assigned prospects', () => {
+  const sql = read('../../supabase/migrations/20260827000080_closer_ecom_status_visibility.sql');
+  const queries = read('../src/lib/queries.ts');
+  const ui = read('../src/pages/admin/AdminWebinarLeads.tsx');
+
+  assert.match(sql, /staff_get_webinar_delivery_statuses/);
+  assert.match(sql, /l\.closer_user_id = auth\.uid\(\)/);
+  assert.match(sql, /has_staff_permission\(auth\.uid\(\), 'prospects'\)/);
+  assert.match(sql, /RETURNS TABLE \([\s\S]*ecom_tracking text,[\s\S]*ecom_situation text/);
+  assert.doesNotMatch(sql, /cod_amount|supplier_notes|address/);
+  assert.match(sql, /REVOKE ALL ON FUNCTION public\.staff_get_webinar_delivery_statuses\(\) FROM PUBLIC/);
+  assert.match(queries, /supabase\.rpc\('staff_get_webinar_delivery_statuses'\)/);
+  assert.match(queries, /statusByLead\.get\(lead\.id\)/);
+  assert.match(ui, /function LeadCard[\s\S]*E-com[\s\S]*order\.ecom_situation/);
+});

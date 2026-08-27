@@ -1144,6 +1144,13 @@ export async function confirmDeliveryOrder(orderId: string): Promise<DeliveryOrd
 
 const LEAD_WITH_DELIVERY = '*, delivery_orders!delivery_orders_webinar_lead_id_fkey(id,ecom_tracking,ecom_situation)';
 
+type WebinarDeliveryStatus = {
+  webinar_lead_id: string;
+  id: string;
+  ecom_tracking: string | null;
+  ecom_situation: string | null;
+};
+
 export async function fetchWebinarLeads(): Promise<WebinarLead[]> {
   const { data, error } = await withQueryTimeout(
     supabase
@@ -1155,7 +1162,39 @@ export async function fetchWebinarLeads(): Promise<WebinarLead[]> {
     'fetchWebinarLeads',
   );
   if (error) throw error;
-  return (data ?? []) as never;
+  const leads = (data ?? []) as unknown as WebinarLead[];
+
+  // delivery_orders is deliberately admin-only through RLS.  Closers receive
+  // only the three display fields below through a scoped SECURITY DEFINER RPC,
+  // then we merge them into the same shape used by the desktop/mobile cards.
+  const { data: deliveryStatuses, error: deliveryStatusError } = await withQueryTimeout(
+    supabase.rpc('staff_get_webinar_delivery_statuses'),
+    15000,
+    'fetchWebinarDeliveryStatuses',
+  );
+
+  // Keep the admin screen operational during a staggered rollout where the app
+  // bundle arrives just before the migration.  Real database errors still fail
+  // loudly; only PostgREST's missing-function cache response uses the legacy
+  // nested result temporarily.
+  if (deliveryStatusError) {
+    if (deliveryStatusError.code === 'PGRST202') return leads;
+    throw deliveryStatusError;
+  }
+
+  const statusByLead = new Map<string, WebinarLead['delivery_orders']>();
+  for (const row of (deliveryStatuses ?? []) as WebinarDeliveryStatus[]) {
+    statusByLead.set(row.webinar_lead_id, [{
+      id: row.id,
+      ecom_tracking: row.ecom_tracking,
+      ecom_situation: row.ecom_situation,
+    }]);
+  }
+
+  return leads.map((lead) => ({
+    ...lead,
+    delivery_orders: statusByLead.get(lead.id) ?? lead.delivery_orders ?? [],
+  }));
 }
 
 // Assign via the RPC so the closer's user id is resolved + stored (RLS scopes
