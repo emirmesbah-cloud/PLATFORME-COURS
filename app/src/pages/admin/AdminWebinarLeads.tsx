@@ -41,12 +41,11 @@ export function AdminWebinarLeads() {
   const [adminViewCloser, setAdminViewCloser] = useState('');
   const isCloser = !!profile && !profile.is_admin;
   const closerExperience = isCloser || (!!profile?.is_admin && !!adminViewCloser);
-  const [quick, setQuick] = useState<'tous' | 'a_appeler' | 'rappels' | 'confirmes'>(isCloser ? 'a_appeler' : 'tous');
   const leads = leadsQ.data ?? [];
   const scopedLeads = useMemo(() => adminViewCloser ? leads.filter((lead) => lead.closer_name === adminViewCloser) : leads, [leads, adminViewCloser]);
   const availableCloserNames = useMemo(() => [...new Set([...activeNames(staffQ.data ?? []), ...leads.map((lead) => lead.closer_name).filter((name): name is string => !!name)])].sort((a, b) => a.localeCompare(b)), [staffQ.data, leads]);
   const availableEcomStatuses = useMemo(() => [...new Set(leads.map((lead) => lead.delivery_orders?.[0]?.ecom_situation).filter((value): value is string => !!value))].sort((a, b) => a.localeCompare(b)), [leads]);
-  const filtered = useMemo(() => { const needle = search.trim().toLowerCase(); const endToday = new Date(); endToday.setHours(23, 59, 59, 999); const endTodayMs = endToday.getTime(); const rows = scopedLeads.filter((lead) => {
+  const filtered = useMemo(() => { const needle = search.trim().toLowerCase(); const rows = scopedLeads.filter((lead) => {
     if (adminViewCloser && lead.closer_name !== adminViewCloser) return false;
     if (closerFilter === '__unassigned' && lead.closer_name) return false;
     if (closerFilter && closerFilter !== '__unassigned' && lead.closer_name !== closerFilter) return false;
@@ -55,13 +54,10 @@ export function AdminWebinarLeads() {
     if (readyFilter === 'yes' && lead.ready_to_pay !== true) return false;
     if (readyFilter === 'no' && lead.ready_to_pay !== false) return false;
     if (readyFilter === 'unknown' && lead.ready_to_pay != null) return false;
-    if (quick === 'a_appeler' && !['new', 'to_call', 'nrp', 'callback'].includes(lead.status)) return false;
-    if (quick === 'confirmes' && !['confirmed', 'in_delivery'].includes(lead.status)) return false;
-    if (quick === 'rappels' && !(lead.next_follow_up_at && new Date(lead.next_follow_up_at).getTime() <= endTodayMs)) return false;
-    if (quick === 'tous' && !(status === 'all' || lead.status === status)) return false;
+    if (!(status === 'all' || lead.status === status)) return false;
     if (needle && ![lead.full_name, lead.phone_raw, lead.email, lead.wilaya_name, lead.commune].some((value) => value.toLowerCase().includes(needle))) return false;
     return true;
-  }); return [...rows].sort((a, b) => { if (sortBy === 'live') { const rank = (v: boolean | null | undefined) => v === true ? 2 : v === false ? 1 : 0; return rank(b.ready_to_pay) - rank(a.ready_to_pay); } if (sortBy === 'closer') return (a.closer_name ?? 'zzzz').localeCompare(b.closer_name ?? 'zzzz'); if (sortBy === 'crm') return a.status.localeCompare(b.status); if (sortBy === 'ecom') return (a.delivery_orders?.[0]?.ecom_situation ?? 'zzzz').localeCompare(b.delivery_orders?.[0]?.ecom_situation ?? 'zzzz'); if (sortBy === 'date_asc') return a.created_at.localeCompare(b.created_at); return b.created_at.localeCompare(a.created_at); }); }, [scopedLeads, search, status, sortBy, quick, adminViewCloser, closerFilter, ecomFilter, readyFilter]);
+  }); return [...rows].sort((a, b) => { if (sortBy === 'live') { const rank = (v: boolean | null | undefined) => v === true ? 2 : v === false ? 1 : 0; return rank(b.ready_to_pay) - rank(a.ready_to_pay); } if (sortBy === 'closer') return (a.closer_name ?? 'zzzz').localeCompare(b.closer_name ?? 'zzzz'); if (sortBy === 'crm') return a.status.localeCompare(b.status); if (sortBy === 'ecom') return (a.delivery_orders?.[0]?.ecom_situation ?? 'zzzz').localeCompare(b.delivery_orders?.[0]?.ecom_situation ?? 'zzzz'); if (sortBy === 'date_asc') return a.created_at.localeCompare(b.created_at); return b.created_at.localeCompare(a.created_at); }); }, [scopedLeads, search, status, sortBy, adminViewCloser, closerFilter, ecomFilter, readyFilter]);
   const stats = useMemo(() => { const endToday = new Date(); endToday.setHours(23, 59, 59, 999); const endTodayMs = endToday.getTime(); return { total: scopedLeads.length, toCall: scopedLeads.filter((lead) => ['new', 'to_call', 'nrp', 'callback'].includes(lead.status)).length, confirmed: scopedLeads.filter((lead) => ['confirmed', 'in_delivery'].includes(lead.status)).length, delivered: scopedLeads.filter((lead) => lead.status === 'delivered').length, rappels: scopedLeads.filter((lead) => lead.next_follow_up_at && new Date(lead.next_follow_up_at).getTime() <= endTodayMs).length }; }, [scopedLeads]);
   // The registered, still-active closers — the single source for attribution, so
   // a call can only be credited to a real team member (no more free-text typos).
@@ -202,25 +198,15 @@ export function AdminWebinarLeads() {
     finally { setSaving(false); }
   }
   async function copyPublicLink() { const url = `${window.location.origin}/inscription-webinar`; try { await navigator.clipboard.writeText(url); toast.success('Lien du formulaire copié.'); } catch { toast.error(`Copie ce lien : ${url}`); } }
-  const quickOptions: { key: typeof quick; label: string }[] = [
-    { key: 'tous', label: `Tous (${scopedLeads.length})` },
-    { key: 'a_appeler', label: `À appeler (${stats.toCall})` },
-    { key: 'rappels', label: `Rappels dus (${stats.rappels})` },
-    { key: 'confirmes', label: `Confirmés (${stats.confirmed})` },
-  ];
-
   return <div className="space-y-6">
     <header className="flex flex-wrap items-end justify-between gap-3"><div><div className="mb-2 flex items-center gap-2 text-aurel-orange"><Video className="h-5 w-5" /><span className="text-sm font-semibold uppercase tracking-wide">Webinar CRM</span></div><h1 className="text-3xl font-bold text-aurel-ink">Prospects & appels</h1><p className="mt-1 text-slate-600">Tous les prospects restent visibles, quel que soit leur ancienneté ou leur statut.</p></div><div className="flex flex-wrap gap-2"><button type="button" className="btn-primary" onClick={copyPublicLink}>Copier le lien <Copy className="h-4 w-4" /></button><a className="btn-outline" href="/inscription-webinar" target="_blank" rel="noreferrer">Voir le formulaire <ExternalLink className="h-4 w-4" /></a></div></header>
-    {profile?.is_admin && <section className="card-padded flex flex-wrap items-center gap-3 border border-aurel-orange/20 bg-orange-50/40"><Eye className="h-5 w-5 text-aurel-orange" /><div className="min-w-56 flex-1"><div className="font-semibold text-zinc-900">Voir en tant que closer</div><div className="text-xs text-zinc-500">Affiche exactement sa liste et masque les actions réservées aux admins.</div></div><select className="input w-full sm:w-72" value={adminViewCloser} onChange={(e) => { setAdminViewCloser(e.target.value); setCloserFilter(''); setQuick(e.target.value ? 'a_appeler' : 'tous'); setSelectedIds(new Set()); }}><option value="">Vue administrateur complète</option>{availableCloserNames.map((name) => <option key={name} value={name}>{name}</option>)}</select></section>}
+    {profile?.is_admin && <section className="card-padded flex flex-wrap items-center gap-3 border border-aurel-orange/20 bg-orange-50/40"><Eye className="h-5 w-5 text-aurel-orange" /><div className="min-w-56 flex-1"><div className="font-semibold text-zinc-900">Voir en tant que closer</div><div className="text-xs text-zinc-500">Affiche exactement sa liste et masque les actions réservées aux admins.</div></div><select className="input w-full sm:w-72" value={adminViewCloser} onChange={(e) => { setAdminViewCloser(e.target.value); setCloserFilter(''); setSelectedIds(new Set()); }}><option value="">Vue administrateur complète</option>{availableCloserNames.map((name) => <option key={name} value={name}>{name}</option>)}</select></section>}
     {adminViewCloser && <div className="rounded-lg border border-aurel-orange bg-aurel-orange/10 px-4 py-3 text-sm font-medium text-aurel-orange">Vue closer active : {adminViewCloser}. Les actions admin sont masquées jusqu’au retour à la vue administrateur.</div>}
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Kpi icon={Users} label={closerExperience ? 'Mes prospects' : 'Prospects qualifiés'} value={stats.total} color="orange" /><Kpi icon={Phone} label="À appeler / rappeler" value={stats.toCall} color="orange" /><Kpi icon={CalendarClock} label="Rappels dus" value={stats.rappels} color={stats.rappels > 0 ? 'red' : 'orange'} /><Kpi icon={UserCheck} label={closerExperience ? 'Mes ventes livrées' : 'Ventes livrées'} value={stats.delivered} color="green" /></div>
     <section className="card overflow-hidden">
-      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-4 pt-4">
-        {quickOptions.map(({ key, label }) => <button key={key} type="button" onClick={() => setQuick(key)} className={cn('rounded-full border px-4 py-1.5 text-sm font-medium transition', quick === key ? 'border-aurel-orange bg-aurel-orange/10 text-aurel-orange' : 'border-zinc-200 text-zinc-600 hover:border-zinc-300', key === 'rappels' && stats.rappels > 0 && quick !== 'rappels' && 'border-red-300 text-red-600')}>{label}</button>)}
-      </div>
       <div className="flex flex-wrap gap-3 border-b border-zinc-200 p-4">
         <label className="relative min-w-64 flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" /><input className="input pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom, WhatsApp, email, wilaya…" /></label>
-        <FilterSelect label="Statut CRM" value={status} onChange={(value) => { setStatus(value as WebinarLeadStatus | 'all'); setQuick('tous'); }}><option value="all">Tous les statuts CRM</option>{FILTER_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FilterSelect>
+        <FilterSelect label="Statut CRM" value={status} onChange={(value) => setStatus(value as WebinarLeadStatus | 'all')}><option value="all">Tous les statuts CRM</option>{FILTER_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FilterSelect>
         {profile?.is_admin && !adminViewCloser && <FilterSelect label="Closer" value={closerFilter} onChange={setCloserFilter}><option value="">Tous les closers</option><option value="__unassigned">Non attribués</option>{availableCloserNames.map((name) => <option key={name} value={name}>{name}</option>)}</FilterSelect>}
         <FilterSelect label="Statut E-com" value={ecomFilter} onChange={setEcomFilter}><option value="">Tous les statuts E-com</option><option value="__none">Sans commande/statut</option>{availableEcomStatuses.map((value) => <option key={value} value={value}>{value}</option>)}</FilterSelect>
         <FilterSelect label="Prêt à payer" value={readyFilter} onChange={(value) => setReadyFilter(value as typeof readyFilter)}><option value="all">Toutes les réponses</option><option value="yes">Oui</option><option value="no">Non</option><option value="unknown">Non renseigné</option></FilterSelect>
