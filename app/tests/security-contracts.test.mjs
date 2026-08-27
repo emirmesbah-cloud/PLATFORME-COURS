@@ -80,16 +80,41 @@ test('modal focus trap is stable while controlled fields rerender', () => {
   assert.doesNotMatch(modal, /\}, \[open, onClose\]\);/);
 });
 
-test('closers cannot create sales or mark delivery, and reporting starts 26 August', () => {
-  const sql = read('../../supabase/migrations/20260827000076_closer_access_sales_truth.sql');
+test('closers cannot create sales or mark delivery, and reporting covers the full assigned history', () => {
+  const sql = read('../../supabase/migrations/20260827000078_crm_timelines_and_order_history.sql');
   const ui = read('../src/pages/admin/AdminWebinarLeads.tsx');
-  assert.match(sql, /DROP POLICY IF EXISTS "Closers update assigned lead status and note"/);
   assert.match(sql, /p_status NOT IN \('to_call', 'nrp', 'callback', 'not_interested', 'confirmed', 'returned'\)/);
   assert.match(sql, /IF NOT public\.is_admin\(v_uid\) THEN RAISE EXCEPTION 'FORBIDDEN'; END IF;/);
-  assert.match(sql, /2026-08-26 00:00:00\+01/);
+  assert.doesNotMatch(sql, /2026-08-26/);
+  assert.match(sql, /WHERE l\.closer_name IS NOT NULL/);
   assert.match(sql, /'actor', CASE WHEN v_is_admin THEN 'admin' ELSE 'closer' END/);
   assert.match(ui, /CLOSER_STATUS_OPTIONS[\s\S]*value: 'confirmed'/);
   assert.match(ui, /onCall=\{profile\?\.is_admin/);
   assert.match(ui, /Mes ventes livrées/);
   assert.match(ui, /h-6 w-6/);
+  assert.doesNotMatch(ui, /key: 'anciens'/);
+});
+
+test('prospect notes and statuses are kept in a shared scoped timeline', () => {
+  const sql = read('../../supabase/migrations/20260827000078_crm_timelines_and_order_history.sql');
+  const ui = read('../src/pages/admin/AdminWebinarLeads.tsx');
+  assert.match(sql, /staff_get_webinar_lead_history/);
+  assert.match(sql, /can_manage_webinar_lead\(auth\.uid\(\), p_lead_id\)/);
+  assert.match(sql, /'call_attempt'/);
+  assert.match(sql, /call_count \+ 1/);
+  assert.match(ui, /LeadHistoryTimeline/);
+  assert.match(ui, /1er appel/);
+  assert.match(ui, /Oui, confirmer/);
+  assert.doesNotMatch(ui, />\s*Note\s*</);
+});
+
+test('only confirmed prospects become orders and ready-to-ship orders enter history', () => {
+  const sql = read('../../supabase/migrations/20260827000078_crm_timelines_and_order_history.sql');
+  const prospects = read('../src/pages/admin/AdminWebinarLeads.tsx');
+  const orders = read('../src/pages/admin/AdminDeliveryOrders.tsx');
+  assert.match(sql, /v_lead\.status <> 'confirmed'/);
+  assert.match(prospects, /ne sont pas encore « Confirmé »/);
+  assert.match(orders, /Historique des commandes/);
+  assert.match(orders, /if \(order\.ecom_confirmed\) return true/);
+  assert.match(orders, /déplacé dans Historique des commandes/);
 });

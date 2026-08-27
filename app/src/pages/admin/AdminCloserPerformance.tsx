@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trophy, Phone, UserCheck, Users, Wallet, RefreshCw, Medal } from 'lucide-react';
 import { fetchCloserPerformance, queryKeys } from '@/lib/queries';
 import { Spinner } from '@/components/ui/Spinner';
 import { ProgressBar } from '@/components/ui/Progress';
 import { cn } from '@/lib/utils';
 import type { CloserPerformanceRow } from '@/lib/types';
+import { supabase } from '@/lib/supabase';
 
 function formatDA(value: number): string {
   return `${Math.round(Number(value) || 0).toLocaleString('fr-FR')} DA`;
@@ -22,8 +23,19 @@ const SORT_LABEL: Record<SortKey, string> = {
 };
 
 export function AdminCloserPerformance() {
-  const perfQ = useQuery({ queryKey: queryKeys.adminCloserPerformance, queryFn: fetchCloserPerformance });
+  const qc = useQueryClient();
+  const perfQ = useQuery({ queryKey: queryKeys.adminCloserPerformance, queryFn: fetchCloserPerformance, refetchInterval: 5_000, refetchOnWindowFocus: 'always' });
   const [sortBy, setSortBy] = useState<SortKey>('cod_delivered');
+
+  useEffect(() => {
+    const invalidate = () => { void qc.invalidateQueries({ queryKey: queryKeys.adminCloserPerformance }); };
+    const channel = supabase.channel('closer-performance-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'webinar_leads' }, invalidate)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'webinar_lead_activities' }, invalidate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'delivery_orders' }, invalidate)
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [qc]);
 
   const rows = useMemo(() => {
     const list = [...(perfQ.data?.closers ?? [])];
@@ -44,7 +56,7 @@ export function AdminCloserPerformance() {
           <p className="mt-1 max-w-3xl text-slate-600">
             Activité <strong>et</strong> résultats par closer : appels, taux de confirmation, livraisons et revenu réellement encaissé.
           </p>
-          <p className="mt-1 text-xs font-medium text-aurel-orange">Comptage opérationnel depuis le 26/08/2026.</p>
+          <p className="mt-1 text-xs font-medium text-aurel-orange">Tous les prospects attribués et tout l’historique sont comptabilisés.</p>
         </div>
         <button type="button" className="btn-ghost" onClick={() => perfQ.refetch()} disabled={perfQ.isFetching}>
           <RefreshCw className={cn('h-4 w-4', perfQ.isFetching && 'animate-spin')} /> Actualiser

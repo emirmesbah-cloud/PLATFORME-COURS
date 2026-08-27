@@ -62,7 +62,7 @@ export function AdminFunnelOverview() {
           <>
             {/* Money + quality tiles */}
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Tile label="Revenu confirmé" value={formatDA(d.cod_confirmed)} sub="commandes confirmées" icon={Wallet} tone="teal" />
+              <Tile label="Revenu probable" value={formatDA(d.cod_confirmed)} sub="commandes créées" icon={Wallet} tone="teal" />
               <Tile label="Revenu livré" value={formatDA(d.cod_delivered)} sub="livré, à encaisser" icon={Wallet} tone="amber" />
               <Tile label="Revenu encaissé" value={formatDA(d.cod_collected)} sub="argent réellement versé" icon={Wallet} tone="green" />
               <Tile label="Taux de retour" value={`${pct(d.returned, d.confirmed)}%`} sub={`${d.returned} retour(s) / confirmés`} icon={TrendingDown} tone="red" />

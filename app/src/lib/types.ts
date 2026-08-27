@@ -333,6 +333,17 @@ export interface DeliveryOrder {
   activation_code?: { code: string } | null;
 }
 
+export interface EcomOrderHistoryEvent {
+  date?: string | null;
+  heure?: string | null;
+  situation?: string | null;
+  etat?: string | null;
+  etat_logistique?: string | null;
+  commentaire?: string | null;
+  note?: string | null;
+  [key: string]: unknown;
+}
+
 export interface StaffMember {
   id: string;
   first_name: string;
@@ -409,6 +420,7 @@ export interface WebinarLeadActivity {
   note: string | null;
   metadata: Record<string, unknown>;
   created_by: string | null;
+  actor_name?: string | null;
   created_at: string;
 }
 

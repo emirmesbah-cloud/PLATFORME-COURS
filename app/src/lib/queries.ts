@@ -38,7 +38,7 @@ import type {
   WebinarGroup, WebinarGroupSlug,
   RotationFunnel, RotationLink, RotationState, RotationOverview,
   DeliveryOrder, DeliveryMode, EcomWilaya, EcomCommune, EcomStopdesk,
-  WebinarLead, WebinarLeadStatus,
+  EcomOrderHistoryEvent, WebinarLead, WebinarLeadActivity, WebinarLeadStatus,
   StaffMember, WebinarFormSettings,
 } from './types';
 
@@ -96,6 +96,8 @@ export const queryKeys = {
   adminFunnelOverview: ['admin', 'funnel_overview'] as const,
   adminCodHealth: ['admin', 'cod_health'] as const,
   webinarLead: (leadId: string) => ['admin', 'webinar_lead', leadId] as const,
+  webinarLeadHistory: (leadId: string) => ['admin', 'webinar_lead_history', leadId] as const,
+  deliveryOrderHistory: (orderId: string) => ['admin', 'delivery_order_history', orderId] as const,
 };
 
 // ── Lessons ────────────────────────────────────────────────────
@@ -1126,6 +1128,11 @@ export async function refreshDeliveryOrder(orderId: string): Promise<DeliveryOrd
   return result.order;
 }
 
+export async function fetchDeliveryOrderHistory(orderId: string): Promise<{ order: DeliveryOrder; history: EcomOrderHistoryEvent[] }> {
+  const result = await invokeEcom<{ order: DeliveryOrder; history?: EcomOrderHistoryEvent[] }>({ action: 'refresh', order_id: orderId });
+  return { order: result.order, history: Array.isArray(result.history) ? result.history : [] };
+}
+
 export async function confirmDeliveryOrder(orderId: string): Promise<DeliveryOrder> {
   const result = await invokeEcom<{ order: DeliveryOrder }>({ action: 'confirm', order_id: orderId });
   return result.order;
@@ -1166,6 +1173,7 @@ export async function updateWebinarLeadStatus(
   status: WebinarLeadStatus,
   note?: string | null,
   nextFollowUpAt?: string | null,
+  callAttempt?: number | null,
 ): Promise<void> {
   const { error } = await supabase.rpc('staff_update_webinar_lead', {
     p_lead_id: leadId,
@@ -1173,6 +1181,7 @@ export async function updateWebinarLeadStatus(
     p_note: note?.trim() ? note.trim().slice(0, 2000) : null,
     p_update_note: false,
     p_next_follow_up_at: nextFollowUpAt || null,
+    p_call_attempt: callAttempt || null,
   });
   if (error) throw error;
 }
@@ -1185,8 +1194,20 @@ export async function updateWebinarLeadNote(leadId: string, note: string): Promi
     p_status: null,
     p_note: note.trim() ? note.trim().slice(0, 2000) : null,
     p_update_note: true,
+    p_next_follow_up_at: null,
+    p_call_attempt: null,
   });
   if (error) throw error;
+}
+
+export async function fetchWebinarLeadHistory(leadId: string): Promise<WebinarLeadActivity[]> {
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('staff_get_webinar_lead_history', { p_lead_id: leadId }),
+    15000,
+    'fetchWebinarLeadHistory',
+  );
+  if (error) throw error;
+  return Array.isArray(data) ? data as WebinarLeadActivity[] : [];
 }
 
 export async function assignWebinarLeadsCloser(leadIds: string[], closerName: string): Promise<void> {

@@ -2,16 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertCircle, CheckCircle2, Clock3, Loader2, PackagePlus,
+  AlertCircle, CheckCircle2, Clock3, History, Loader2, PackagePlus,
   Pencil, RefreshCw, RotateCw, Send, Trash2, Truck,
 } from 'lucide-react';
 import {
   configureEcomWebhook, confirmDeliveryOrder, createDeliveryOrder, fetchDeliveryOrders,
+  fetchDeliveryOrderHistory,
   fetchEcomCommunes, fetchEcomConnection, fetchEcomStopdesks,
   fetchEcomWilayas, fetchWebinarLead, queryKeys, refreshDeliveryOrder, syncDeliveryOrder,
   deleteDeliveryOrder, updateDeliveryOrder, updateDeliveryOrderDestination,
 } from '@/lib/queries';
-import type { Course, DeliveryMode, DeliveryOrder } from '@/lib/types';
+import type { Course, DeliveryMode, DeliveryOrder, EcomOrderHistoryEvent } from '@/lib/types';
+import { supabase } from '@/lib/supabase';
 import { Modal } from '@/components/ui/Modal';
 import { DangerConfirmModal } from '@/components/ui/DangerConfirmModal';
 import { Spinner } from '@/components/ui/Spinner';
@@ -83,11 +85,18 @@ export function AdminDeliveryOrders() {
   const [correctionCommune, setCorrectionCommune] = useState('');
   const [correctionAddress, setCorrectionAddress] = useState('');
   const [savingCorrection, setSavingCorrection] = useState(false);
+  const [listView, setListView] = useState<'active' | 'history'>('active');
+  const [historyOrder, setHistoryOrder] = useState<DeliveryOrder | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const prefillHandledRef = useRef<string | null>(null);
   const requestedLeadId = searchParams.get('lead') ?? '';
 
-  const ordersQ = useQuery({ queryKey: queryKeys.adminDeliveryOrders, queryFn: fetchDeliveryOrders });
+  const ordersQ = useQuery({ queryKey: queryKeys.adminDeliveryOrders, queryFn: fetchDeliveryOrders, refetchInterval: 15_000, refetchOnWindowFocus: 'always' });
+  const historyQ = useQuery({
+    queryKey: queryKeys.deliveryOrderHistory(historyOrder?.id ?? ''),
+    queryFn: () => fetchDeliveryOrderHistory(historyOrder!.id),
+    enabled: !!historyOrder?.ecom_tracking,
+  });
   const connectionQ = useQuery({
     queryKey: queryKeys.ecomConnection,
     queryFn: fetchEcomConnection,
@@ -142,6 +151,17 @@ export function AdminDeliveryOrders() {
     });
     setModalOpen(true);
   }, [leadQ.data]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('delivery-orders-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'delivery_orders' }, () => {
+        void qc.invalidateQueries({ queryKey: queryKeys.adminDeliveryOrders });
+        if (historyOrder?.id) void qc.invalidateQueries({ queryKey: queryKeys.deliveryOrderHistory(historyOrder.id) });
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [historyOrder?.id, qc]);
 
   const selectedWilaya = useMemo(
     () => wilayasQ.data?.find((item) => item.id === form.wilayaId),
@@ -283,7 +303,7 @@ export function AdminDeliveryOrders() {
           ? await refreshDeliveryOrder(order.id)
           : await confirmDeliveryOrder(order.id);
       toast.success(
-        action === 'confirm' ? 'Colis confirmé : prêt à expédier.' : action === 'sync' ? `Tracking ${updated.ecom_tracking} créé.` : 'Statut actualisé.',
+        action === 'confirm' ? 'Colis prêt à expédier : déplacé dans Historique des commandes.' : action === 'sync' ? `Tracking ${updated.ecom_tracking} créé.` : 'Statut actualisé.',
       );
       await qc.invalidateQueries({ queryKey: queryKeys.adminDeliveryOrders });
     } catch (error) {
@@ -342,9 +362,12 @@ export function AdminDeliveryOrders() {
     }
   }
 
-  const orders = ordersQ.data ?? [];
-  const selectableOrders = orders.filter((order) => order.sync_status !== 'syncing');
-  const selectedOrders = orders.filter((order) => selectedOrderIds.has(order.id));
+  const allOrders = ordersQ.data ?? [];
+  const activeOrders = allOrders.filter((order) => !isHistoricalOrder(order));
+  const historicalOrders = allOrders.filter(isHistoricalOrder);
+  const orders = listView === 'active' ? activeOrders : historicalOrders;
+  const selectableOrders = activeOrders.filter((order) => order.sync_status !== 'syncing');
+  const selectedOrders = activeOrders.filter((order) => selectedOrderIds.has(order.id));
   const selectedSendableOrders = selectedOrders.filter((order) => !order.ecom_tracking && order.sync_status !== 'syncing');
   const allSelectableSelected = selectableOrders.length > 0 && selectableOrders.every((order) => selectedOrderIds.has(order.id));
   function toggleAllSelectable() { setSelectedOrderIds(allSelectableSelected ? new Set() : new Set(selectableOrders.map((order) => order.id))); }
@@ -396,8 +419,11 @@ export function AdminDeliveryOrders() {
 
       <section className="card overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 p-5">
-          <h2 className="text-lg font-bold text-aurel-ink">Commandes ({orders.length})</h2>
-          <div className="flex flex-wrap gap-2"><button type="button" className="btn-primary" disabled={!selectedSendableOrders.length || bulkSending || !connectionQ.data?.connected} onClick={() => setConfirmingBulk(true)}><Send className="h-4 w-4" /> Envoyer ({selectedSendableOrders.length})</button><button type="button" className="btn-outline" disabled={selectedOrders.length !== 1 || !!selectedOrders[0]?.ecom_tracking} onClick={editSelected}><Pencil className="h-4 w-4" /> Modifier</button><button type="button" className="btn-outline text-red-600" disabled={!selectedOrderIds.size || bulkDeleting} onClick={() => setConfirmingBulkDelete(true)}><Trash2 className="h-4 w-4" /> Supprimer ({selectedOrderIds.size})</button><button type="button" className="btn-outline text-red-600" disabled={!selectableOrders.length || bulkDeleting} onClick={() => setConfirmingDeleteAll(true)}><Trash2 className="h-4 w-4" /> Tout supprimer ({selectableOrders.length})</button><button type="button" className="btn-ghost" onClick={() => ordersQ.refetch()} disabled={ordersQ.isFetching}>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={cn('rounded-full border px-4 py-1.5 text-sm font-semibold', listView === 'active' ? 'border-aurel-orange bg-aurel-orange/10 text-aurel-orange' : 'border-zinc-200 text-zinc-600')} onClick={() => { setListView('active'); setSelectedOrderIds(new Set()); }}>Commandes ({activeOrders.length})</button>
+            <button type="button" className={cn('rounded-full border px-4 py-1.5 text-sm font-semibold', listView === 'history' ? 'border-aurel-orange bg-aurel-orange/10 text-aurel-orange' : 'border-zinc-200 text-zinc-600')} onClick={() => { setListView('history'); setSelectedOrderIds(new Set()); }}><History className="mr-1 inline h-4 w-4" /> Historique des commandes ({historicalOrders.length})</button>
+          </div>
+          <div className="flex flex-wrap gap-2">{listView === 'active' && <><button type="button" className="btn-primary" disabled={!selectedSendableOrders.length || bulkSending || !connectionQ.data?.connected} onClick={() => setConfirmingBulk(true)}><Send className="h-4 w-4" /> Envoyer ({selectedSendableOrders.length})</button><button type="button" className="btn-outline" disabled={selectedOrders.length !== 1 || !!selectedOrders[0]?.ecom_tracking} onClick={editSelected}><Pencil className="h-4 w-4" /> Modifier</button><button type="button" className="btn-outline text-red-600" disabled={!selectedOrderIds.size || bulkDeleting} onClick={() => setConfirmingBulkDelete(true)}><Trash2 className="h-4 w-4" /> Supprimer ({selectedOrderIds.size})</button><button type="button" className="btn-outline text-red-600" disabled={!selectableOrders.length || bulkDeleting} onClick={() => setConfirmingDeleteAll(true)}><Trash2 className="h-4 w-4" /> Tout supprimer ({selectableOrders.length})</button></>}<button type="button" className="btn-ghost" onClick={() => ordersQ.refetch()} disabled={ordersQ.isFetching}>
             <RefreshCw className={cn('h-4 w-4', ordersQ.isFetching && 'animate-spin')} /> Actualiser
           </button></div>
         </div>
@@ -406,14 +432,14 @@ export function AdminDeliveryOrders() {
             : orders.length === 0 ? (
               <div className="p-10 text-center text-slate-500">
                 <Truck className="mx-auto mb-3 h-10 w-10 text-slate-300" />
-                Aucune commande. La première sera enregistrée ici et envoyée directement à E-com.
+                {listView === 'active' ? 'Aucune commande active. Les nouvelles commandes apparaîtront ici.' : 'Aucune commande dans l’historique.'}
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[980px] text-sm">
                   <thead className="bg-zinc-50 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
                     <tr>
-                      <th className="px-4 py-3"><input type="checkbox" aria-label="Sélectionner toutes les commandes" checked={allSelectableSelected} onChange={toggleAllSelectable} /></th><th className="px-4 py-3">Client</th><th className="px-4 py-3">Destination</th>
+                      <th className="px-4 py-3">{listView === 'active' && <input type="checkbox" aria-label="Sélectionner toutes les commandes" checked={allSelectableSelected} onChange={toggleAllSelectable} />}</th><th className="px-4 py-3">Client</th><th className="px-4 py-3">Destination</th>
                       <th className="px-4 py-3">Produit</th><th className="px-4 py-3">Note</th><th className="px-4 py-3">À encaisser</th>
                       <th className="px-4 py-3">Tracking</th><th className="px-4 py-3">Statut E-com Delivery</th>
                       <th className="px-4 py-3">Créée</th><th className="px-4 py-3 text-right">Actions</th>
@@ -422,7 +448,7 @@ export function AdminDeliveryOrders() {
                   <tbody className="divide-y divide-zinc-100">
                     {orders.map((order) => (
                       <tr key={order.id} className="align-top hover:bg-zinc-50/70">
-                        <td className="px-4 py-3"><input type="checkbox" aria-label={`Sélectionner ${order.customer_name}`} disabled={order.sync_status === 'syncing'} checked={selectedOrderIds.has(order.id)} onChange={() => toggleOrder(order.id)} /></td>
+                        <td className="px-4 py-3">{listView === 'active' && <input type="checkbox" aria-label={`Sélectionner ${order.customer_name}`} disabled={order.sync_status === 'syncing'} checked={selectedOrderIds.has(order.id)} onChange={() => toggleOrder(order.id)} />}</td>
                         <td className="px-4 py-3"><div className="font-semibold text-zinc-900">{order.customer_name}</div><div className="text-xs text-zinc-500">{order.mobile_1}</div></td>
                         <td className="px-4 py-3"><div>{order.wilaya_name}</div><div className="text-xs text-zinc-500">{order.delivery_mode === 'stopdesk' ? `Stopdesk ${order.stopdesk_code}` : order.commune}</div></td>
                         <td className="px-4 py-3"><span className={cn('badge', order.course === 'immigration' ? 'badge-teal' : 'badge-orange')}>{courseLabel(order.course)}</span><div className="mt-1 text-xs text-zinc-500">× {order.quantity}</div></td>
@@ -433,10 +459,16 @@ export function AdminDeliveryOrders() {
                         <td className="px-4 py-3 text-xs text-zinc-500">{formatDateTime(order.created_at)}</td>
                         <td className="px-4 py-3">
                           <div className="flex justify-end gap-1">
-                            {!order.ecom_tracking ? (
+                            {listView === 'history' ? (
+                              <>
+                                {order.ecom_tracking && <button type="button" aria-label="Actualiser le statut" title="Actualiser le statut" className="btn-outline px-2.5 py-1.5" disabled={busyOrder === order.id} onClick={() => runOrderAction(order, 'refresh')}><RotateCw className={cn('h-3.5 w-3.5', busyOrder === order.id && 'animate-spin')} /></button>}
+                                <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" onClick={() => setHistoryOrder(order)}><History className="h-3.5 w-3.5" /> Historique</button>
+                              </>
+                            ) : !order.ecom_tracking ? (
                               <>
                                 <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" disabled={busyOrder === order.id} onClick={() => openEdit(order)}><Pencil className="h-3.5 w-3.5" /> Modifier</button>
                                 <button type="button" aria-label="Supprimer la commande" className="btn-outline px-2.5 py-1.5 text-red-600" disabled={busyOrder === order.id} onClick={() => setDeletingOrder(order)}><Trash2 className="h-3.5 w-3.5" /></button>
+                                <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" onClick={() => setHistoryOrder(order)}><History className="h-3.5 w-3.5" /> Historique</button>
                                 <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" disabled={busyOrder === order.id} onClick={() => runOrderAction(order, 'sync')}>
                                   {busyOrder === order.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Envoyer
                                 </button>
@@ -447,6 +479,7 @@ export function AdminDeliveryOrders() {
                                 <button type="button" aria-label="Actualiser le statut" title="Actualiser le statut" className="btn-outline px-2.5 py-1.5" disabled={busyOrder === order.id} onClick={() => runOrderAction(order, 'refresh')}>
                                   <RotateCw className={cn('h-3.5 w-3.5', busyOrder === order.id && 'animate-spin')} />
                                 </button>
+                                <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" onClick={() => setHistoryOrder(order)}><History className="h-3.5 w-3.5" /> Historique</button>
                                 {!order.ecom_confirmed && (
                                   <button type="button" className="btn-primary px-2.5 py-1.5 text-xs" disabled={busyOrder === order.id} onClick={() => runOrderAction(order, 'confirm')}>
                                     <CheckCircle2 className="h-3.5 w-3.5" /> Confirmer
@@ -540,6 +573,10 @@ export function AdminDeliveryOrders() {
       <DangerConfirmModal open={confirmingDeleteAll} onClose={() => setConfirmingDeleteAll(false)} onConfirm={deleteAllShown} busy={bulkDeleting} count={selectableOrders.length} title="Tout supprimer les commandes ?" description={<span>Supprime <strong>les {selectableOrders.length} commandes affichées</strong> (hors celles en cours de synchronisation), ainsi que leurs colis E-com.</span>} confirmLabel="Tout supprimer" />
       <Modal open={!!deletingOrder} onClose={() => !busyOrder && setDeletingOrder(null)} title="Supprimer la commande ?" maxWidth="max-w-md"><p className="text-zinc-700">Supprimer définitivement la commande de <strong>{deletingOrder?.customer_name}</strong> ?</p><p className="mt-2 text-sm text-zinc-500">{deletingOrder?.ecom_tracking ? `Le colis ${deletingOrder.ecom_tracking} sera supprimé chez E-com avant d’être retiré d’Aurel.` : 'Cette commande locale sera retirée d’Aurel.'}</p><div className="mt-6 flex justify-end gap-2"><button className="btn-outline" disabled={!!busyOrder} onClick={() => setDeletingOrder(null)}>Non</button><button className="btn-primary bg-red-600 hover:bg-red-700" disabled={!!busyOrder} onClick={approveDeleteOrder}>{busyOrder && <Loader2 className="h-4 w-4 animate-spin" />} Oui, supprimer</button></div></Modal>
 
+      <Modal open={!!historyOrder} onClose={() => setHistoryOrder(null)} title={`Historique${historyOrder?.ecom_tracking ? ` — ${historyOrder.ecom_tracking}` : ''}`} maxWidth="max-w-2xl">
+        {historyOrder && <OrderHistoryTimeline order={historyOrder} loading={historyQ.isLoading} error={historyQ.isError} events={historyQ.data?.history ?? []} />}
+      </Modal>
+
       <Modal open={!!editingDestination} onClose={() => !savingCorrection && setEditingDestination(null)} title="Corriger la destination" maxWidth="max-w-xl">
         <div className="space-y-5">
           <div className="rounded-card-sm border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -585,4 +622,34 @@ function OrderStatus({ order }: { order: DeliveryOrder }) {
   if (order.sync_status === 'syncing') return <span className="badge badge-orange"><Loader2 className="h-3 w-3 animate-spin" /> Envoi</span>;
   if (!order.ecom_tracking) return <span className="badge badge-slate"><Clock3 className="h-3 w-3" /> Brouillon</span>;
   return <div><span className={cn('badge', order.ecom_confirmed ? 'badge-green' : 'badge-teal')}>{order.ecom_situation ?? (order.ecom_confirmed ? 'En traitement' : 'En préparation')}</span>{order.ecom_logistics_state && <div className="mt-1 text-[10px] text-zinc-500">{order.ecom_logistics_state}</div>}</div>;
+}
+
+function isHistoricalOrder(order: DeliveryOrder): boolean {
+  if (order.ecom_confirmed) return true;
+  const state = `${order.ecom_situation ?? ''} ${order.ecom_logistics_state ?? ''}`.toLowerCase();
+  return ['livr', 'retour', 'refus', 'annul', 'supprim', 'recouvr'].some((word) => state.includes(word));
+}
+
+function OrderHistoryTimeline({ order, loading, error, events }: { order: DeliveryOrder; loading: boolean; error: boolean; events: EcomOrderHistoryEvent[] }) {
+  if (!order.ecom_tracking) return <div className="space-y-3"><HistoryEntry title="Commande créée dans Aurel" date={order.created_at} detail="Brouillon local — pas encore envoyé à E-com Delivery." /></div>;
+  if (loading) return <Spinner label="Synchronisation de l’historique E-com…" />;
+  if (error) return <div className="rounded-card-sm bg-red-50 p-4 text-sm text-red-700">E-com n’a pas répondu. La commande reste enregistrée dans Aurel.</div>;
+  return <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1">
+    {events.length ? events.map((event, index) => {
+      const title = String(event.situation ?? event.etat_logistique ?? event.etat ?? `Étape ${events.length - index}`);
+      const date = [event.date, event.heure].filter(Boolean).join(' ');
+      const detail = String(event.commentaire ?? event.note ?? event.etat_logistique ?? 'Mise à jour E-com Delivery');
+      return <HistoryEntry key={`${date}-${title}-${index}`} title={title} date={date} detail={detail} />;
+    }) : <div className="rounded-card-sm bg-zinc-50 p-5 text-center text-sm text-zinc-500">E-com n’a retourné aucun événement détaillé. Statut actuel : <strong>{order.ecom_situation ?? order.ecom_logistics_state ?? 'inconnu'}</strong>.</div>}
+    <HistoryEntry title="Commande créée dans Aurel" date={order.created_at} detail={`Référence ${order.external_reference}`} />
+  </div>;
+}
+
+function HistoryEntry({ title, date, detail }: { title: string; date: string; detail: string }) {
+  return <article className="rounded-card-sm border border-zinc-200 bg-white p-4 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-2"><span className="font-semibold text-zinc-900">{title}</span><time className="text-xs text-zinc-400">{date ? formatHistoryDate(date) : 'Date non fournie'}</time></div><p className="mt-2 text-sm text-zinc-600">{detail}</p></article>;
+}
+
+function formatHistoryDate(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : formatDateTime(parsed.toISOString());
 }
