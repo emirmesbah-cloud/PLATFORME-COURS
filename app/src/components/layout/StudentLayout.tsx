@@ -200,7 +200,7 @@ export function StudentLayout() {
         )}
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-10">
+      <main className="mx-auto max-w-7xl px-3 py-5 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-4 md:px-6 md:py-10">
         {/* SHERLOCK R3 fix : per-layout ErrorBoundary. Avant, une erreur dans
             n'importe quel composant route blank l'app entière (header +
             sidebar disparus). Maintenant l'header reste affiché, le user

@@ -79,9 +79,10 @@ export default defineConfig({
         lang: 'fr',
         dir: 'ltr',
         start_url: '/',
+        id: '/',
         scope: '/',
         display: 'standalone',
-        orientation: 'portrait',
+        orientation: 'any',
         theme_color: '#F97316',
         background_color: '#FFFFFF',
         categories: ['education', 'productivity'],
@@ -118,6 +119,7 @@ export default defineConfig({
         // navigateFallback (`NetworkFirst` policy) qui force le réseau
         // d'abord, donc toujours frais.
         globPatterns: ['**/*.{js,css,svg,png,woff2,ico}'],
+        cleanupOutdatedCaches: true,
         // SW prend la main immédiatement après install (pas besoin de reload manuel)
         clientsClaim: true,
         skipWaiting: true,

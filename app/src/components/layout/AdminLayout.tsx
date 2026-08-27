@@ -142,7 +142,7 @@ export function AdminLayout() {
         {/* SIDEBAR — sticky 240px on desktop, drawer on mobile */}
         <aside
           className={cn(
-            'fixed inset-y-0 left-0 z-40 w-60 bg-zinc-50 border-r border-zinc-200 transition-transform md:translate-x-0 md:sticky md:top-0 md:h-screen flex flex-col py-6 px-4',
+            'fixed inset-y-0 left-0 z-40 flex w-[min(20rem,88vw)] flex-col border-r border-zinc-200 bg-zinc-50 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] transition-transform md:sticky md:top-0 md:h-screen md:w-60 md:translate-x-0 md:py-6',
             open ? 'translate-x-0' : '-translate-x-full',
           )}
         >
@@ -172,7 +172,7 @@ export function AdminLayout() {
                       end={item.end}
                       onClick={() => setOpen(false)}
                       className={({ isActive }) => cn(
-                        'flex items-center gap-2.5 rounded-card-sm px-3 py-2 text-[14px] font-medium transition-colors',
+                        'flex min-h-[44px] items-center gap-2.5 rounded-card-sm px-3 py-2 text-[14px] font-medium transition-colors md:min-h-0',
                         isActive
                           ? 'bg-zinc-950 text-white'
                           : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900',
@@ -198,14 +198,14 @@ export function AdminLayout() {
               <>
                 <Link
                   to="/dashboard"
-                  className="flex items-center gap-2 px-3 py-2 rounded-card-sm text-[12px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                  className="flex min-h-[44px] items-center gap-2 rounded-card-sm px-3 py-2 text-[12px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 md:min-h-0"
                   onClick={() => setOpen(false)}
                 >
                   <ArrowLeft className="h-3.5 w-3.5" /> Aperçu étudiant Pflege
                 </Link>
                 <Link
                   to="/immigration"
-                  className="flex items-center gap-2 px-3 py-2 rounded-card-sm text-[12px] font-medium text-aurel-orange-dark hover:bg-aurel-orange-soft"
+                  className="flex min-h-[44px] items-center gap-2 rounded-card-sm px-3 py-2 text-[12px] font-medium text-aurel-orange-dark hover:bg-aurel-orange-soft md:min-h-0"
                   onClick={() => setOpen(false)}
                 >
                   <Plane className="h-3.5 w-3.5" /> Aperçu étudiant Immigration
@@ -215,7 +215,7 @@ export function AdminLayout() {
             <button
               type="button"
               onClick={() => { setPwOpen(true); setOpen(false); }}
-              className="flex w-full items-center gap-2 px-3 py-2 rounded-card-sm text-[12px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+              className="flex min-h-[44px] w-full items-center gap-2 rounded-card-sm px-3 py-2 text-[12px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 md:min-h-0"
             >
               <LockKeyhole className="h-3.5 w-3.5" /> Changer mot de passe
             </button>
@@ -252,7 +252,7 @@ export function AdminLayout() {
 
         {/* MAIN — full width (no max cap) so wide data tables use the whole
             screen instead of overflowing into horizontal scroll. */}
-        <main className="flex-1 min-w-0 px-6 py-6 md:px-10 md:py-8">
+        <main className="min-w-0 flex-1 px-3 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-5 md:px-10 md:py-8">
           <SentryErrorBoundary
             fallback={
               <div className="rounded-card border border-red-200 bg-red-50 p-6 text-center">

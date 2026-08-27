@@ -48,7 +48,7 @@ export function ImmigrationLayout() {
             {isAdmin && (
               <Link
                 to="/admin"
-                className="hidden md:inline-flex items-center gap-1.5 rounded-card-sm px-3 py-2 text-[13px] font-medium text-aurel-teal hover:bg-aurel-teal-soft"
+                className="hidden min-h-[44px] items-center gap-1.5 rounded-card-sm px-3 py-2 text-[13px] font-medium text-aurel-teal hover:bg-aurel-teal-soft md:inline-flex"
               >
                 <Shield className="h-4 w-4" /> Admin
               </Link>
@@ -56,7 +56,7 @@ export function ImmigrationLayout() {
             {isCloser && !isAdmin && (
               <Link
                 to={closerLandingPath(profile?.staff_permissions)}
-                className="inline-flex items-center gap-1.5 rounded-card-sm px-3 py-2 text-[13px] font-medium text-aurel-teal hover:bg-aurel-teal-soft"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-card-sm px-3 py-2 text-[13px] font-medium text-aurel-teal hover:bg-aurel-teal-soft"
               >
                 <UserRoundCheck className="h-4 w-4" /> Closer
               </Link>
@@ -82,7 +82,7 @@ export function ImmigrationLayout() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-6 md:px-6 md:py-10">
+      <main className="mx-auto max-w-5xl px-3 py-5 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-4 md:px-6 md:py-10">
         <SentryErrorBoundary
           key={boundaryKeyRef.current}
           fallback={

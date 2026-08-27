@@ -93,7 +93,7 @@ export function Modal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-end justify-center px-0 pt-[env(safe-area-inset-top)] sm:items-center sm:p-4 animate-fade-in">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} aria-hidden />
       <div
         ref={dialogRef}
@@ -101,19 +101,22 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={cn('relative w-full rounded-xl bg-white shadow-2xl animate-slide-up outline-none', maxWidth)}
+        className={cn(
+          'relative flex max-h-[calc(100dvh-env(safe-area-inset-top))] w-full flex-col rounded-t-2xl bg-white shadow-2xl animate-slide-up outline-none sm:max-h-[calc(100dvh-2rem)] sm:rounded-xl',
+          maxWidth,
+        )}
       >
-        <div className="flex items-start justify-between border-b border-slate-100 p-5">
-          <h3 className="text-lg font-bold text-aurel-ink">{title}</h3>
+        <div className="flex flex-none items-center justify-between border-b border-slate-100 px-4 py-3 sm:p-5">
+          <h3 className="pr-3 text-base font-bold leading-snug text-aurel-ink sm:text-lg">{title}</h3>
           {/* SHERLOCK R14 — M13 : type="button" pour éviter que ce close button
               soit interprété comme submit dans un parent <form> (Modal est
               utilisé dans plusieurs forms admin — sans type explicite, un
               click sur la X submit le form silencieusement). */}
-          <button type="button" onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="Fermer">
+          <button type="button" onClick={onClose} className="inline-flex min-h-[44px] min-w-[44px] flex-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="Fermer">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto p-5">{children}</div>
+        <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">{children}</div>
       </div>
     </div>
   );

@@ -3,14 +3,25 @@
 @tailwind utilities;
 
 @layer base {
-  html { -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
   body {
     /* Linear Tech direction : Geist primary. Falls back gracefully if not loaded. */
     font-family: 'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     color: #18181B;
     background: #FFFFFF;
     font-feature-settings: 'cv11', 'ss01';
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
   }
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   /* Tabular numbers wherever we display data (stats, money, scores). */
   .tabular { font-variant-numeric: tabular-nums; }
   /* Keep Georgia italic fallback for places that want a serif accent (legacy). */
@@ -119,6 +130,21 @@
   .section-title {
     @apply text-[24px] font-semibold tracking-tight text-zinc-900;
   }
+
+  /* Data-heavy admin screens stay swipeable without moving the whole page. */
+  .mobile-scroll-x {
+    @apply overflow-x-auto overscroll-x-contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+  }
+}
+
+@media (max-width: 767px) {
+  /* 16px prevents Safari from zooming and losing the user's place in a form. */
+  input, select, textarea { font-size: 16px !important; }
+  .btn, .input { min-height: 44px; }
+  .card-padded { padding: 1rem; }
+  .section-title { font-size: 1.25rem; line-height: 1.75rem; }
 }
 
 /* Pulse dot for "live" indicators (used in admin dashboard) */

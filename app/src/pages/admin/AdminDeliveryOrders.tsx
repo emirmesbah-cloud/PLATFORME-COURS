@@ -382,10 +382,10 @@ export function AdminDeliveryOrders() {
             <Truck className="h-5 w-5" />
             <span className="text-sm font-semibold uppercase tracking-wide">Ventes physiques</span>
           </div>
-          <h1 className="text-3xl font-bold text-aurel-ink">Commandes & livraison</h1>
-          <p className="mt-1 text-slate-600">Saisis une seule fois : Aurel enregistre la vente et crée le colis chez E-com Delivery.</p>
+          <h1 className="text-2xl font-bold text-aurel-ink sm:text-3xl">Commandes & livraison</h1>
+          <p className="mt-1 text-sm text-slate-600 sm:text-base">Saisis une seule fois : Aurel enregistre la vente et crée le colis chez E-com Delivery.</p>
         </div>
-        <button type="button" onClick={resetAndOpen} className="btn-primary btn-lg">
+        <button type="button" onClick={resetAndOpen} className="btn-primary btn-lg w-full sm:w-auto">
           <PackagePlus className="h-4 w-4" /> Nouvelle commande
         </button>
       </header>
@@ -418,10 +418,10 @@ export function AdminDeliveryOrders() {
       </div>
 
       <section className="card overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 p-5">
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className={cn('rounded-full border px-4 py-1.5 text-sm font-semibold', listView === 'active' ? 'border-aurel-orange bg-aurel-orange/10 text-aurel-orange' : 'border-zinc-200 text-zinc-600')} onClick={() => { setListView('active'); setSelectedOrderIds(new Set()); }}>Commandes ({activeOrders.length})</button>
-            <button type="button" className={cn('rounded-full border px-4 py-1.5 text-sm font-semibold', listView === 'history' ? 'border-aurel-orange bg-aurel-orange/10 text-aurel-orange' : 'border-zinc-200 text-zinc-600')} onClick={() => { setListView('history'); setSelectedOrderIds(new Set()); }}><History className="mr-1 inline h-4 w-4" /> Historique des commandes ({historicalOrders.length})</button>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 p-4 sm:p-5">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+            <button type="button" className={cn('min-h-[44px] rounded-full border px-3 py-1.5 text-xs font-semibold sm:px-4 sm:text-sm', listView === 'active' ? 'border-aurel-orange bg-aurel-orange/10 text-aurel-orange' : 'border-zinc-200 text-zinc-600')} onClick={() => { setListView('active'); setSelectedOrderIds(new Set()); }}>Commandes ({activeOrders.length})</button>
+            <button type="button" className={cn('min-h-[44px] rounded-full border px-3 py-1.5 text-xs font-semibold sm:px-4 sm:text-sm', listView === 'history' ? 'border-aurel-orange bg-aurel-orange/10 text-aurel-orange' : 'border-zinc-200 text-zinc-600')} onClick={() => { setListView('history'); setSelectedOrderIds(new Set()); }}><History className="mr-1 inline h-4 w-4" /> Historique ({historicalOrders.length})</button>
           </div>
           <div className="flex flex-wrap gap-2">{listView === 'active' && <><button type="button" className="btn-primary" disabled={!selectedSendableOrders.length || bulkSending || !connectionQ.data?.connected} onClick={() => setConfirmingBulk(true)}><Send className="h-4 w-4" /> Envoyer ({selectedSendableOrders.length})</button><button type="button" className="btn-outline" disabled={selectedOrders.length !== 1 || !!selectedOrders[0]?.ecom_tracking} onClick={editSelected}><Pencil className="h-4 w-4" /> Modifier</button><button type="button" className="btn-outline text-red-600" disabled={!selectedOrderIds.size || bulkDeleting} onClick={() => setConfirmingBulkDelete(true)}><Trash2 className="h-4 w-4" /> Supprimer ({selectedOrderIds.size})</button><button type="button" className="btn-outline text-red-600" disabled={!selectableOrders.length || bulkDeleting} onClick={() => setConfirmingDeleteAll(true)}><Trash2 className="h-4 w-4" /> Tout supprimer ({selectableOrders.length})</button></>}<button type="button" className="btn-ghost" onClick={() => ordersQ.refetch()} disabled={ordersQ.isFetching}>
             <RefreshCw className={cn('h-4 w-4', ordersQ.isFetching && 'animate-spin')} /> Actualiser
@@ -435,7 +435,11 @@ export function AdminDeliveryOrders() {
                 {listView === 'active' ? 'Aucune commande active. Les nouvelles commandes apparaîtront ici.' : 'Aucune commande dans l’historique.'}
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+                <div className="divide-y divide-zinc-200 md:hidden">
+                  {orders.map((order) => <OrderMobileCard key={order.id} order={order} listView={listView} selected={selectedOrderIds.has(order.id)} busy={busyOrder === order.id} onToggle={() => toggleOrder(order.id)} onEdit={() => openEdit(order)} onDelete={() => setDeletingOrder(order)} onHistory={() => setHistoryOrder(order)} onAction={(action) => runOrderAction(order, action)} />)}
+                </div>
+                <div className="mobile-scroll-x hidden md:block">
                 <table className="w-full min-w-[980px] text-sm">
                   <thead className="bg-zinc-50 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
                     <tr>
@@ -493,7 +497,8 @@ export function AdminDeliveryOrders() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </>
             )}
       </section>
 
@@ -611,6 +616,39 @@ export function AdminDeliveryOrders() {
       </Modal>
     </div>
   );
+}
+
+function OrderMobileCard({ order, listView, selected, busy, onToggle, onEdit, onDelete, onHistory, onAction }: { order: DeliveryOrder; listView: 'active' | 'history'; selected: boolean; busy: boolean; onToggle: () => void; onEdit: () => void; onDelete: () => void; onHistory: () => void; onAction: (action: 'sync' | 'refresh' | 'confirm') => void }) {
+  return <article className="space-y-3 p-4">
+    <div className="flex items-start gap-3">
+      {listView === 'active' && <label className="-m-2 inline-flex min-h-[44px] min-w-[44px] flex-none items-center justify-center p-2"><input type="checkbox" className="h-7 w-7 rounded border-2 border-zinc-400 accent-aurel-orange" aria-label={`Sélectionner ${order.customer_name}`} disabled={order.sync_status === 'syncing'} checked={selected} onChange={onToggle} /></label>}
+      <div className="min-w-0 flex-1"><div className="break-words font-semibold text-zinc-950">{order.customer_name}</div><a href={`tel:${order.mobile_1}`} className="mt-0.5 inline-block text-sm font-medium text-aurel-teal">{order.mobile_1}</a><div className="mt-1 text-xs text-zinc-500">{order.wilaya_name} · {order.delivery_mode === 'stopdesk' ? `Stopdesk ${order.stopdesk_code}` : order.commune}</div></div>
+      <OrderStatus order={order} />
+    </div>
+    <div className="grid grid-cols-2 gap-3 rounded-lg bg-zinc-50 p-3 text-xs">
+      <div><div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Produit</div><span className={cn('badge', order.course === 'immigration' ? 'badge-teal' : 'badge-orange')}>{courseLabel(order.course)}</span><div className="mt-1 text-zinc-500">× {order.quantity}</div></div>
+      <div><div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">À encaisser</div><div className="text-base font-bold tabular text-zinc-950">{Number(order.cod_amount).toLocaleString('fr-FR')} DA</div></div>
+      <div><div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Tracking</div><div className="break-all font-mono text-zinc-700">{order.ecom_tracking ?? 'Pas encore envoyé'}</div><div className="mt-1 break-all text-[10px] text-zinc-400">{order.external_reference}</div></div>
+      <div><div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Créée</div><div className="text-zinc-600">{formatDateTime(order.created_at)}</div></div>
+    </div>
+    <div className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-700">{DELIVERY_NOTE}</div>
+    <div className="grid grid-cols-2 gap-2">
+      {listView === 'history' ? <>
+        {order.ecom_tracking && <button type="button" className="btn-outline" disabled={busy} onClick={() => onAction('refresh')}><RotateCw className={cn('h-4 w-4', busy && 'animate-spin')} /> Actualiser</button>}
+        <button type="button" className="btn-outline" onClick={onHistory}><History className="h-4 w-4" /> Historique</button>
+      </> : !order.ecom_tracking ? <>
+        <button type="button" className="btn-outline" disabled={busy} onClick={onEdit}><Pencil className="h-4 w-4" /> Modifier</button>
+        <button type="button" className="btn-outline text-red-600" disabled={busy} onClick={onDelete}><Trash2 className="h-4 w-4" /> Supprimer</button>
+        <button type="button" className="btn-outline" onClick={onHistory}><History className="h-4 w-4" /> Historique</button>
+        <button type="button" className="btn-primary" disabled={busy} onClick={() => onAction('sync')}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Envoyer</button>
+      </> : <>
+        <button type="button" className="btn-outline text-red-600" disabled={busy} onClick={onDelete}><Trash2 className="h-4 w-4" /> Supprimer</button>
+        <button type="button" className="btn-outline" disabled={busy} onClick={() => onAction('refresh')}><RotateCw className={cn('h-4 w-4', busy && 'animate-spin')} /> Actualiser</button>
+        <button type="button" className="btn-outline" onClick={onHistory}><History className="h-4 w-4" /> Historique</button>
+        {!order.ecom_confirmed && <button type="button" className="btn-primary" disabled={busy} onClick={() => onAction('confirm')}><CheckCircle2 className="h-4 w-4" /> Confirmer</button>}
+      </>}
+    </div>
+  </article>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
