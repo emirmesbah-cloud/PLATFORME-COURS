@@ -94,6 +94,9 @@ test('closers cannot create sales or mark delivery, and reporting covers the ful
   assert.match(ui, /h-6 w-6/);
   assert.doesNotMatch(ui, /key: 'anciens'/);
   assert.doesNotMatch(ui, /quickOptions|setQuick\(/);
+  assert.match(ui, /Appel WhatsApp/);
+  assert.match(ui, /Appel téléphonique/);
+  assert.match(ui, /href=\{`tel:\$\{internationalPhone/);
 });
 
 test('prospect notes and statuses are kept in a shared scoped timeline', () => {
