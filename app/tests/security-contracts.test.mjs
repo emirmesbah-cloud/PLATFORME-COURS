@@ -159,3 +159,12 @@ test('readiness Live destination is a singleton, admin-only replacement with a n
   assert.match(config, /\[functions\.readiness-live\][\s\S]*verify_jwt = false/);
   assert.match(page, /L'ancien lien a été remplacé/);
 });
+
+test('retired webinar groups immediately lose every sticky assignment', () => {
+  const sql = read('../../supabase/migrations/20260827000082_retired_webinar_groups_stop_immediately.sql');
+
+  assert.match(sql, /AFTER UPDATE OF status ON public\.webinar_rotation_links/);
+  assert.match(sql, /NEW\.status = 'retired'/);
+  assert.match(sql, /DELETE FROM public\.webinar_rotation_stickies[\s\S]*WHERE link_id = NEW\.id/);
+  assert.match(sql, /DELETE FROM public\.webinar_rotation_stickies s[\s\S]*l\.status = 'retired'/);
+});
