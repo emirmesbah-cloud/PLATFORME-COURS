@@ -70,10 +70,28 @@ serve(async (req) => {
     situation: payload.situation ? String(payload.situation).slice(0, 200) : null,
     payload,
   });
-  if (insertError?.code === '23505') return json({ ok: true, duplicate: true });
+  if (insertError?.code === '23505') {
+    const { data: existing, error: existingError } = await admin
+      .from('ecom_webhook_events')
+      .select('processed_at')
+      .eq('event_id', eventId)
+      .maybeSingle();
+    if (existingError) {
+      await reportError(existingError, { function: 'ecom-webhook', extra: { event_id: eventId, tracking } });
+      return json({ ok: false, error: 'EVENT_RELOAD_FAILED' }, 500);
+    }
+    // A completed duplicate is idempotent. An unprocessed/failed duplicate is
+    // deliberately replayed so a transient DB error or tracking race recovers.
+    if (existing?.processed_at) return json({ ok: true, duplicate: true });
+    await admin.from('ecom_webhook_events').update({ processing_error: null }).eq('event_id', eventId);
+  }
   if (insertError) {
-    await reportError(insertError, { function: 'ecom-webhook', extra: { event_id: eventId, tracking } });
-    return json({ ok: false, error: 'EVENT_STORE_FAILED' }, 500);
+    if (insertError.code === '23505') {
+      // handled above: retry the unfinished event
+    } else {
+      await reportError(insertError, { function: 'ecom-webhook', extra: { event_id: eventId, tracking } });
+      return json({ ok: false, error: 'EVENT_STORE_FAILED' }, 500);
+    }
   }
 
   const occurredAt = payload.date ? new Date(String(payload.date)) : new Date(timestamp * 1000);
@@ -102,33 +120,51 @@ serve(async (req) => {
     return json({ ok: false, error: 'ORDER_UPDATE_FAILED' }, 500);
   }
 
-  const situationId = Number(payload.id_situation);
-  const leadStatus = situationId === 7
-    ? 'delivered'
-    : [5, 6, 18].includes(situationId)
-      ? 'returned'
-      : null;
+  if ((updated ?? []).length === 0) {
+    const unmatchedError = 'ORDER_NOT_FOUND_FOR_TRACKING';
+    await admin.from('ecom_webhook_events').update({ processing_error: unmatchedError }).eq('event_id', eventId);
+    // A creation webhook can beat the local write of its new tracking by a few
+    // milliseconds. Keep it pending; ecom-delivery replays it after saving the
+    // tracking. Acknowledge it so unrelated historical E-com parcels do not
+    // create an infinite provider retry storm.
+    return json({ ok: true, pending: true }, 202);
+  }
+
   const leadIds = (updated ?? [])
     .map((order) => order.webinar_lead_id as string | null)
     .filter((id): id is string => Boolean(id));
-  if (leadStatus && leadIds.length > 0) {
-    const { error: leadError } = await admin
+  if (leadIds.length > 0) {
+    // E-com status and CRM status are intentionally independent. Delivery
+    // webhooks are visible in the shared history, but only an admin action may
+    // mark a prospect Livré/Retourné in the CRM.
+    const { data: leads, error: leadError } = await admin
       .from('webinar_leads')
-      .update({ status: leadStatus })
+      .select('id, status')
       .in('id', leadIds);
     if (leadError) {
+      await admin.from('ecom_webhook_events').update({ processing_error: leadError.message }).eq('event_id', eventId);
       await reportError(leadError, { function: 'ecom-webhook', extra: { event_id: eventId, tracking } });
+      return json({ ok: false, error: 'LEAD_RELOAD_FAILED' }, 500);
     } else {
-      await admin.from('webinar_lead_activities').insert(leadIds.map((leadId) => ({
-        lead_id: leadId,
+      const { error: activityError } = await admin.from('webinar_lead_activities').upsert((leads ?? []).map((lead) => ({
+        lead_id: lead.id,
         activity_type: 'delivery',
-        status: leadStatus,
-        note: payload.situation ? String(payload.situation).slice(0, 200) : leadStatus,
-        metadata: { event_id: eventId, tracking, id_situation: situationId },
-      })));
+        status: lead.status,
+        note: payload.situation ? String(payload.situation).slice(0, 200) : 'Mise à jour E-com',
+        source_event_id: eventId,
+        metadata: { event_id: eventId, tracking, id_situation: Number(payload.id_situation), source: 'ecom_webhook' },
+      })), { onConflict: 'source_event_id', ignoreDuplicates: true });
+      if (activityError) {
+        await admin.from('ecom_webhook_events').update({ processing_error: activityError.message }).eq('event_id', eventId);
+        await reportError(activityError, { function: 'ecom-webhook', extra: { event_id: eventId, tracking } });
+        return json({ ok: false, error: 'LEAD_ACTIVITY_STORE_FAILED' }, 500);
+      }
     }
   }
 
-  await admin.from('ecom_webhook_events').update({ processed_at: new Date().toISOString() }).eq('event_id', eventId);
+  await admin.from('ecom_webhook_events').update({
+    processed_at: new Date().toISOString(),
+    processing_error: null,
+  }).eq('event_id', eventId);
   return json({ ok: true, matched: (updated ?? []).length > 0 });
 });

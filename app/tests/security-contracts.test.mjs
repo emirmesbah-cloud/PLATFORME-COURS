@@ -13,7 +13,9 @@ test('closer onboarding is admin-managed and has no public first-connection flow
   const config = read('../../supabase/config.toml');
   assert.match(source, /callerProfile\?\.is_admin/);
   assert.match(source, /admin\.auth\.admin\.createUser/);
-  assert.match(source, /CLOSER_DEFAULT_PASSWORD/);
+  assert.match(source, /randomBootstrapPassword/);
+  assert.match(source, /generateLink\(\{[\s\S]*type: 'recovery'/);
+  assert.doesNotMatch(source, /CLOSER_DEFAULT_PASSWORD|aurel2026/);
   assert.match(source, /password-changed/);
   assert.doesNotMatch(source, /inviteUserByEmail/);
   assert.doesNotMatch(page, /Première connexion/);
@@ -57,6 +59,57 @@ test('public lead concurrency controls are atomic database functions', () => {
   assert.match(edge, /service_insert_webinar_lead/);
   assert.match(sql, /ON CONFLICT \(key_hash\) DO UPDATE/);
   assert.match(sql, /pg_advisory_xact_lock/);
+  assert.match(edge, /WEBINAR_RATE_LIMIT_MAX[\s\S]*'0'/);
+  assert.match(edge, /WEBINAR_ALLOW_DUPLICATES[\s\S]*'true'/);
+});
+
+test('E-com writes are recoverable, idempotent and preserve independent CRM status', () => {
+  const bridge = read('../../supabase/functions/ecom-delivery/index.ts');
+  const webhook = read('../../supabase/functions/ecom-webhook/index.ts');
+  const sql = read('../../supabase/migrations/20260902000084_ecom_idempotency_and_soft_delete.sql');
+
+  assert.match(sql, /claim_delivery_order_sync/);
+  assert.match(sql, /ecom_sync_attempts/);
+  assert.match(sql, /deleted_at timestamptz/);
+  assert.match(bridge, /status: 'succeeded', tracking: line\.tracking/);
+  assert.match(bridge, /Recover a parcel that E-com accepted/);
+  assert.match(bridge, /replayPendingWebhookEvents/);
+  assert.match(webhook, /source_event_id: eventId/);
+  assert.match(webhook, /CRM status are intentionally independent/);
+  assert.doesNotMatch(webhook, /\.from\('webinar_leads'\)[\s\S]{0,120}\.update\(\{ status:/);
+});
+
+test('privileged staff fields and VdoCipher OTP issuance are server protected', () => {
+  const sql = read('../../supabase/migrations/20260902000083_progress_roles_and_crm_safety.sql');
+  const ecomSql = read('../../supabase/migrations/20260902000084_ecom_idempotency_and_soft_delete.sql');
+  const otp = read('../../supabase/functions/vdocipher-otp/index.ts');
+  assert.match(sql, /NEW\.staff_role IS DISTINCT FROM OLD\.staff_role/);
+  assert.match(sql, /NEW\.staff_permissions IS DISTINCT FROM OLD\.staff_permissions/);
+  assert.match(ecomSql, /consume_vdocipher_otp_rate_limit/);
+  assert.match(ecomSql, /RETURN v_count <= 20/);
+  assert.match(otp, /consume_vdocipher_otp_rate_limit/);
+});
+
+test('large CRM collections are fetched page by page', () => {
+  const queries = read('../src/lib/queries.ts');
+  assert.match(queries, /fetchAdminCodes[\s\S]*for \(let from = 0; ; from \+= pageSize\)/);
+  assert.match(queries, /fetchAllStudents[\s\S]*for \(let from = 0; ; from \+= pageSize\)/);
+  assert.match(queries, /fetchDeliveryOrders[\s\S]*for \(let from = 0; ; from \+= pageSize\)/);
+  assert.match(queries, /fetchWebinarLeads[\s\S]*for \(let from = 0; ; from \+= pageSize\)/);
+  assert.doesNotMatch(queries, /fetchDeliveryOrders[\s\S]{0,500}\.limit\(500\)/);
+});
+
+test('production deploys are ordered behind CI and migrations', () => {
+  const migrations = read('../../.github/workflows/deploy-migrations.yml');
+  const functions = read('../../.github/workflows/deploy-edge-functions.yml');
+  const vite = read('../vite.config.ts');
+  const sentry = read('../src/lib/sentry.ts');
+  assert.match(migrations, /workflow_run:[\s\S]*workflows: \[CI\]/);
+  assert.match(migrations, /workflow_run\.conclusion == 'success'/);
+  assert.match(functions, /workflow_run:[\s\S]*workflows: \[Deploy Migrations\]/);
+  assert.match(functions, /workflow_run\.conclusion == 'success'/);
+  assert.match(vite, /GITHUB_SHA[\s\S]*LOCAL_GIT_SHA/);
+  assert.match(sentry, /aurel-academy@\$\{__BUILD_VERSION__\}/);
 });
 
 test('new webinar leads remain unassigned until an admin attributes them', () => {

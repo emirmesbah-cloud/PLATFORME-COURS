@@ -2,11 +2,22 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 // Build version pour cache busting cross-browser (lib/version-check.ts)
+let LOCAL_GIT_SHA = '';
+try {
+  LOCAL_GIT_SHA = execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
+} catch {
+  // Source archives may not include .git; the timestamp remains a safe fallback.
+}
 const BUILD_VERSION = process.env.VITE_BUILD_VERSION
   || process.env.GITHUB_SHA
   || process.env.CF_PAGES_COMMIT_SHA
+  || LOCAL_GIT_SHA
   || new Date().toISOString();
 
 // SHERLOCK R13 — C1: derive the Supabase host from env at build time so the

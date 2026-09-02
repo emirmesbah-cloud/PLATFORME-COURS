@@ -7,6 +7,54 @@ import { useAuth } from '@/hooks/useAuth';
 import type { Lesson } from '@/lib/types';
 import { Spinner } from '@/components/ui/Spinner';
 
+type VdoPlayerInstance = {
+  video: {
+    currentTime: number;
+    addEventListener: (name: string, handler: () => void) => void;
+    removeEventListener: (name: string, handler: () => void) => void;
+  };
+  api: { getTotalPlayed: () => Promise<number> };
+};
+
+declare global {
+  interface Window {
+    VdoPlayer?: { getInstance: (iframe: HTMLIFrameElement) => VdoPlayerInstance };
+  }
+}
+
+let vdoApiPromise: Promise<void> | null = null;
+
+function loadVdoPlayerApi(): Promise<void> {
+  if (window.VdoPlayer) return Promise.resolve();
+  if (vdoApiPromise) return vdoApiPromise;
+
+  vdoApiPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-aurel-vdocipher-api]');
+    const script = existing ?? document.createElement('script');
+    const timeout = window.setTimeout(() => reject(new Error('VDOCIPHER_API_TIMEOUT')), 10_000);
+    const ready = () => {
+      window.clearTimeout(timeout);
+      if (window.VdoPlayer) resolve();
+      else reject(new Error('VDOCIPHER_API_UNAVAILABLE'));
+    };
+    script.addEventListener('load', ready, { once: true });
+    script.addEventListener('error', () => {
+      window.clearTimeout(timeout);
+      reject(new Error('VDOCIPHER_API_LOAD_FAILED'));
+    }, { once: true });
+    if (!existing) {
+      script.src = 'https://player.vdocipher.com/v2/api.js';
+      script.async = true;
+      script.dataset.aurelVdocipherApi = 'true';
+      document.head.appendChild(script);
+    }
+  }).catch((error) => {
+    vdoApiPromise = null;
+    throw error;
+  });
+  return vdoApiPromise;
+}
+
 /**
  * VideoPlayer — VDOCipher iframe with server-side OTP signing.
  *
@@ -32,14 +80,17 @@ import { Spinner } from '@/components/ui/Spinner';
  *     entire /lecons/:n crashed. Fixed by switching to JSX-only iframe
  *     with a stable `key`. No more imperative DOM manipulation.
  */
-export function VideoPlayer({ lesson, initialPosition = 0 }: {
+export function VideoPlayer({ lesson, initialPosition = 0, initialWatched = 0 }: {
   lesson: Lesson;
   initialPosition?: number;
+  initialWatched?: number;
 }) {
   const navigate = useNavigate();
   const { signOut } = useAuth();
-  const watchedSecRef = useRef<number>(0);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const watchedSecRef = useRef<number>(initialWatched);
   const positionSecRef = useRef<number>(initialPosition);
+  const apiTrackingRef = useRef(false);
 
   // Triggered when the OTP fetch returns NOT_AUTHENTICATED even after
   // refreshSession() retry. The student's local session is unrecoverable
@@ -99,7 +150,65 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
     };
   }, [lesson.id, lesson.vdocipher_video_id]);
 
-  // SHERLOCK R23 — anti-fraud watched-seconds tracker.
+  // Prefer VdoCipher's official playback API. getTotalPlayed counts actual
+  // playback for this player instance and currentTime gives the real resume
+  // position, including seeks and pauses.
+  useEffect(() => {
+    if (!otpQ.data || !lesson.vdocipher_video_id) return;
+    let disposed = false;
+    let player: VdoPlayerInstance | null = null;
+    let lastSampleAt = 0;
+
+    const sample = async () => {
+      if (!player || disposed) return;
+      const now = Date.now();
+      if (now - lastSampleAt < 900) return;
+      lastSampleAt = now;
+      try {
+        const sessionPlayed = Number(await player.api.getTotalPlayed());
+        const currentTime = Number(player.video.currentTime);
+        if (Number.isFinite(sessionPlayed) && sessionPlayed >= 0) {
+          watchedSecRef.current = Math.max(
+            watchedSecRef.current,
+            initialWatched + sessionPlayed,
+          );
+        }
+        if (Number.isFinite(currentTime) && currentTime >= 0) {
+          positionSecRef.current = currentTime;
+        }
+      } catch {
+        // The conservative focus-based fallback below remains active if the
+        // cross-frame API is temporarily unavailable.
+      }
+    };
+
+    void loadVdoPlayerApi().then(() => {
+      if (disposed || !iframeRef.current || !window.VdoPlayer) return;
+      player = window.VdoPlayer.getInstance(iframeRef.current);
+      apiTrackingRef.current = true;
+      player.video.addEventListener('timeupdate', sample);
+      player.video.addEventListener('pause', sample);
+      player.video.addEventListener('ended', sample);
+      if (initialPosition > 0) {
+        try { player.video.currentTime = initialPosition; } catch { /* resume remains best-effort */ }
+      }
+      void sample();
+    }).catch(() => {
+      apiTrackingRef.current = false;
+    });
+
+    return () => {
+      disposed = true;
+      apiTrackingRef.current = false;
+      if (player) {
+        player.video.removeEventListener('timeupdate', sample);
+        player.video.removeEventListener('pause', sample);
+        player.video.removeEventListener('ended', sample);
+      }
+    };
+  }, [initialPosition, initialWatched, lesson.vdocipher_video_id, otpQ.data]);
+
+  // Conservative fallback when VdoCipher's player API cannot load.
   //
   // BEFORE : tick() incremented `watchedSec = (Date.now - startTs) / 1000`
   //          every second whenever `document.visibilityState === 'visible'`.
@@ -126,7 +235,7 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
     if (!lesson.vdocipher_video_id) return;
     let accumulated = 0;
     let lastTick = Date.now();
-    watchedSecRef.current = 0;
+    watchedSecRef.current = Math.max(watchedSecRef.current, initialWatched);
     positionSecRef.current = initialPosition;
     const tick = () => {
       const now = Date.now();
@@ -141,15 +250,15 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
       // Only credit time if the user is genuinely engaged with the player.
       // Cap the per-tick delta at 2s to handle sleep/freeze gaps (tick was
       // supposed to fire at 1s but didn't because the tab was throttled).
-      if (visible && focused && iframeActive && delta <= 2) {
+      if (!apiTrackingRef.current && visible && focused && iframeActive && delta <= 2) {
         accumulated += delta;
-        watchedSecRef.current = accumulated;
-        positionSecRef.current = accumulated;
+        watchedSecRef.current = Math.max(watchedSecRef.current, initialWatched + accumulated);
+        positionSecRef.current = initialPosition + accumulated;
       }
     };
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [lesson.vdocipher_video_id, initialPosition]);
+  }, [lesson.vdocipher_video_id, initialPosition, initialWatched]);
 
   // ── Render states ────────────────────────────────────────────────────────
   if (!lesson.vdocipher_video_id) {
@@ -239,6 +348,7 @@ export function VideoPlayer({ lesson, initialPosition = 0 }: {
   return (
     <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
       <iframe
+        ref={iframeRef}
         key={otp}
         src={iframeSrc}
         allow="autoplay; fullscreen; picture-in-picture; encrypted-media"

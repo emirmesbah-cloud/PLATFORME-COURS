@@ -12,6 +12,8 @@
 
 import * as Sentry from '@sentry/react';
 
+declare const __BUILD_VERSION__: string;
+
 const DSN = import.meta.env.VITE_SENTRY_DSN;
 const ENV = import.meta.env.MODE; // 'development' | 'production'
 
@@ -26,7 +28,7 @@ export function initSentry() {
   Sentry.init({
     dsn: DSN,
     environment: ENV,
-    release: import.meta.env.VITE_SENTRY_RELEASE || 'aurel-academy@1.0.0',
+    release: import.meta.env.VITE_SENTRY_RELEASE || `aurel-academy@${__BUILD_VERSION__}`,
 
     // Performance monitoring (1% en prod, 100% en dev pour debug)
     tracesSampleRate: ENV === 'production' ? 0.05 : 1.0,

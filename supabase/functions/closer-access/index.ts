@@ -2,8 +2,8 @@
 //
 // Actions:
 //   provision         Admin only. Creates the pre-approved closer account with
-//                     the temporary password, links staff/profile, and sends
-//                     the welcome email.
+//                     a unique random secret, links staff/profile, and sends
+//                     a one-time password setup link.
 //   password-changed  Authenticated closer. Sends an immediate security notice.
 //
 // There is deliberately no public self-registration or "first connection"
@@ -16,7 +16,6 @@ import { reportError } from '../_shared/sentry.ts';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const DEFAULT_PASSWORD = Deno.env.get('CLOSER_DEFAULT_PASSWORD') ?? 'aurel2026';
 const APP_URL = 'https://app.aurel-academy.com';
 const ALLOWED_ORIGINS = new Set([APP_URL, 'http://localhost:5173', 'http://localhost:4173']);
 
@@ -36,6 +35,12 @@ function esc(value: unknown): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function randomBootstrapPassword(): string {
+  // Never shared with the closer. It only makes the account unusable until the
+  // one-time recovery link has been opened and a personal password is chosen.
+  return `${crypto.randomUUID()}-${crypto.randomUUID()}-Aa1!`;
 }
 
 async function sendEmail(payload: Record<string, unknown>): Promise<boolean> {
@@ -59,6 +64,37 @@ async function sendEmail(payload: Record<string, unknown>): Promise<boolean> {
     await reportError(error, { function: 'closer-access', extra: { step: 'send_email' } });
     return false;
   }
+}
+
+async function sendAccessEmail(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  email: string,
+  firstNameRaw: string,
+): Promise<boolean> {
+  const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+    type: 'recovery',
+    email,
+    options: { redirectTo: `${APP_URL}/reset-password` },
+  });
+  const actionLink = linkData?.properties?.action_link;
+  if (linkError || !actionLink) {
+    await reportError(linkError ?? new Error('Recovery link missing'), {
+      function: 'closer-access', extra: { step: 'generate_access_link', user_id: userId },
+    });
+    return false;
+  }
+
+  const firstName = esc(firstNameRaw);
+  const safeLink = esc(actionLink);
+  return sendEmail({
+    email_type: 'custom',
+    to: email,
+    user_id: userId,
+    subject: 'Bienvenue dans ton espace Closer Aurel Academy',
+    html: `<p>Bonjour ${firstName},</p><p>Ton accès Closer Aurel Academy a été créé par un administrateur.</p><p><a href="${safeLink}">Choisir mon mot de passe et activer mon accès</a></p><p>Ce lien est personnel et à usage unique. Ne le partage pas.</p><p>Connexion après activation : <a href="${APP_URL}/closer">${APP_URL}/closer</a></p>`,
+    text: `Bonjour ${firstNameRaw},\n\nTon accès Closer Aurel Academy a été créé. Choisis ton mot de passe avec ce lien personnel à usage unique :\n${actionLink}\n\nConnexion après activation : ${APP_URL}/closer`,
+  });
 }
 
 serve(async (req) => {
@@ -132,18 +168,25 @@ serve(async (req) => {
   }
 
   if (staff.auth_user_id) {
-    return json({ ok: true, created: false, email_sent: false });
+    if (payload.send_access_email !== true) {
+      return json({ ok: true, created: false, email_sent: false });
+    }
+    const sent = await sendAccessEmail(admin, staff.auth_user_id, email, staff.first_name || '');
+    return json({ ok: true, created: false, email_sent: sent });
   }
 
   const { data: existingProfile } = await admin.from('profiles').select('id').ilike('email', email).maybeSingle();
   if (existingProfile?.id) {
     await admin.from('staff_members').update({ auth_user_id: existingProfile.id, updated_at: new Date().toISOString() }).eq('id', staff.id);
-    return json({ ok: true, created: false, email_sent: false });
+    const sent = payload.send_access_email === true
+      ? await sendAccessEmail(admin, existingProfile.id, email, staff.first_name || '')
+      : false;
+    return json({ ok: true, created: false, email_sent: sent });
   }
 
   const { data: created, error: createError } = await admin.auth.admin.createUser({
     email,
-    password: DEFAULT_PASSWORD,
+    password: randomBootstrapPassword(),
     email_confirm: true,
     user_metadata: {
       first_name: staff.first_name ?? '',
@@ -178,17 +221,7 @@ serve(async (req) => {
 
   await admin.from('staff_members').update({ auth_user_id: uid, updated_at: new Date().toISOString() }).eq('id', staff.id);
 
-  const firstName = esc(staff.first_name || '');
-  const safeEmail = esc(email);
-  const safePassword = esc(DEFAULT_PASSWORD);
-  const sent = await sendEmail({
-    email_type: 'custom',
-    to: email,
-    user_id: uid,
-    subject: 'Bienvenue dans ton espace Closer Aurel Academy',
-    html: `<p>Bonjour ${firstName},</p><p>Ton accès Closer Aurel Academy a été créé par un administrateur.</p><p><strong>Email :</strong> ${safeEmail}<br><strong>Mot de passe provisoire :</strong> ${safePassword}</p><p><a href="${APP_URL}/closer">Se connecter à l’espace Closer</a></p><p>Tu peux ensuite modifier ce mot de passe depuis « Changer mot de passe ».</p>`,
-    text: `Bonjour ${staff.first_name || ''},\n\nTon accès Closer Aurel Academy a été créé.\nEmail : ${email}\nMot de passe provisoire : ${DEFAULT_PASSWORD}\nConnexion : ${APP_URL}/closer\n\nTu peux ensuite modifier ce mot de passe depuis « Changer mot de passe ».`,
-  });
+  const sent = await sendAccessEmail(admin, uid, email, staff.first_name || '');
 
   return json({ ok: true, created: true, email_sent: sent });
 });

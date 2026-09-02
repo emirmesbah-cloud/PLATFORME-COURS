@@ -1,6 +1,6 @@
 # ============================================================================
 # Deploy Supabase Edge Functions.
-#   - Automatically on push to main touching functions/config.
+#   - Automatically only after migrations for the matching release succeed.
 #   - Manually via the Actions "Run workflow" button (workflow_dispatch) — the
 #     RUNBOOK's recovery step relies on this trigger being present.
 # ============================================================================
@@ -8,12 +8,9 @@ name: Deploy Edge Functions
 
 on:
   workflow_dispatch: {}
-  push:
-    branches: [main]
-    paths:
-      - 'supabase/functions/**'
-      - 'supabase/config.toml'
-      - '.github/workflows/deploy-edge-functions.yml'
+  workflow_run:
+    workflows: [Deploy Migrations]
+    types: [completed]
 
 # SHERLOCK FIX: explicit least-privilege — this job only reads the repo.
 permissions:
@@ -26,11 +23,17 @@ concurrency:
 jobs:
   deploy:
     name: Deploy all edge functions
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1

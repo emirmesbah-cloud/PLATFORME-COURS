@@ -44,21 +44,12 @@ export function StudentLessons() {
   const quizByLesson = new Map<string, QuizLessonStatus>(
     (quizStatusQ.data ?? []).map((s) => [s.lesson_id, s]),
   );
-  // Helper : la leçon N est-elle débloquée ? Règle :
-  // - leçon_number 1 : toujours (disclaimer)
-  // - leçon_number 2+ : la précédente doit être "validée"
-  //     → si elle a un quiz : passed = true
-  //     → si elle n'a pas de quiz : completed (watch) = true
-  // - Si quiz_status n'est pas encore chargé : on est permissif (tout open)
-  //   pour ne pas freezer l'UX au cold start.
+  // Les quiz restent disponibles comme entraînement, mais ne bloquent jamais
+  // la progression. La vidéo précédente terminée déverrouille la suivante.
   function isUnlocked(lessonNumber: number): boolean {
     if (lessonNumber <= 1) return true;
-    if (!quizStatusQ.data) return true; // pas encore de data → permissif
     const prev = lessons.find((l) => l.lesson_number === lessonNumber - 1);
     if (!prev) return true;
-    const prevQuiz = quizByLesson.get(prev.id);
-    if (prevQuiz?.has_questions) return prevQuiz.passed;
-    // Pas de quiz sur la précédente → fallback sur completed.
     return progressByLesson.get(prev.id)?.completed === true;
   }
 
@@ -91,7 +82,7 @@ export function StudentLessons() {
         </h1>
         <p className="mt-3 max-w-xl text-[15px] text-zinc-600">
           Deutsch für Pflegekräfte — vocabulaire médical, simulations d'entretien et procédure d'Anerkennung.
-          Chaque leçon est débloquée par le quiz de la précédente.
+          Chaque leçon est débloquée lorsque la vidéo précédente est terminée. Les quiz sont optionnels.
         </p>
       </header>
 

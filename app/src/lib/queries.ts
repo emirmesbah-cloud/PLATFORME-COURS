@@ -313,14 +313,20 @@ export async function fetchAdminCodes(filters: {
   isUsed?: boolean | null;
   search?: string;
 } = {}): Promise<ActivationCode[]> {
-  let q = supabase.from('activation_codes').select('*').order('created_at', { ascending: false });
-  if (filters.tier)   q = q.eq('tier', filters.tier);
-  if (filters.course) q = q.eq('course', filters.course);
-  if (typeof filters.isUsed === 'boolean') q = q.eq('is_used', filters.isUsed);
-  if (filters.search) q = q.ilike('code', `%${filters.search}%`);
-  const { data, error } = await q.limit(500);
-  if (error) throw error;
-  return data as ActivationCode[];
+  const pageSize = 1000;
+  const rows: ActivationCode[] = [];
+  for (let from = 0; ; from += pageSize) {
+    let q = supabase.from('activation_codes').select('*').order('created_at', { ascending: false });
+    if (filters.tier) q = q.eq('tier', filters.tier);
+    if (filters.course) q = q.eq('course', filters.course);
+    if (typeof filters.isUsed === 'boolean') q = q.eq('is_used', filters.isUsed);
+    if (filters.search) q = q.ilike('code', `%${filters.search}%`);
+    const { data, error } = await q.range(from, from + pageSize - 1);
+    if (error) throw error;
+    rows.push(...((data ?? []) as ActivationCode[]));
+    if ((data?.length ?? 0) < pageSize) break;
+  }
+  return rows;
 }
 
 // SHERLOCK R14 — H10 : option `includeRevoked` pour permettre à AdminStudents
@@ -330,24 +336,33 @@ export async function fetchAdminCodes(filters: {
 export async function fetchAllStudents(
   opts: { includeRevoked?: boolean } = {},
 ): Promise<AdminStudentRow[]> {
-  let q = supabase
-    .from('profiles')
-    .select('*')
-    .eq('is_admin', false)
-    .eq('staff_role', 'student')
-    .order('created_at', { ascending: false });
-  if (!opts.includeRevoked) q = q.is('revoked_at', null);
-  const { data, error } = await q;
-  if (error) throw error;
-  const profiles = (data ?? []) as (Profile & { revoked_at: string | null; revoked_reason: string | null })[];
+  const pageSize = 1000;
+  const profiles: (Profile & { revoked_at: string | null; revoked_reason: string | null })[] = [];
+  for (let from = 0; ; from += pageSize) {
+    let q = supabase
+      .from('profiles')
+      .select('*')
+      .eq('is_admin', false)
+      .eq('staff_role', 'student')
+      .order('created_at', { ascending: false });
+    if (!opts.includeRevoked) q = q.is('revoked_at', null);
+    const { data, error } = await q.range(from, from + pageSize - 1);
+    if (error) throw error;
+    profiles.push(...((data ?? []) as typeof profiles));
+    if ((data?.length ?? 0) < pageSize) break;
+  }
   if (profiles.length === 0) return [];
   const ids = profiles.map((profile) => profile.id);
-  const { data: usedCodes, error: codeError } = await supabase
-    .from('activation_codes')
-    .select('code, used_by_user_id')
-    .in('used_by_user_id', ids);
-  if (codeError) throw codeError;
-  const byUser = new Map((usedCodes ?? []).map((row) => [row.used_by_user_id as string, row.code as string]));
+  const usedCodes: { code: string; used_by_user_id: string | null }[] = [];
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const { data, error: codeError } = await supabase
+      .from('activation_codes')
+      .select('code, used_by_user_id')
+      .in('used_by_user_id', ids.slice(offset, offset + 100));
+    if (codeError) throw codeError;
+    usedCodes.push(...((data ?? []) as typeof usedCodes));
+  }
+  const byUser = new Map(usedCodes.map((row) => [row.used_by_user_id as string, row.code]));
   return profiles.map((profile) => ({ ...profile, activation_code: byUser.get(profile.id) ?? null }));
 }
 
@@ -373,9 +388,9 @@ export async function upsertStaffMember(input: Partial<StaffMember> & { first_na
   if (error) throw error;
 }
 
-export async function provisionCloserAccount(email: string): Promise<{ created: boolean; email_sent: boolean }> {
+export async function provisionCloserAccount(email: string, sendAccessEmail = true): Promise<{ created: boolean; email_sent: boolean }> {
   const { data, error } = await supabase.functions.invoke('closer-access', {
-    body: { action: 'provision', email: email.trim().toLowerCase() },
+    body: { action: 'provision', email: email.trim().toLowerCase(), send_access_email: sendAccessEmail },
   });
   if (error) throw error;
   const result = data as { ok?: boolean; error?: string; created?: boolean; email_sent?: boolean } | null;
@@ -990,17 +1005,23 @@ export interface CreateDeliveryOrderInput {
 }
 
 export async function fetchDeliveryOrders(): Promise<DeliveryOrder[]> {
-  const { data, error } = await withQueryTimeout(
-    supabase
-      .from('delivery_orders')
-      .select('*, activation_code:activation_codes(code)')
-      .order('created_at', { ascending: false })
-      .limit(500),
-    15000,
-    'fetchDeliveryOrders',
-  );
-  if (error) throw error;
-  return (data ?? []) as never;
+  const pageSize = 1000;
+  const rows: DeliveryOrder[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await withQueryTimeout(
+      supabase
+        .from('delivery_orders')
+        .select('*, activation_code:activation_codes(code)')
+        .order('created_at', { ascending: false })
+        .range(from, from + pageSize - 1),
+      15000,
+      `fetchDeliveryOrders:${from}`,
+    );
+    if (error) throw error;
+    rows.push(...((data ?? []) as unknown as DeliveryOrder[]));
+    if ((data?.length ?? 0) < pageSize) break;
+  }
+  return rows;
 }
 
 export async function createDeliveryOrder(input: CreateDeliveryOrderInput): Promise<DeliveryOrder> {
@@ -1039,9 +1060,11 @@ export async function updateDeliveryOrder(orderId: string, input: CreateDelivery
       sync_status: 'draft',
       last_error: null,
     })
-    .eq('id', orderId)
-    .is('ecom_tracking', null)
-    .select('*')
+      .eq('id', orderId)
+      .is('ecom_tracking', null)
+      .is('deleted_at', null)
+      .neq('sync_status', 'syncing')
+      .select('*')
     .single();
   if (error) throw error;
   return data as DeliveryOrder;
@@ -1165,7 +1188,7 @@ export async function confirmDeliveryOrder(orderId: string): Promise<DeliveryOrd
 // Webinar prospect CRM (mig 20260817000051)
 // ============================================================================
 
-const LEAD_WITH_DELIVERY = '*, delivery_orders!delivery_orders_webinar_lead_id_fkey(id,ecom_tracking,ecom_situation)';
+const LEAD_WITH_DELIVERY = '*';
 
 type WebinarDeliveryStatus = {
   webinar_lead_id: string;
@@ -1175,26 +1198,60 @@ type WebinarDeliveryStatus = {
 };
 
 export async function fetchWebinarLeads(): Promise<WebinarLead[]> {
-  const { data, error } = await withQueryTimeout(
-    supabase
-      .from('webinar_leads')
-      .select(LEAD_WITH_DELIVERY)
-      .order('created_at', { ascending: false })
-      .limit(2000),
-    15000,
-    'fetchWebinarLeads',
-  );
-  if (error) throw error;
-  const leads = (data ?? []) as unknown as WebinarLead[];
+  const pageSize = 1000;
+  const leads: WebinarLead[] = [];
+  for (let from = 0; ; from += pageSize) {
+    let { data, error } = await withQueryTimeout(
+      supabase
+        .from('webinar_leads')
+        .select(LEAD_WITH_DELIVERY)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .range(from, from + pageSize - 1),
+      15000,
+      `fetchWebinarLeads:${from}`,
+    );
+    // Zero-downtime schema rollout: if a frontend bundle reaches one browser
+    // before the additive soft-delete migration, keep the CRM usable until the
+    // migration workflow catches up. Once the column exists, archived rows are
+    // always excluded by the primary query above.
+    if (error?.code === '42703') {
+      const fallback = await withQueryTimeout(
+        supabase
+          .from('webinar_leads')
+          .select(LEAD_WITH_DELIVERY)
+          .order('created_at', { ascending: false })
+          .range(from, from + pageSize - 1),
+        15000,
+        `fetchWebinarLeadsLegacy:${from}`,
+      );
+      data = fallback.data;
+      error = fallback.error;
+    }
+    if (error) throw error;
+    leads.push(...((data ?? []) as unknown as WebinarLead[]));
+    if ((data?.length ?? 0) < pageSize) break;
+  }
 
   // delivery_orders is deliberately admin-only through RLS.  Closers receive
   // only the three display fields below through a scoped SECURITY DEFINER RPC,
   // then we merge them into the same shape used by the desktop/mobile cards.
-  const { data: deliveryStatuses, error: deliveryStatusError } = await withQueryTimeout(
-    supabase.rpc('staff_get_webinar_delivery_statuses'),
-    15000,
-    'fetchWebinarDeliveryStatuses',
-  );
+  const deliveryStatuses: WebinarDeliveryStatus[] = [];
+  let deliveryStatusError: { code?: string } | null = null;
+  for (let from = 0; ; from += pageSize) {
+    const result = await withQueryTimeout(
+      supabase.rpc('staff_get_webinar_delivery_statuses').range(from, from + pageSize - 1),
+      15000,
+      `fetchWebinarDeliveryStatuses:${from}`,
+    );
+    if (result.error) {
+      deliveryStatusError = result.error;
+      break;
+    }
+    const page = (result.data ?? []) as WebinarDeliveryStatus[];
+    deliveryStatuses.push(...page);
+    if (page.length < pageSize) break;
+  }
 
   // Keep the admin screen operational during a staggered rollout where the app
   // bundle arrives just before the migration.  Real database errors still fail
@@ -1206,7 +1263,7 @@ export async function fetchWebinarLeads(): Promise<WebinarLead[]> {
   }
 
   const statusByLead = new Map<string, WebinarLead['delivery_orders']>();
-  for (const row of (deliveryStatuses ?? []) as WebinarDeliveryStatus[]) {
+  for (const row of deliveryStatuses) {
     statusByLead.set(row.webinar_lead_id, [{
       id: row.id,
       ecom_tracking: row.ecom_tracking,
@@ -1298,6 +1355,7 @@ export async function fetchWebinarLead(leadId: string): Promise<WebinarLead | nu
     .from('webinar_leads')
     .select(LEAD_WITH_DELIVERY)
     .eq('id', leadId)
+    .is('deleted_at', null)
     .maybeSingle();
   if (error) throw error;
   return data as never;

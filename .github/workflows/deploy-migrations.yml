@@ -1,5 +1,5 @@
 # ============================================================================
-# Auto-apply Supabase migrations SQL sur push vers main
+# Apply Supabase migrations only after the matching CI commit succeeds.
 #
 # ⚠️  Ne push QUE les nouvelles migrations (Supabase tracke déjà les anciennes
 # via la table supabase_migrations.schema_migrations).
@@ -9,11 +9,9 @@
 name: Deploy Migrations
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'supabase/migrations/**'
-      - '.github/workflows/deploy-migrations.yml'
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   workflow_dispatch:
 
 # SHERLOCK FIX : explicit permissions block. Avant : default GITHUB_TOKEN
@@ -28,11 +26,18 @@ concurrency:
 jobs:
   deploy:
     name: Apply pending migrations
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1

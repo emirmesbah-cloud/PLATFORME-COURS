@@ -195,11 +195,11 @@ serve(async (req) => {
   }
   if (!commune || !address) return json({ ok: false, error: 'ADDRESS_REQUIRED' }, 422);
 
-  // Public-only burst protection. The database increments the bucket in one
-  // atomic UPSERT, so concurrent submissions cannot all read the same old
-  // counter. Logged-in admins remain unrestricted for repeated QA tests.
-  const RL_MAX = 30;
-  if (!isAdminTester) {
+  // Optional public burst protection. Keep it disabled while the team performs
+  // repeated QA from shared IPs; it can be re-enabled without redeploying by
+  // setting WEBINAR_RATE_LIMIT_MAX to a positive integer.
+  const RL_MAX = Math.max(0, Number(Deno.env.get('WEBINAR_RATE_LIMIT_MAX') ?? '0') || 0);
+  if (RL_MAX > 0 && !isAdminTester) {
     try {
       const ipRaw = req.headers.get('cf-connecting-ip')?.trim()
         || req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
@@ -232,8 +232,10 @@ serve(async (req) => {
 
     const extraAnswers = payload.extra_answers && typeof payload.extra_answers === 'object'
       ? payload.extra_answers as Record<string, unknown> : {};
-    // Duplicate check + insert happen under one database advisory lock. This
-    // closes the race where simultaneous requests used to create two leads.
+    // During the admin-requested QA period, repeated submissions with the same
+    // email/phone must remain possible from any browser/IP. Set
+    // WEBINAR_ALLOW_DUPLICATES=false later to restore the atomic duplicate guard.
+    const allowDuplicates = (Deno.env.get('WEBINAR_ALLOW_DUPLICATES') ?? 'true').toLowerCase() !== 'false';
     const { data: insertedRaw, error } = await admin.rpc('service_insert_webinar_lead', {
       p_full_name: fullName,
       p_phone_raw: phoneRaw,
@@ -245,7 +247,7 @@ serve(async (req) => {
       p_commune: String(selectedCommune.commune),
       p_address: address,
       p_extra_answers: extraAnswers,
-      p_allow_duplicate: isAdminTester,
+      p_allow_duplicate: allowDuplicates || isAdminTester,
     });
     if (error) throw error;
     const inserted = insertedRaw as { ok?: boolean; duplicate?: boolean; id?: string; created_at?: string } | null;

@@ -10,11 +10,16 @@ on:
       - 'app/**'
       - 'supabase/**'
       - '.github/workflows/ci.yml'
+      - '.github/workflows/deploy-migrations.yml'
+      - '.github/workflows/deploy-edge-functions.yml'
   pull_request:
     branches: [main]
     paths:
       - 'app/**'
       - 'supabase/**'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/deploy-migrations.yml'
+      - '.github/workflows/deploy-edge-functions.yml'
 
 permissions:
   contents: read

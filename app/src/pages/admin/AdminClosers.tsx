@@ -27,16 +27,16 @@ export function AdminClosers() {
     setSaving(true);
     try {
       await upsertStaffMember(input);
-      const account = await provisionCloserAccount(input.email);
+      const account = await provisionCloserAccount(input.email, !input.id);
       await qc.invalidateQueries({ queryKey: queryKeys.adminStaff });
       setDraft(EMPTY);
       setEditingId(null);
       if (account.created && account.email_sent) {
-        toast.success('Closer créé. L’email de bienvenue avec le mot de passe provisoire a été envoyé.');
+        toast.success('Closer créé. Son lien personnel pour choisir le mot de passe a été envoyé.');
       } else if (account.created) {
         toast.info('Compte créé, mais l’email de bienvenue n’a pas pu être confirmé. Vérifie la section Emails.');
       } else {
-        toast.success('Closer enregistré avec les accès sélectionnés.');
+        toast.success(account.email_sent ? 'Closer enregistré. Un nouveau lien d’accès personnel a été envoyé.' : 'Closer enregistré avec les accès sélectionnés.');
       }
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Enregistrement impossible.'); }
     finally { setSaving(false); }

@@ -87,6 +87,15 @@ Deno.serve(async (req) => {
     }
     const userId = userData.user.id;
 
+    const { data: otpAllowed, error: otpLimitError } = await supabase.rpc("consume_vdocipher_otp_rate_limit");
+    if (otpLimitError) {
+      console.error("[vdocipher-otp] limiter unavailable", { userId, error: otpLimitError.message });
+      return json({ error: "RATE_LIMIT_UNAVAILABLE" }, 503, origin);
+    }
+    if (otpAllowed !== true) {
+      return json({ error: "RATE_LIMITED" }, 429, origin);
+    }
+
     // Parse request body. Hard cap : reject bodies > 4kB (video_id is ~32 chars).
     const contentLengthHeader = req.headers.get("Content-Length");
     if (contentLengthHeader && Number(contentLengthHeader) > 4096) {

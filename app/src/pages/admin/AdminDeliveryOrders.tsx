@@ -95,7 +95,7 @@ export function AdminDeliveryOrders() {
   const historyQ = useQuery({
     queryKey: queryKeys.deliveryOrderHistory(historyOrder?.id ?? ''),
     queryFn: () => fetchDeliveryOrderHistory(historyOrder!.id),
-    enabled: !!historyOrder?.ecom_tracking,
+    enabled: !!historyOrder?.ecom_tracking && !historyOrder?.deleted_at,
   });
   const connectionQ = useQuery({
     queryKey: queryKeys.ecomConnection,
@@ -465,7 +465,7 @@ export function AdminDeliveryOrders() {
                           <div className="flex justify-end gap-1">
                             {listView === 'history' ? (
                               <>
-                                {order.ecom_tracking && <button type="button" aria-label="Actualiser le statut" title="Actualiser le statut" className="btn-outline px-2.5 py-1.5" disabled={busyOrder === order.id} onClick={() => runOrderAction(order, 'refresh')}><RotateCw className={cn('h-3.5 w-3.5', busyOrder === order.id && 'animate-spin')} /></button>}
+                                {order.ecom_tracking && !order.deleted_at && <button type="button" aria-label="Actualiser le statut" title="Actualiser le statut" className="btn-outline px-2.5 py-1.5" disabled={busyOrder === order.id} onClick={() => runOrderAction(order, 'refresh')}><RotateCw className={cn('h-3.5 w-3.5', busyOrder === order.id && 'animate-spin')} /></button>}
                                 <button type="button" className="btn-outline px-2.5 py-1.5 text-xs" onClick={() => setHistoryOrder(order)}><History className="h-3.5 w-3.5" /> Historique</button>
                               </>
                             ) : !order.ecom_tracking ? (
@@ -634,7 +634,7 @@ function OrderMobileCard({ order, listView, selected, busy, onToggle, onEdit, on
     <div className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-700">{DELIVERY_NOTE}</div>
     <div className="grid grid-cols-2 gap-2">
       {listView === 'history' ? <>
-        {order.ecom_tracking && <button type="button" className="btn-outline" disabled={busy} onClick={() => onAction('refresh')}><RotateCw className={cn('h-4 w-4', busy && 'animate-spin')} /> Actualiser</button>}
+        {order.ecom_tracking && !order.deleted_at && <button type="button" className="btn-outline" disabled={busy} onClick={() => onAction('refresh')}><RotateCw className={cn('h-4 w-4', busy && 'animate-spin')} /> Actualiser</button>}
         <button type="button" className="btn-outline" onClick={onHistory}><History className="h-4 w-4" /> Historique</button>
       </> : !order.ecom_tracking ? <>
         <button type="button" className="btn-outline" disabled={busy} onClick={onEdit}><Pencil className="h-4 w-4" /> Modifier</button>
@@ -656,6 +656,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function OrderStatus({ order }: { order: DeliveryOrder }) {
+  if (order.deleted_at) return <div><span className="badge badge-slate"><Trash2 className="h-3 w-3" /> Archivée</span>{order.deleted_reason && <div className="mt-1 max-w-40 text-[10px] text-zinc-500">{order.deleted_reason}</div>}</div>;
   if (order.sync_status === 'failed') return <div><span className="badge badge-red"><AlertCircle className="h-3 w-3" /> Échec envoi</span><div className="mt-1 max-w-40 text-[10px] text-red-600">{order.last_error}</div></div>;
   if (order.sync_status === 'syncing') return <span className="badge badge-orange"><Loader2 className="h-3 w-3 animate-spin" /> Envoi</span>;
   if (!order.ecom_tracking) return <span className="badge badge-slate"><Clock3 className="h-3 w-3" /> Brouillon</span>;
@@ -663,12 +664,14 @@ function OrderStatus({ order }: { order: DeliveryOrder }) {
 }
 
 function isHistoricalOrder(order: DeliveryOrder): boolean {
+  if (order.deleted_at) return true;
   if (order.ecom_confirmed) return true;
   const state = `${order.ecom_situation ?? ''} ${order.ecom_logistics_state ?? ''}`.toLowerCase();
   return ['livr', 'retour', 'refus', 'annul', 'supprim', 'recouvr'].some((word) => state.includes(word));
 }
 
 function OrderHistoryTimeline({ order, loading, error, events }: { order: DeliveryOrder; loading: boolean; error: boolean; events: EcomOrderHistoryEvent[] }) {
+  if (order.deleted_at) return <div className="space-y-3"><HistoryEntry title="Commande archivée dans Aurel" date={order.deleted_at} detail={order.deleted_reason ?? 'Suppression administrateur — données conservées pour audit.'} /><HistoryEntry title="Commande créée dans Aurel" date={order.created_at} detail={`Référence ${order.external_reference}`} /></div>;
   if (!order.ecom_tracking) return <div className="space-y-3"><HistoryEntry title="Commande créée dans Aurel" date={order.created_at} detail="Brouillon local — pas encore envoyé à E-com Delivery." /></div>;
   if (loading) return <Spinner label="Synchronisation de l’historique E-com…" />;
   if (error) return <div className="rounded-card-sm bg-red-50 p-4 text-sm text-red-700">E-com n’a pas répondu. La commande reste enregistrée dans Aurel.</div>;

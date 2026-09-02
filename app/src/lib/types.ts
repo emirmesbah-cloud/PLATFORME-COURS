@@ -330,6 +330,10 @@ export interface DeliveryOrder {
   updated_at: string;
   deleted_from_ecom_at?: string | null;
   deleted_from_ecom_event_id?: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  deleted_reason?: string | null;
+  sync_started_at?: string | null;
   activation_code?: { code: string } | null;
 }
 
@@ -416,6 +420,9 @@ export interface WebinarLead {
   note: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  deleted_reason?: string | null;
   delivery_orders?: Pick<DeliveryOrder, 'id' | 'ecom_tracking' | 'ecom_situation'>[];
 }
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, ArrowLeft, Clock, CheckCircle2 } from 'lucide-react';
-import { fetchLessons, fetchLessonByNumber, fetchUserProgress, fetchMyQuizStatus, queryKeys } from '@/lib/queries';
+import { fetchLessons, fetchLessonByNumber, fetchUserProgress, queryKeys } from '@/lib/queries';
 import { useAuth } from '@/hooks/useAuth';
 import { VideoPlayer } from '@/components/features/VideoPlayer';
 import { LessonNotes } from '@/components/features/LessonNotes';
@@ -25,15 +25,6 @@ export function StudentLessonDetail() {
   const lessonQ  = useQuery({ queryKey: queryKeys.lesson(n),       queryFn: () => fetchLessonByNumber(n), enabled: lessonValid });
   const lessonsQ = useQuery({ queryKey: queryKeys.lessons,         queryFn: fetchLessons });
   const progQ    = useQuery({ queryKey: queryKeys.progress(uid),   queryFn: () => fetchUserProgress(uid), enabled: !!uid });
-  // Quiz status — utilisé pour verrouiller l'accès direct à une leçon
-  // dont le quiz précédent n'a pas été validé (entrée par URL).
-  const quizStatusQ = useQuery({
-    queryKey: queryKeys.myQuizStatus(uid),
-    queryFn: fetchMyQuizStatus,
-    enabled: !!uid,
-    staleTime: 30 * 1000,
-  });
-
   // SHERLOCK R13 — B4: out-of-range / non-integer lesson number → /lecons.
   if (!lessonValid) return <Navigate to="/lecons" replace />;
 
@@ -70,20 +61,16 @@ export function StudentLessonDetail() {
   const lessons = lessonsQ.data ?? [];
   const progress = (progQ.data ?? []).find((p) => p.lesson_id === lesson.id);
   const initialPos = progress?.last_position_seconds ?? 0;
+  const initialWatched = progress?.watched_seconds ?? 0;
   const completed = progress?.completed ?? false;
 
   const prev = lessons.find((l) => l.lesson_number === n - 1);
   const next = lessons.find((l) => l.lesson_number === n + 1);
 
-  // Verrouillage par quiz — si l'étudiant tape /lecons/5 sans avoir validé
-  // le quiz de la leçon 4, on bloque l'accès. On reste permissif tant que
-  // quizStatusQ.data n'est pas chargé pour ne pas freezer la page.
+  // Même règle que la liste : vidéo précédente terminée. Le quiz est optionnel.
   const isLocked = (() => {
     if (n <= 1) return false;
-    if (!quizStatusQ.data || !prev) return false;
-    const prevQuiz = quizStatusQ.data.find((s) => s.lesson_id === prev.id);
-    if (prevQuiz?.has_questions) return !prevQuiz.passed;
-    // Pas de quiz sur la précédente → fallback completion
+    if (!prev || progQ.isLoading) return false;
     const prevProgress = (progQ.data ?? []).find((p) => p.lesson_id === prev.id);
     return prevProgress?.completed !== true;
   })();
@@ -97,8 +84,8 @@ export function StudentLessonDetail() {
         <div className="card-padded space-y-3 max-w-lg">
           <h2 className="text-xl font-bold text-aurel-ink">Leçon verrouillée 🔒</h2>
           <p className="text-sm text-slate-600">
-            Pour accéder à la leçon {n}, tu dois d'abord valider le quiz de la leçon {n - 1}
-            {prev ? ` — « ${prev.title} »` : ''}. Il te faut 3 bonnes réponses sur 5.
+            Pour accéder à la leçon {n}, termine d'abord la vidéo de la leçon {n - 1}
+            {prev ? ` — « ${prev.title} »` : ''}. Le quiz reste optionnel.
           </p>
           {prev && (
             <Link to={`/lecons/${prev.lesson_number}`} className="btn-primary inline-flex">
@@ -132,7 +119,7 @@ export function StudentLessonDetail() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <div className="lg:col-span-3">
-          <VideoPlayer lesson={lesson} initialPosition={initialPos} />
+          <VideoPlayer lesson={lesson} initialPosition={initialPos} initialWatched={initialWatched} />
         </div>
 
         <aside className="card lg:col-span-2">
@@ -173,10 +160,7 @@ export function StudentLessonDetail() {
         </aside>
       </div>
 
-      {/* Quiz — affiché seulement si la leçon a des questions seedées.
-          Lessons 1 (disclaimer) et 2 (Willkommen) n'ont volontairement aucun
-          quiz : le composant renvoie null dans ce cas, donc rien à filtrer
-          ici. Le déverrouillage de la leçon suivante dépend de la réussite. */}
+      {/* Quiz optionnel — affiché seulement si la leçon a des questions. */}
       <section className="mt-8">
         <LessonQuiz lessonId={lesson.id} lessonNumber={lesson.lesson_number} />
       </section>
