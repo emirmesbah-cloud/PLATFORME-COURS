@@ -202,13 +202,10 @@ export default defineConfig({
           },
         ],
 
-        // Pour SPA : si le SW reçoit une requête de navigation et qu'il
-        // n'a pas la page en cache, il sert /index.html (Vite asset).
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [
-          /^\/api\//,
-          /^\/functions\//,
-        ],
+        // Never let Workbox's precache navigation fallback shadow the
+        // NetworkFirst route above. Cloudflare Pages already provides the SPA
+        // fallback online; the runtime pages-cache remains the offline fallback.
+        navigateFallback: null,
       },
     }),
   ],

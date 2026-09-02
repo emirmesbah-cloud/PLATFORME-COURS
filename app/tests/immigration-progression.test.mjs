@@ -10,7 +10,7 @@ const read = (relative) => readFileSync(resolve(here, relative), 'utf8');
 test('immigration modules unlock from completed lessons while quizzes stay optional', () => {
   const logic = read('../src/lib/immigration.ts');
   const overview = read('../src/pages/student/ImmigrationOverview.tsx');
-  const sql = read('../../supabase/migrations/20260902000083_progress_roles_and_crm_safety.sql');
+  const sql = read('../../supabase/migrations/20260902000086_fix_immigration_module_unlock_catalog.sql');
 
   assert.match(logic, /bySlug\.get\(lesson\.slug\)\?\.completed === true/);
   assert.doesNotMatch(logic, /lessonStatus\.has_questions \? lessonStatus\.passed/);
@@ -19,6 +19,8 @@ test('immigration modules unlock from completed lessons while quizzes stay optio
   const accessFunction = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION public.can_access_immigration_lesson'));
   assert.match(accessFunction, /public\.immigration_progress/);
   assert.doesNotMatch(accessFunction, /immigration_quiz_attempts/);
+  assert.doesNotMatch(accessFunction, /FROM public\.immigration_lessons/);
+  assert.match(accessFunction, /0-4-comment-utiliser-cette-formation-ta/);
 });
 
 test('Pflege lesson unlocking depends on watched completion, never quiz results', () => {

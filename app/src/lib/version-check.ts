@@ -24,17 +24,13 @@ export function reloadOnce(): void {
   window.location.reload();
 }
 
-// SHERLOCK R13 — B14: when the Service Worker is alive, PWAUpdatePrompt
-// already polls /sw.js every 60s and auto-reloads on a new bundle. Polling
-// /version.json on top of that doubles the network chatter AND races the SW
-// update — both can fire location.reload() within the same second. We keep
-// version-check as the FALLBACK for browsers where the SW is unsupported
-// or blocked (some corporate Safari, FF private mode), and disable it
-// otherwise.
 const CHECK_INTERVAL_MS = 60_000;
-let lastKnownServerVersion: string | null = null;
 let reloading = false;
 let started = false;
+
+function normalizedVersion(value: unknown): string {
+  return typeof value === 'string' ? value.trim().slice(0, 12) : '';
+}
 
 async function fetchServerVersion(): Promise<string | null> {
   try {
@@ -55,44 +51,47 @@ async function checkAndReload(): Promise<void> {
   if (reloading) return;
   const server = await fetchServerVersion();
   if (!server) return;
-  if (lastKnownServerVersion === null) {
-    lastKnownServerVersion = server;
-    return;
-  }
-  if (server !== lastKnownServerVersion) {
+  const serverVersion = normalizedVersion(server);
+  const runningVersion = normalizedVersion(__BUILD_VERSION__);
+  if (serverVersion && runningVersion && serverVersion !== runningVersion) {
     reloading = true;
     // eslint-disable-next-line no-console
     console.info('[VersionCheck] new version detected, reloading', {
-      build: __BUILD_VERSION__,
-      previousServer: lastKnownServerVersion,
-      newServer: server,
+      runningVersion,
+      serverVersion,
     });
-    // SHERLOCK R14 — H6 : reloadOnce gate evite la double-reload race avec
-    // PWAUpdatePrompt.
-    setTimeout(reloadOnce, 200);
+
+    // Safari can keep an obsolete PWA shell even after the origin/CDN cache
+    // has been purged. Remove only this origin's CacheStorage entries and SW
+    // registration before reloading; Supabase auth lives in localStorage and
+    // is intentionally preserved.
+    try {
+      if ('caches' in window) {
+        const keys = await window.caches.keys();
+        await Promise.all(keys.map((key) => window.caches.delete(key)));
+      }
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((registration) => registration.unregister()));
+      }
+    } catch {
+      // Cache APIs are best-effort (private Safari can reject them). Reloading
+      // still gives the browser a chance to fetch the current no-store HTML.
+    }
+
+    const freshUrl = new URL(window.location.href);
+    freshUrl.searchParams.set('_aurel_version', serverVersion);
+    window.__aurelReloading = true;
+    window.location.replace(freshUrl.toString());
   }
 }
 
 export function startVersionCheck(): () => void {
-  // SHERLOCK R13 — B14: idempotency guard + SW-aware short-circuit.
-  // If a SW is registered (PWAUpdatePrompt path), skip the duplicate poll.
-  // We re-check after a small delay because the SW registers asynchronously.
   if (started) return () => {};
   started = true;
-
-  const hasSW = typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
-  if (hasSW) {
-    // Wait a beat — if a controller shows up, the SW is alive and will
-    // handle freshness; we stay quiet. Otherwise, fall through and poll.
-    let cancelled = false;
-    const fallbackTimer = window.setTimeout(() => {
-      if (cancelled) return;
-      if (navigator.serviceWorker.controller) return; // SW is handling it
-      armPolling();
-    }, 5000);
-    return () => { cancelled = true; clearTimeout(fallbackTimer); disarm(); };
-  }
-
+  // Always compare the running bundle with /version.json, including when a
+  // service worker controls the page. This is the independent recovery path
+  // for Safari/PWA update failures.
   armPolling();
   return disarm;
 }
