@@ -74,6 +74,8 @@ export interface ImmigrationModuleAccess {
 
 /**
  * Apply the same progressive-module rule everywhere a lesson can be opened.
+ * A main module unlocks when every lesson in the previous module is marked
+ * completed. Quizzes remain optional and never block course progression.
  * Main module 0 is always open; niches and tutorials are intentionally free.
  * Admins bypass progression so they can preview and manage the whole course.
  */
@@ -94,11 +96,9 @@ export function getImmigrationModuleAccess(
 
   const previousModule = mainModules[moduleIndex - 1];
   const bySlug = new Map(status.map((lessonStatus) => [lessonStatus.lesson_slug, lessonStatus]));
-  const previousCleared = previousModule.lessons.every((lesson) => {
-    const lessonStatus = bySlug.get(lesson.slug);
-    if (!lessonStatus) return false;
-    return lessonStatus.has_questions ? lessonStatus.passed : lessonStatus.completed;
-  });
+  const previousCleared = previousModule.lessons.every(
+    (lesson) => bySlug.get(lesson.slug)?.completed === true,
+  );
 
   return {
     locked: !previousCleared,

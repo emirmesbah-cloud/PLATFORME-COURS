@@ -14,8 +14,8 @@ import { useAuth } from '@/hooks/useAuth';
 /**
  * ImmigrationOverview — course home, DB-backed (immigration_progress + quiz).
  * Progressive lock on the 11 main modules only (module-0…module-10) :
- * a module unlocks when the previous one is fully cleared (each lesson either
- * completed, or — if it has a quiz — passed). Niches + tutos = free access.
+ * a module unlocks when every lesson in the previous one is marked completed.
+ * Quizzes are optional. Niches + tutos = free access.
  */
 export function ImmigrationOverview() {
   const { isAdmin } = useAuth();
@@ -44,13 +44,8 @@ export function ImmigrationOverview() {
       return next;
     });
 
-  // A lesson is "cleared" = completed OR (has quiz AND passed).
-  const isCleared = (slug: string) => {
-    const s = bySlug.get(slug);
-    if (!s) return false;
-    if (s.has_questions) return s.passed;
-    return s.completed;
-  };
+  // Quiz results are informative only; completion controls progression.
+  const isCleared = (slug: string) => bySlug.get(slug)?.completed === true;
   const isCompleted = (slug: string) => bySlug.get(slug)?.completed === true;
 
   const completedCount = IMMIGRATION_FLAT_LESSONS.filter((l) => isCompleted(l.slug)).length;
@@ -188,7 +183,7 @@ export function ImmigrationOverview() {
 
                 {locked && (
                   <div className="border-t border-zinc-100 px-5 py-3 text-[12px] text-zinc-500">
-                    🔒 Termine le module précédent (valide son quiz) pour débloquer celui-ci.
+                    🔒 Termine les leçons du module précédent pour débloquer celui-ci.
                   </div>
                 )}
 
