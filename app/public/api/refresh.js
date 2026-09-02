@@ -19,5 +19,8 @@
   }
 
   if (status) status.textContent = 'Version actuelle prête. Redirection…';
-  window.location.replace('/immigration?_aurel_refresh=' + Date.now());
+  // Return through the root document. The app will route the authenticated
+  // user to the right space; this also avoids a same-document Safari race
+  // where the just-unregistered worker can still intercept one final deep URL.
+  window.location.replace('/?_aurel_refresh=' + Date.now());
 }());

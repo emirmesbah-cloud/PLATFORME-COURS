@@ -25,5 +25,6 @@ test('manual Safari recovery route preserves auth storage', () => {
   const recovery = read('../public/api/refresh.js');
   assert.match(recovery, /registration\.unregister\(\)/);
   assert.match(recovery, /window\.caches\.delete/);
+  assert.match(recovery, /window\.location\.replace\('\/\?_aurel_refresh='/);
   assert.doesNotMatch(recovery, /localStorage|sessionStorage/);
 });
