@@ -21,6 +21,37 @@ export function compareRegistrationDate(
   return difference || a.id.localeCompare(b.id);
 }
 
+const registrationDayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
+function validCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+export function matchesRegistrationDateRange(createdAt: string, from: string, to: string): boolean {
+  if (!from && !to) return true;
+  if ((from && !validCalendarDate(from)) || (to && !validCalendarDate(to)) || (from && to && from > to)) return false;
+  const date = new Date(createdAt);
+  if (!Number.isFinite(date.getTime())) return false;
+  const parts = registrationDayFormatter.formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
+  const day = `${part('year')}-${part('month')}-${part('day')}`;
+  // Both endpoints include the entire calendar day in the business timezone.
+  return (!from || day >= from) && (!to || day <= to);
+}
+
+export function formatRegistrationDate(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'Date non enregistrée';
+  return new Intl.DateTimeFormat('fr-FR', {
+    timeZone: 'Africa/Algiers', day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(date);
+}
+
 export function adminActivityTitle(activity: WebinarLeadActivity): string {
   if (activity.activity_type === 'assignment') {
     if (!activity.metadata.closer_id && !activity.metadata.closer_name) return 'Attribution retirée';

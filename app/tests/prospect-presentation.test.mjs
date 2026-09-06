@@ -38,8 +38,42 @@ test('admin audit and closer history use separate queries and scoped server endp
   const sql = readFileSync(new URL('../../supabase/migrations/20260906000088_admin_prospect_audit.sql', import.meta.url),'utf8');
   assert.match(page, /const detailedHistory = !!profile\?\.is_admin && !closerExperience/);
   assert.match(page, /detailedHistory \? queryKeys.webinarLeadAdminHistory/);
-  assert.match(page, /Date d’inscription : plus récent/);
+  assert.match(page, /Filtrer par date d’inscription/);
   assert.match(page, /onClick=\{onWhatsApp\}/);
   assert.match(sql, /IF NOT coalesce\(public.is_admin\(auth.uid\(\)\),false\) THEN RAISE EXCEPTION 'FORBIDDEN'/);
   assert.match(sql, /call_completed',false/);
+});
+
+test('registration calendar filters inclusive Algerian days, including midnight boundaries', () => {
+  const matches = helpers.matchesRegistrationDateRange;
+  assert.equal(matches('2026-09-05T22:59:59.999Z', '2026-09-06', '2026-09-06'), false);
+  assert.equal(matches('2026-09-05T23:00:00Z', '2026-09-06', '2026-09-06'), true);
+  assert.equal(matches('2026-09-06T22:59:59.999Z', '2026-09-06', '2026-09-06'), true);
+  assert.equal(matches('2026-09-06T23:00:00Z', '2026-09-06', '2026-09-06'), false);
+  assert.equal(matches('2026-09-06T00:30:00+01:00', '2026-09-06', '2026-09-06'), true);
+  assert.match(helpers.formatRegistrationDate('2026-09-05T23:00:00Z'), /06\/09\/2026.*00:00/);
+});
+
+test('registration filter supports open ranges and reset, and rejects invalid ranges', () => {
+  const matches = helpers.matchesRegistrationDateRange;
+  assert.equal(matches('2026-09-10T12:00:00Z', '2026-09-06', ''), true);
+  assert.equal(matches('2026-09-01T12:00:00Z', '', '2026-09-06'), true);
+  assert.equal(matches('2026-09-10T12:00:00Z', '', '2026-09-06'), false);
+  assert.equal(matches('invalid', '', ''), true);
+  assert.equal(matches('invalid', '2026-09-06', ''), false);
+  assert.equal(matches('2026-09-06T12:00:00Z', '2026-09-07', '2026-09-06'), false);
+  assert.equal(matches('2026-09-06T12:00:00Z', '2026-02-30', ''), false);
+  assert.equal(matches('2026-09-06T12:00:00Z', 'invalid', ''), false);
+});
+
+test('desktop and mobile show registration time, preserve notes, and expose calendar fields', () => {
+  const page = readFileSync(new URL('../src/pages/admin/AdminWebinarLeads.tsx', import.meta.url),'utf8');
+  assert.equal((page.match(/type="date"/g) ?? []).length, 2);
+  assert.match(page, /matchesRegistrationDateRange\(lead.created_at, registrationFrom, registrationTo\)/);
+  assert.doesNotMatch(page, /Dernier suivi|lead.last_call_at/);
+  assert.equal((page.match(/formatRegistrationDate\(lead.created_at\)/g) ?? []).length, 2);
+  assert.match(page, /registrationFrom, registrationTo\]/);
+  assert.match(page, /Effacer les dates/);
+  assert.match(page, /lead.latest_call_note &&/);
+  assert.match(page, /Rappel prévu/);
 });
