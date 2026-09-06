@@ -493,8 +493,30 @@ serve(async (req) => {
         parcel.commune = await resolveDeliverableCommune(order.wilaya_id, order.commune);
       }
       if (account.stock === true) {
-        if (!order.ecom_ref_article) throw new EcomError('ECOM_REF_ARTICLE_REQUIRED', 422);
-        parcel.ref_article = order.ecom_ref_article;
+        let stockReference = String(order.ecom_ref_article ?? '').trim();
+        if (!stockReference) {
+          const { data: mapping, error: mappingError } = await admin
+            .from('ecom_product_mappings')
+            .select('ref_article')
+            .eq('course', order.course)
+            .maybeSingle();
+          if (mappingError) throw mappingError;
+          stockReference = String(mapping?.ref_article ?? '').trim();
+        }
+        if (!stockReference) throw new EcomError('ECOM_REF_ARTICLE_REQUIRED', 422);
+        // Persist the resolved reference under the same send lock before the
+        // external call. This also handles older drafts or a concurrent mapping save.
+        const { data: referencedOrder, error: referenceError } = await admin
+          .from('delivery_orders')
+          .update({ ecom_ref_article: stockReference })
+          .eq('id', orderId)
+          .eq('sync_lock_token', activeSyncToken)
+          .is('deleted_at', null)
+          .select('id')
+          .maybeSingle();
+        if (referenceError) throw referenceError;
+        if (!referencedOrder) throw new EcomError('ECOM_SYNC_CLAIM_LOST', 409);
+        parcel.ref_article = stockReference;
       } else {
         parcel.article = order.article;
       }

@@ -11,6 +11,7 @@ import {
   fetchEcomCommunes, fetchEcomConnection, fetchEcomStopdesks,
   fetchEcomWilayas, fetchWebinarLead, queryKeys, refreshDeliveryOrder, syncDeliveryOrder,
   deleteDeliveryOrder, updateDeliveryOrder, updateDeliveryOrderDestination,
+  fetchEcomProductMappings, saveEcomProductMapping,
 } from '@/lib/queries';
 import type { Course, DeliveryMode, DeliveryOrder, EcomOrderHistoryEvent } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
@@ -50,7 +51,7 @@ function friendlyError(error: unknown) {
   const value = error instanceof Error ? error.message : String(error);
   const labels: Record<string, string> = {
     ECOM_NOT_CONFIGURED: "La connexion E-com n'est pas encore configurée côté serveur.",
-    ECOM_REF_ARTICLE_REQUIRED: 'Ce compte utilise le stock E-com : ajoute la référence produit.',
+    ECOM_REF_ARTICLE_REQUIRED: 'Configure la référence stock du programme dans « Produits E-com », ou renseigne-la sur cette commande.',
     ECOM_WILAYA_INVALID: "Cette wilaya n'est pas disponible pour la livraison à domicile chez E-com.",
     ECOM_COMMUNE_INVALID: 'La commune ne correspond pas à la wilaya ou elle n’est pas livrable chez E-com.',
     ORDER_ALREADY_SYNCED: 'Cette commande possède déjà un tracking et ne peut plus être modifiée ici.',
@@ -79,6 +80,8 @@ export function AdminDeliveryOrders() {
   const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
+  const [stockDrafts, setStockDrafts] = useState<Partial<Record<Course, string>>>({});
+  const [savingStockCourse, setSavingStockCourse] = useState<Course | null>(null);
   const [sourceLeadId, setSourceLeadId] = useState<string | null>(null);
   const [editingDestination, setEditingDestination] = useState<DeliveryOrder | null>(null);
   const [correctionWilayaId, setCorrectionWilayaId] = useState(0);
@@ -104,6 +107,32 @@ export function AdminDeliveryOrders() {
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
     staleTime: 5 * 60_000,
   });
+  const stockMappingsQ = useQuery({
+    queryKey: queryKeys.ecomProductMappings,
+    queryFn: fetchEcomProductMappings,
+    enabled: connectionQ.data?.stock === true,
+    refetchOnWindowFocus: 'always',
+  });
+  function stockReferenceFor(course: Course) {
+    return stockMappingsQ.data?.find((mapping) => mapping.course === course)?.ref_article ?? '';
+  }
+  const effectiveStockReference = form.refArticle.trim() || stockReferenceFor(form.course);
+
+  async function saveStockReference(course: Course) {
+    const reference = (stockDrafts[course] ?? stockReferenceFor(course)).trim();
+    if (!reference) { toast.error('Copie la référence exacte du produit depuis le stock E-com.'); return; }
+    setSavingStockCourse(course);
+    try {
+      const updated = await saveEcomProductMapping(course, reference);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: queryKeys.ecomProductMappings }),
+        qc.invalidateQueries({ queryKey: queryKeys.adminDeliveryOrders }),
+      ]);
+      setStockDrafts((current) => { const next = { ...current }; delete next[course]; return next; });
+      toast.success(`Référence enregistrée · ${updated} commande(s) complétée(s). Aucun colis envoyé.`);
+    } catch (error) { toast.error(friendlyError(error), 'Référence non enregistrée'); }
+    finally { setSavingStockCourse(null); }
+  }
   const wilayasQ = useQuery({
     queryKey: queryKeys.ecomWilayas,
     queryFn: fetchEcomWilayas,
@@ -187,6 +216,7 @@ export function AdminDeliveryOrders() {
     setForm((current) => ({
       ...current,
       course,
+      refArticle: '',
       article: course === 'immigration' ? 'Programme Aurel Academy — Immigration' : 'Programme Aurel Academy — Pflege',
       amount: course === 'immigration' ? 38000 : 12900,
     }));
@@ -201,7 +231,7 @@ export function AdminDeliveryOrders() {
       return 'Choisis une commune livrable dans la liste E-com.';
     }
     if (form.deliveryMode === 'stopdesk' && !form.stopdeskCode) return 'Choisis un bureau stopdesk.';
-    if (connectionQ.data?.stock && !form.refArticle.trim()) return 'La référence article E-com est obligatoire pour ce compte stock.';
+    if (connectionQ.data?.stock && !effectiveStockReference) return friendlyError(new Error('ECOM_REF_ARTICLE_REQUIRED'));
     if (!Number.isFinite(form.amount) || form.amount < 0) return 'Le montant à encaisser est invalide.';
     return null;
   }
@@ -223,7 +253,7 @@ export function AdminDeliveryOrders() {
         address: form.address.trim() || null,
         course: form.course,
         article: form.article.trim(),
-        ecom_ref_article: form.refArticle.trim() || null,
+        ecom_ref_article: effectiveStockReference || null,
         quantity: form.quantity,
         cod_amount: form.amount,
         supplier_notes: DELIVERY_NOTE,
@@ -253,6 +283,13 @@ export function AdminDeliveryOrders() {
   }
 
   async function sendSelected() {
+    if (connectionQ.data?.stock && (ordersQ.data ?? []).some((order) =>
+      selectedOrderIds.has(order.id) && !order.ecom_tracking && order.sync_status !== 'syncing'
+      && !order.ecom_ref_article?.trim() && !stockReferenceFor(order.course))) {
+      toast.error(friendlyError(new Error('ECOM_REF_ARTICLE_REQUIRED')));
+      setConfirmingBulk(false);
+      return;
+    }
     const ids = (ordersQ.data ?? [])
       .filter((order) => selectedOrderIds.has(order.id) && !order.ecom_tracking && order.sync_status !== 'syncing')
       .map((order) => order.id);
@@ -289,6 +326,11 @@ export function AdminDeliveryOrders() {
   function deleteAllShown() { return deleteOrders(selectableOrders.map((order) => order.id), () => setConfirmingDeleteAll(false)); }
 
   async function runOrderAction(order: DeliveryOrder, action: 'sync' | 'refresh' | 'confirm') {
+    if (action === 'sync' && connectionQ.data?.stock
+      && !order.ecom_ref_article?.trim() && !stockReferenceFor(order.course)) {
+      toast.error(friendlyError(new Error('ECOM_REF_ARTICLE_REQUIRED')));
+      return;
+    }
     if (action === 'confirm') {
       const accepted = window.confirm(
         `Confirmer le colis ${order.ecom_tracking} comme « Prêt à expédier » ?\n\nAprès confirmation, E-com ne permet plus de le modifier ni de le supprimer.`,
@@ -416,6 +458,31 @@ export function AdminDeliveryOrders() {
           )}
         </div>
       </div>
+
+      {connectionQ.data?.stock && <section className="card p-4 sm:p-5" aria-label="Produits E-com">
+        <h2 className="font-semibold text-aurel-ink">Produits E-com — mode stockage</h2>
+        <p className="mt-1 text-sm text-zinc-600">Associe chaque programme à la référence exacte de son article dans le stock E-com. Elle sera ajoutée automatiquement aux nouvelles commandes et aux commandes non envoyées qui n’en ont pas encore.</p>
+        {stockMappingsQ.isLoading ? <p className="mt-3 text-sm text-zinc-500">Chargement des références…</p>
+          : stockMappingsQ.isError ? <div className="mt-3 text-sm text-red-600">Impossible de charger les références. <button type="button" className="underline" onClick={() => stockMappingsQ.refetch()}>Réessayer</button></div>
+            : <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              {(['immigration', 'pflege'] as const).map((course) => (
+                <div key={course} className="rounded-lg border border-zinc-200 p-3">
+                  <label className="block text-sm font-medium" htmlFor={`stock-ref-${course}`}>{courseLabel(course)}</label>
+                  <input id={`stock-ref-${course}`} className="input mt-2 w-full" maxLength={64}
+                    placeholder="Référence article du stock E-com"
+                    value={stockDrafts[course] ?? stockReferenceFor(course)}
+                    disabled={savingStockCourse === course}
+                    onChange={(e) => setStockDrafts((current) => ({ ...current, [course]: e.target.value }))} />
+                  <button type="button" className="btn-outline mt-2 min-h-[44px] w-full"
+                    disabled={savingStockCourse !== null || !(stockDrafts[course] ?? stockReferenceFor(course)).trim()}
+                    onClick={() => saveStockReference(course)}>
+                    {savingStockCourse === course && <Loader2 className="h-4 w-4 animate-spin" />} Enregistrer et appliquer
+                  </button>
+                </div>
+              ))}
+            </div>}
+        <p className="mt-3 text-xs text-zinc-500">Aucun colis n’est envoyé par cette action. Les commandes déjà expédiées et les références renseignées individuellement sont conservées.</p>
+      </section>}
 
       <section className="card overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 p-4 sm:p-5">
@@ -557,7 +624,11 @@ export function AdminDeliveryOrders() {
               <Field label="Montant à encaisser (DA) *"><input type="number" min={0} className="input" value={form.amount} onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })} /></Field>
               <Field label="Désignation"><input className="input" maxLength={255} value={form.article} onChange={(e) => setForm({ ...form, article: e.target.value })} /></Field>
               <Field label="Quantité"><input type="number" min={1} className="input" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Math.max(1, Number(e.target.value)) })} /></Field>
-              {connectionQ.data?.stock && <Field label="Référence produit E-com *"><input className="input" maxLength={64} value={form.refArticle} onChange={(e) => setForm({ ...form, refArticle: e.target.value })} /></Field>}
+              {connectionQ.data?.stock && <Field label={stockReferenceFor(form.course) ? 'Référence produit E-com (remplacement facultatif)' : 'Référence produit E-com *'}>
+                <input className="input" maxLength={64} value={form.refArticle}
+                  placeholder={stockReferenceFor(form.course) ? `Automatique : ${stockReferenceFor(form.course)}` : 'Référence exacte du stock E-com'}
+                  onChange={(e) => setForm({ ...form, refArticle: e.target.value })} />
+              </Field>}
               <Field label="Note livraison"><input className="input bg-zinc-50" readOnly value={DELIVERY_NOTE} /></Field>
             </div>
           </div>

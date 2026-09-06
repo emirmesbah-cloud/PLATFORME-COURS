@@ -82,6 +82,7 @@ export const queryKeys = {
   // Delivery
   adminDeliveryOrders: ['admin', 'delivery_orders'] as const,
   ecomConnection: ['admin', 'ecom', 'connection'] as const,
+  ecomProductMappings: ['admin', 'ecom', 'product_mappings'] as const,
   ecomWilayas: ['admin', 'ecom', 'wilayas'] as const,
   ecomCommunes: (wilayaId: number) => ['admin', 'ecom', 'communes', wilayaId] as const,
   ecomStopdesks: (wilayaId: number) => ['admin', 'ecom', 'stopdesks', wilayaId] as const,
@@ -1109,6 +1110,22 @@ export async function fetchEcomConnection() {
 
 export async function configureEcomWebhook() {
   return invokeEcom<{ webhook_ready: boolean }>({ action: 'configure-webhook' });
+}
+
+export async function fetchEcomProductMappings(): Promise<Array<{ course: Course; ref_article: string }>> {
+  const { data, error } = await supabase.from('ecom_product_mappings')
+    .select('course, ref_article').order('course');
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function saveEcomProductMapping(course: Course, reference: string): Promise<number> {
+  const { data, error } = await supabase.rpc('admin_save_ecom_product_mapping', {
+    p_course: course, p_ref_article: reference.trim(),
+  });
+  if (error) throw new Error(error.message);
+  if (!data?.ok) throw new Error('ECOM_MAPPING_SAVE_FAILED');
+  return Number(data.updated_orders ?? 0);
 }
 
 export async function fetchEcomWilayas(): Promise<EcomWilaya[]> {
