@@ -48,3 +48,7 @@ Thumbs.db
 **/.wrangler/
 
 supabase/.temp/
+
+# Private historical evidence / temporary full DB archives. Never publish.
+/tmp/prospect-recovery-*/
+/outputs/private-prospect-recovery/

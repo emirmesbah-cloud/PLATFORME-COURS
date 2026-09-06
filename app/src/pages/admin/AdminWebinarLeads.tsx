@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 import type { WebinarLead, WebinarLeadActivity, WebinarLeadStatus } from '@/lib/types';
 import { cn, formatDateTime } from '@/lib/utils';
 import { fetchWebinarLeadAdminHistory, logWebinarContact } from '@/lib/queries';
-import { adminActivityTitle, compareRegistrationDate, formatAuditDate, formatRegistrationDate, leadStatusColor, matchesRegistrationDateRange } from '@/lib/prospectPresentation';
+import { adminActivityTitle, assignmentEvidencePresentation, compareRegistrationDate, formatAuditDate, formatRegistrationDate, leadStatusColor, matchesRegistrationDateRange } from '@/lib/prospectPresentation';
 
 const WORK_STATUS_OPTIONS: { value: WebinarLeadStatus; label: string }[] = [
   { value: 'to_call', label: 'À appeler' }, { value: 'nrp', label: 'NRP — ne répond pas' },
@@ -307,8 +307,24 @@ function LeadHistoryTimeline({ loading, error, activities, detailed = false }: {
   if (error) return <div className="rounded-card-sm bg-red-50 p-4 text-sm text-red-700">Impossible de charger l’historique.</div>;
   if (!activities.length) return <div className="rounded-card-sm bg-zinc-50 p-6 text-center text-sm text-zinc-500">Aucune action enregistrée pour ce prospect.</div>;
   return <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1">
-    {detailed && <p className="rounded-lg bg-blue-50 p-3 text-xs text-blue-900">Historique réservé aux admins · Heures d’Alger (UTC+1), à la seconde. Les anciennes attributions non enregistrées ne peuvent pas être reconstituées. Un clic de contact ne prouve pas qu’un appel a abouti.</p>}
+    {detailed && <p className="rounded-lg bg-blue-50 p-3 text-xs text-blue-900">Historique réservé aux admins · Heures d’Alger (UTC+1). Les événements enregistrés et les traces reconstituées sont distingués. Les sauvegardes ne permettent pas de retrouver chaque changement ni toutes les heures exactes. Un clic de contact ne prouve pas qu’un appel a abouti.</p>}
     {activities.map((activity) => {
+      if (activity.activity_type === 'assignment_evidence') {
+        // Defense in depth: these private traces never enter the closer view.
+        if (!detailed) return null;
+        const evidence = assignmentEvidencePresentation(activity)!;
+        return <article key={activity.id} className="rounded-card-sm border border-amber-200 bg-amber-50/40 p-4">
+          <span className="badge badge-orange">{evidence.title}</span>
+          <p className="mt-2 text-sm font-semibold text-zinc-800">{evidence.period}</p>
+          <p className="mt-2 break-words text-sm text-zinc-700">{evidence.assignment}</p>
+          <p className="mt-2 text-xs leading-relaxed text-zinc-600">{evidence.explanation}</p>
+          {!!evidence.sources.length && <details className="mt-3 text-xs text-zinc-600">
+            <summary className="cursor-pointer font-medium">Sources de la reconstitution</summary>
+            <ul className="mt-2 list-inside list-disc space-y-1 break-words">{evidence.sources.map((source) => <li key={source}>{source}</li>)}</ul>
+            {evidence.sourceUrl && <a className="mt-2 inline-flex items-center gap-1 underline" href={evidence.sourceUrl} target="_blank" rel="noopener noreferrer">Voir la sauvegarde GitHub <ExternalLink className="h-3 w-3" /></a>}
+          </details>}
+        </article>;
+      }
       const metadata = activity.metadata ?? {};
       const attempt = Number(metadata.call_attempt || 0);
       const followUp = typeof metadata.next_follow_up_at === 'string' ? metadata.next_follow_up_at : null;
