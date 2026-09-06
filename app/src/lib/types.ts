@@ -429,12 +429,14 @@ export interface WebinarLead {
 export interface WebinarLeadActivity {
   id: string;
   lead_id: string;
-  activity_type: 'submitted' | 'call' | 'status' | 'delivery';
+  activity_type: 'submitted' | 'call' | 'status' | 'delivery' | 'assignment' | 'contact' | 'note';
   status: WebinarLeadStatus | null;
+  previous_status?: WebinarLeadStatus | null;
   note: string | null;
   metadata: Record<string, unknown>;
   created_by: string | null;
   actor_name?: string | null;
+  actor_role?: 'admin' | 'closer' | 'system' | 'unknown';
   created_at: string;
 }
 
