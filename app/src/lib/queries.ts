@@ -99,6 +99,7 @@ export const queryKeys = {
   adminCodHealth: ['admin', 'cod_health'] as const,
   webinarLead: (leadId: string) => ['admin', 'webinar_lead', leadId] as const,
   webinarLeadHistory: (leadId: string) => ['admin', 'webinar_lead_history', leadId] as const,
+  webinarLeadAdminHistory: (leadId: string) => ['admin', 'webinar_lead_audit', leadId] as const,
   deliveryOrderHistory: (orderId: string) => ['admin', 'delivery_order_history', orderId] as const,
 };
 
@@ -1344,6 +1345,20 @@ export async function fetchWebinarLeadHistory(leadId: string): Promise<WebinarLe
   );
   if (error) throw error;
   return Array.isArray(data) ? data as WebinarLeadActivity[] : [];
+}
+
+export async function fetchWebinarLeadAdminHistory(leadId: string): Promise<WebinarLeadActivity[]> {
+  const { data, error } = await withQueryTimeout(
+    supabase.rpc('admin_get_webinar_lead_history', { p_lead_id: leadId }), 15000,
+    'fetchWebinarLeadAdminHistory',
+  );
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? data as WebinarLeadActivity[] : [];
+}
+
+export async function logWebinarContact(leadId: string, channel: 'phone' | 'whatsapp'): Promise<void> {
+  const { error } = await supabase.rpc('staff_log_webinar_contact', { p_lead_id: leadId, p_channel: channel });
+  if (error) throw new Error(error.message);
 }
 
 export async function assignWebinarLeadsCloser(leadIds: string[], closerName: string): Promise<void> {
