@@ -429,7 +429,7 @@ export interface WebinarLead {
 export interface WebinarLeadActivity {
   id: string;
   lead_id: string;
-  activity_type: 'submitted' | 'call' | 'status' | 'delivery' | 'assignment' | 'contact' | 'note';
+  activity_type: 'submitted' | 'call' | 'status' | 'delivery' | 'assignment' | 'assignment_evidence' | 'contact' | 'note';
   status: WebinarLeadStatus | null;
   previous_status?: WebinarLeadStatus | null;
   note: string | null;

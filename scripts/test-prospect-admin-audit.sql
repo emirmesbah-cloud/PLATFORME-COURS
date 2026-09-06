@@ -124,3 +124,74 @@ END $$;
 RESET ROLE;
 ROLLBACK;
 \echo 'PASS: admin prospect audit, snapshots, status/call merge, order handoff, scoped contact and role isolation'
+
+-- Recovery support contains no production data and is safe to apply twice.
+\ir ../supabase/migrations/20260906000089_recovered_assignment_evidence.sql
+\ir ../supabase/migrations/20260906000089_recovered_assignment_evidence.sql
+BEGIN;
+INSERT INTO webinar_leads(id,deleted_at) VALUES('10000000-0000-0000-0000-000000000003',now());
+CREATE TEMP TABLE recovery_before AS SELECT
+  (SELECT jsonb_agg(to_jsonb(l) ORDER BY id) FROM webinar_leads l) AS leads,
+  (SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM webinar_lead_activities a) AS activities,
+  (SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM delivery_orders o) AS orders,
+  (SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM webinar_lead_admin_events e) AS audit;
+CREATE TEMP TABLE recovery_payload AS SELECT '[
+ {"lead_id":"10000000-0000-0000-0000-000000000001","created_at":"2026-08-20T12:00:00Z","metadata":{"recovery_key":"test-snapshot","recovery_kind":"snapshot","closer_name":"Historic closer"}},
+ {"lead_id":"10000000-0000-0000-0000-000000000001","created_at":"2026-08-21T12:00:00Z","metadata":{"recovery_key":"test-interval","recovery_kind":"interval","previous_closer_name":"Historic closer","closer_name":null,"interval_start":"2026-08-20T12:00:00Z","interval_end":"2026-08-21T12:01:00Z"}},
+ {"lead_id":"10000000-0000-0000-0000-000000000002","created_at":"2026-08-22T12:00:00Z","metadata":{"recovery_key":"test-probable","recovery_kind":"correlation","closer_name":"Possible closer"}},
+ {"lead_id":"10000000-0000-0000-0000-000000000003","created_at":"2026-08-22T12:00:00Z","metadata":{"recovery_key":"test-deleted","recovery_kind":"snapshot"}},
+ {"lead_id":"10000000-0000-0000-0000-000000000099","created_at":"2026-08-22T12:00:00Z","metadata":{"recovery_key":"test-missing","recovery_kind":"snapshot"}}
+]'::jsonb AS payload;
+DO $$ DECLARE result jsonb; BEGIN
+  result:=public.import_webinar_assignment_evidence((SELECT payload FROM recovery_payload));
+  ASSERT result='{"submitted":5,"inserted":3,"skipped":2}'::jsonb, 'Import skips deleted/missing prospects';
+  result:=public.import_webinar_assignment_evidence((SELECT payload FROM recovery_payload));
+  ASSERT result->>'inserted'='0', 'Import is idempotent';
+  ASSERT (SELECT leads=(SELECT jsonb_agg(to_jsonb(l) ORDER BY id) FROM webinar_leads l) FROM recovery_before), 'Assignments/status/counts/notes unchanged';
+  ASSERT (SELECT activities=(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM webinar_lead_activities a) FROM recovery_before), 'Closer timeline unchanged';
+  ASSERT (SELECT orders=(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM delivery_orders o) FROM recovery_before), 'Orders unchanged';
+  ASSERT (SELECT audit=(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM webinar_lead_admin_events e WHERE event_type<>'assignment_evidence') FROM recovery_before), 'Native audit untouched';
+  ASSERT NOT EXISTS(SELECT 1 FROM webinar_lead_admin_events WHERE event_type='assignment_evidence'
+    AND (actor_id IS NOT NULL OR actor_role<>'unknown' OR status IS NOT NULL OR previous_status IS NOT NULL)), 'No fabricated actor/status';
+  BEGIN
+    PERFORM public.import_webinar_assignment_evidence('[{"metadata":null}]');
+    RAISE EXCEPTION 'Invalid evidence accepted';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'EVIDENCE_INVALID' THEN RAISE; END IF; END;
+  BEGIN
+    PERFORM public.import_webinar_assignment_evidence('null');
+    RAISE EXCEPTION 'Null evidence accepted';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'EVIDENCE_ARRAY_REQUIRED' THEN RAISE; END IF; END;
+END $$;
+
+SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000001',true);
+SET LOCAL ROLE authenticated;
+DO $$ BEGIN
+  ASSERT (SELECT count(*)=3 FROM webinar_lead_admin_events WHERE event_type='assignment_evidence'), 'Admin RLS can read recovered evidence';
+  ASSERT (SELECT count(*)=2 FROM jsonb_array_elements(public.admin_get_webinar_lead_history('10000000-0000-0000-0000-000000000001')) e
+    WHERE e->>'activity_type'='assignment_evidence'), 'Recovered evidence is in admin history RPC';
+  BEGIN
+    PERFORM public.import_webinar_assignment_evidence('[]');
+    RAISE EXCEPTION 'App admin could import forged history';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $$;
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000002',true);
+SET LOCAL ROLE authenticated;
+DO $$ BEGIN
+  ASSERT (SELECT count(*)=0 FROM webinar_lead_admin_events), 'Closer cannot read recovered evidence';
+  BEGIN
+    PERFORM public.import_webinar_assignment_evidence('[]');
+    RAISE EXCEPTION 'Closer could import history';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $$;
+RESET ROLE;
+SET LOCAL ROLE anon;
+DO $$ BEGIN
+  BEGIN
+    PERFORM public.import_webinar_assignment_evidence('[]');
+    RAISE EXCEPTION 'Anonymous could import history';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $$;
+RESET ROLE;
+ROLLBACK;
+\echo 'PASS: recovered evidence, idempotence, no operational changes, admin-only read, owner-only import'

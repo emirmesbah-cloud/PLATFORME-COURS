@@ -77,3 +77,53 @@ test('desktop and mobile show registration time, preserve notes, and expose cale
   assert.match(page, /lead.latest_call_note &&/);
   assert.match(page, /Rappel prévu/);
 });
+
+test('recovered observation is not presented as an exact attribution time', () => {
+  const event = { activity_type: 'assignment_evidence', created_at: '2026-09-06T07:45:14Z', metadata: {
+    recovery_kind: 'snapshot', closer_name: null, backup_run_id: '34019976724', backup_file: 'backup.sql.gz',
+  } };
+  const result = helpers.assignmentEvidencePresentation(event);
+  assert.match(result.title, /observée dans une sauvegarde/);
+  assert.match(result.period, /06\/09\/2026.*08:45.*approximative/);
+  assert.equal(result.assignment, 'Closer observé : Non attribué');
+  assert.match(result.explanation, /pas à l’attribution/);
+  assert.match(result.sourceUrl, /actions\/runs\/34019976724$/);
+  assert.equal(helpers.assignmentEvidencePresentation({ ...event, activity_type: 'assignment' }), null);
+});
+
+test('recovered change windows and timestamp correlations remain explicitly uncertain', () => {
+  const event = { activity_type: 'assignment_evidence', created_at: '2026-09-06T09:17:47.378613Z', metadata: {
+    recovery_kind: 'interval', interval_start: '2026-09-05T07:31:36Z', interval_end: '2026-09-06T07:45:30Z',
+    closer_name: 'Khadidja', previous_closer_name: 'Hana',
+  } };
+  let result = helpers.assignmentEvidencePresentation(event);
+  assert.match(result.period, /^Entre le /);
+  assert.match(result.assignment, /Hana → Khadidja/);
+  assert.match(result.explanation, /nombre de changements.*inconnus/);
+  result = helpers.assignmentEvidencePresentation({ ...event, metadata: { ...event.metadata, recovery_kind: 'correlation' } });
+  assert.match(result.title, /probable/);
+  assert.match(result.period, /10:17:47.*probable, non certifiée/);
+  assert.match(result.explanation, /ne contient pas les paramètres/);
+  assert.match(result.explanation, /auteur n’est pas prouvé/);
+});
+
+test('malformed evidence cannot inject links or an apparently exact time', () => {
+  const event = { activity_type: 'assignment_evidence', created_at: 'invalid', metadata: {
+    recovery_kind: 'interval', interval_start: '2026-09-07T00:00:00Z', interval_end: '2026-09-06T00:00:00Z',
+    backup_run_id: 'javascript:alert(1)', closer_id: 'known-id',
+  } };
+  const result = helpers.assignmentEvidencePresentation(event);
+  assert.equal(result.sourceUrl, null);
+  assert.match(result.period, /non disponible/);
+  assert.match(result.assignment, /nom non enregistré/);
+});
+
+test('recovered cards remain admin-only and never look like native assignment events', () => {
+  const page = readFileSync(new URL('../src/pages/admin/AdminWebinarLeads.tsx', import.meta.url), 'utf8');
+  const sql = readFileSync(new URL('../../supabase/migrations/20260906000089_recovered_assignment_evidence.sql', import.meta.url), 'utf8');
+  assert.match(page, /activity.activity_type === 'assignment_evidence'[\s\S]*?if \(!detailed\) return null/);
+  assert.match(page, /Sources de la reconstitution/);
+  assert.match(sql, /actor_id IS NULL AND actor_role = 'unknown' AND status IS NULL/);
+  assert.match(sql, /ON CONFLICT[\s\S]*DO NOTHING/);
+  assert.doesNotMatch(sql, /(?:UPDATE|DELETE FROM|INSERT INTO) public\.(?:webinar_leads|webinar_lead_activities|delivery_orders)\b/i);
+});
